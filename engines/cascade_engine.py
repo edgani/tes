@@ -448,15 +448,42 @@ class CascadeEngine:
         return result
 
     # ═══════════════════════════════════════════════════════════════════
-    # DYNAMIC EDGE DISCOVERY (from price clusters)
+    # DYNAMIC EDGE DISCOVERY (from price clusters) — WITH DISK CACHE v2
     # ═══════════════════════════════════════════════════════════════════
+    _CACHE_DIR = None
+    _CACHE_TTL_HOURS = 6.0  # Edges valid for 6 hours
+
+    @classmethod
+    def _get_cache_path(cls):
+        from pathlib import Path
+        if cls._CACHE_DIR is None:
+            cls._CACHE_DIR = Path(".cache/cascade")
+            cls._CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        return cls._CACHE_DIR / "dynamic_edges.pkl"
+
     def discover_dynamic_edges(self, lookback_days: int = 63,
                               min_corr: float = 0.60) -> Dict[str, List[Tuple[str, float, int]]]:
-        """Discover new correlations not in STATIC_EDGES."""
+        """Discover new correlations not in STATIC_EDGES. Uses disk cache (6h TTL)."""
+        # Try cache first
+        try:
+            import pickle, time as _t
+            from pathlib import Path
+            cache_path = self._get_cache_path()
+            if cache_path.exists():
+                age_hours = (_t.time() - cache_path.stat().st_mtime) / 3600
+                if age_hours < self._CACHE_TTL_HOURS:
+                    with open(cache_path, "rb") as f:
+                        cached_edges = pickle.load(f)
+                    self._dynamic_edges = cached_edges
+                    logger.info(f"Cascade dynamic edges: {sum(len(v) for v in cached_edges.values())} loaded from cache ({age_hours:.1f}h old)")
+                    return cached_edges
+        except Exception as e:
+            logger.debug(f"Cascade cache read failed: {e}")
+
+        # Cache miss — compute fresh
         if not self.prices:
             return {}
 
-        # Build returns matrix
         clean_prices = {}
         for t, s in self.prices.items():
             try:
@@ -469,7 +496,6 @@ class CascadeEngine:
         if len(clean_prices) < 10:
             return {}
 
-        # Correlation matrix
         df = pd.DataFrame(clean_prices)
         try:
             corr = df.corr()
@@ -484,15 +510,22 @@ class CascadeEngine:
                 c = corr.loc[src, tgt]
                 if not math.isfinite(c) or abs(c) < min_corr:
                     continue
-                # Skip if already in static edges
                 static = [e[0] for e in STATIC_EDGES.get(src, [])]
                 if tgt in static:
                     continue
-                # Add dynamic edge with conservative beta and 5-day lag
                 new_edges[src].append((tgt, float(c) * 0.7, 5))
 
         self._dynamic_edges = dict(new_edges)
-        logger.info(f"Cascade dynamic edges: {sum(len(v) for v in new_edges.values())} discovered")
+
+        # Save to cache
+        try:
+            import pickle
+            with open(self._get_cache_path(), "wb") as f:
+                pickle.dump(self._dynamic_edges, f)
+        except Exception as e:
+            logger.debug(f"Cascade cache save failed: {e}")
+
+        logger.info(f"Cascade dynamic edges: {sum(len(v) for v in new_edges.values())} discovered (FRESH compute)")
         return self._dynamic_edges
 
     def _get_edges(self, ticker: str) -> List[Tuple[str, float, int]]:

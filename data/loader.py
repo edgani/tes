@@ -1,12 +1,10 @@
-"""data/loader.py — Tiered Universe Price Loader v4 (Sprint 1)
+"""data/loader.py — Tiered Universe Price Loader v4.1 (Sprint 5)
 
-CRITICAL FIXES vs v3.2:
-  • TIERED LOADING — CORE (50) loaded blocking, SECONDARY (150) async, TAIL (200+) lazy
-  • Auto-blacklist failed tickers to runtime set (persists across calls)
-  • Polygon.io fallback for SECONDARY tier (free tier 5 req/min, batch endpoint)
-  • Retry-after header respect (Yahoo 429 → wait then retry)
-  • Threads re-enabled with semaphore (max 3 concurrent)
-  • Snapshot persistence preserved for backwards-compat
+UPGRADES vs v4:
+  • COMPANY NAME → TICKER mapping (TSMC → TSM, FANUC → 6954.T, etc.)
+  • ENHANCED blacklist (company short names auto-stripped)
+  • Yahoo backoff with persistent rate-limit state (30s skip after 429)
+  • Tier 1 cache TTL extended to 4h (Tier 2 still 12h)
 """
 from __future__ import annotations
 
@@ -48,26 +46,108 @@ def _get_secret(key: str) -> Optional[str]:
 
 POLYGON_API_KEY = _get_secret("POLYGON_API_KEY")
 
-# ── Known-bad tickers (static + runtime auto-blacklist) ───────────────────
+# ────────────────────────────────────────────────────────────────────────
+# COMPANY NAME → REAL TICKER MAPPING
+# Sources: bottleneck_reference.json + narrative_universe.py company refs
+# ────────────────────────────────────────────────────────────────────────
+
+NAME_TO_TICKER: Dict[str, str] = {
+    # Semis - non-US
+    "TSMC": "TSM",                # Taiwan Semi US ADR
+    "SAMSUNG": "005930.KS",       # Samsung Electronics Korea
+    "SAMSUNG ELECTRONICS": "005930.KS",
+    "SK HYNIX": "000660.KS",
+    "MEDIATEK": "2454.TW",
+    # Japan industrials/tech
+    "FANUC": "6954.T",
+    "KEYENCE": "6861.T",
+    "YASKAWA": "6506.T",
+    "FUJIBO": "3104.T",           # Fujibo Holdings
+    "HARMONIC DRIVE": "6324.T",
+    "NABTESCO": "6268.T",
+    "THK": "6481.T",
+    "SMC": "6273.T",
+    "NIDEC": "6594.T",
+    # Optics / photonics
+    "SYTECH": None,               # private, skip
+    "SIPHONICS": None,            # private, skip
+    "CELESTIAL AI": None,         # private
+    "JEN": None,                  # ambiguous - skip
+    "RPI": None,                  # research institution
+    "BESI": "BESI.AS",            # BE Semiconductor Industries Amsterdam
+    "AMEC": "AMEC.SS",            # Advanced Micro-Fabrication Equipment China
+    "TUC": None,                  # Tucker (Ferro Mfg)
+    "LPK": None,                  # ambiguous
+    "ELSFPS": None,               # private
+    "SIVE": None,                 # private
+    "SMHN": None,                 # private/regional
+    "POET": "POET",               # POET Technologies (already US ticker)
+    # US giants with name
+    "LINDE": "LIN",
+    "SEAGATE": "STX",
+    "AIR PRODUCTS": "APD",
+    # Helium plays
+    "HELIUM ONE": "HE1.L",        # London
+    "PULSAR HELIUM": "PLSR.V",    # Canadian
+    "ASIA METAL": None,
+    # Misc bottleneck names
+    "VVIX": "^VVIX",              # Yahoo wants ^VVIX
+    "VIX": "^VIX",
+    "MOVE": "^MOVE",
+}
+
+
+def _normalize_ticker(t: str) -> Optional[str]:
+    """Map company names to real tickers, or return None if unmappable."""
+    if not t:
+        return None
+    t_up = t.strip().upper()
+    if t_up in NAME_TO_TICKER:
+        return NAME_TO_TICKER[t_up]  # May be None (skip)
+    return t_up  # Pass through
+
+
+# ── Known-bad tickers (static + auto-blacklist) ───────────────────────────
 KNOWN_BAD_TICKERS: Set[str] = {
-    # Original static list
-    "VEX", "WDL", "VIX", "JPXN", "EIS", "TUR", "NORW",
+    "VEX", "WDL", "JPXN", "EIS", "TUR", "NORW",
     "ZNC=F", "ALI=F", "LBS=F", "KOL", "JJN",
-    # Crypto with CoinGecko numeric IDs (yfinance can't resolve)
+    # Crypto with CoinGecko numeric IDs
     "BONK-USD", "FLOKI-USD", "PEPE24478-USD",
     "UNI7083-USD", "COMP5692-USD",
     "GRT6719-USD", "SUI20947-USD",
-    "TAO22974-USD", "TIA22861-USD",
-    "TON11419-USD",
-    # From screenshot — recently delisted
+    "TAO22974-USD", "TIA22861-USD", "TON11419-USD",
+    # Recently delisted/bad
     "NXTECH", "ISWAVE", "UNRAND", "FOSER", "MARCH", "ETMS", "BTHC",
     "NIPPONS", "IMI", "BSF", "BUFI", "LRMK", "RYTICK",
+    # Company names that snuck in as tickers from screenshot
+    "SIPHONICS", "FANUC", "KEYENCE", "NABTESCO", "SYTECH", "TSMC",
+    "ELSFPS", "RPI", "SAMSUNG", "YASKAWA", "AMEC", "SIVE",
+    "FUJIBO", "SEAGATE", "TUC", "LINDE", "BESI", "THK", "LPK",
+    "JEN", "SMHN", "AIR PRODUCTS", "ASIA METAL", "HARMONIC DRIVE",
+    "CELESTIAL AI", "HELIUM ONE", "PULSAR HELIUM", "SK HYNIX",
+    # VVIX without caret (yfinance needs ^VVIX)
+    "VVIX",  # only ^VVIX works
 }
 
-_RUNTIME_BAD_TICKERS: Set[str] = set()  # auto-populated on failure
-_RUNTIME_BAD_LOCK = threading.Lock()
 
+_RUNTIME_BAD_TICKERS: Set[str] = set()
+_RUNTIME_BAD_LOCK = threading.Lock()
 _BLACKLIST_FILE = CACHE_DIR / "runtime_bad_tickers.json"
+
+# Rate limit state — skip Yahoo for X seconds after 429
+_RATE_LIMIT_UNTIL = 0.0
+_RATE_LIMIT_LOCK = threading.Lock()
+
+
+def _is_rate_limited() -> bool:
+    return time.time() < _RATE_LIMIT_UNTIL
+
+
+def _set_rate_limit(seconds: float = 30.0):
+    global _RATE_LIMIT_UNTIL
+    with _RATE_LIMIT_LOCK:
+        _RATE_LIMIT_UNTIL = max(_RATE_LIMIT_UNTIL, time.time() + seconds)
+    logger.warning(f"Yahoo rate-limit cooldown: pausing yfinance for {seconds}s")
 
 
 def _load_runtime_blacklist():
@@ -77,9 +157,7 @@ def _load_runtime_blacklist():
             with open(_BLACKLIST_FILE) as f:
                 data = json.load(f)
             cutoff = (datetime.now() - timedelta(days=7)).timestamp()
-            _RUNTIME_BAD_TICKERS = {
-                t for t, ts in data.items() if ts > cutoff
-            }
+            _RUNTIME_BAD_TICKERS = {t for t, ts in data.items() if ts > cutoff}
     except Exception:
         _RUNTIME_BAD_TICKERS = set()
 
@@ -95,8 +173,8 @@ def _save_runtime_blacklist():
             existing[t] = now
         with open(_BLACKLIST_FILE, "w") as f:
             json.dump(existing, f)
-    except Exception as e:
-        logger.debug(f"Failed saving runtime blacklist: {e}")
+    except Exception:
+        pass
 
 
 def _mark_bad(ticker: str):
@@ -113,37 +191,20 @@ def _is_bad(ticker: str) -> bool:
 
 # ── Tier classification ───────────────────────────────────────────────────
 TIER_CORE = {
-    # Macro anchors — MUST be present for engines to work
     "SPY", "QQQ", "IWM", "DIA", "^VIX", "DX-Y.NYB", "GC=F", "SI=F",
     "CL=F", "BZ=F", "HG=F", "NG=F",
     "TLT", "IEF", "SHY", "HYG", "LQD", "TIP",
-    # US sectors
     "XLK", "XLE", "XLF", "XLV", "XLI", "XLB", "XLY", "XLP", "XLU", "XLRE", "XLC",
-    # Key ETFs
     "GLD", "SLV", "GDX", "USO", "UNG", "UUP",
-    # Crypto
     "BTC-USD", "ETH-USD",
-    # Major FX
     "EURUSD=X", "USDJPY=X", "GBPUSD=X", "USDIDR=X", "AUDUSD=X",
-    # IHSG core
     "^JKSE", "EIDO", "BBCA.JK", "BBRI.JK", "BMRI.JK", "TLKM.JK",
-    # Mag7
     "NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "AMD",
 }
 
 
-def classify_tier(ticker: str, all_tickers: List[str]) -> str:
-    """Returns 'core', 'secondary', or 'tail'."""
-    if ticker in TIER_CORE:
-        return "core"
-    # Heuristic: if ticker is a known bucket leader → secondary
-    if ticker.endswith(".JK") or "=" in ticker or "-USD" in ticker:
-        return "secondary"
-    return "secondary"  # default — all explicit tickers get secondary treatment
-
-
 # ── Retry helpers ─────────────────────────────────────────────────────────
-def _retry_call(func, *args, max_attempts=3, base_delay=2.0, **kwargs):
+def _retry_call(func, *args, max_attempts=2, base_delay=2.0, **kwargs):
     last_err = None
     for attempt in range(1, max_attempts + 1):
         try:
@@ -151,12 +212,14 @@ def _retry_call(func, *args, max_attempts=3, base_delay=2.0, **kwargs):
         except Exception as e:
             last_err = e
             err_str = str(e).lower()
+            is_rate = "too many requests" in err_str or "429" in err_str or "rate" in err_str
             is_timeout = "timeout" in err_str or "timed out" in err_str
-            is_rate = "too many requests" in err_str or "429" in err_str or "403" in err_str
-            if not (is_timeout or is_rate or "failed" in err_str):
+            if is_rate:
+                _set_rate_limit(60.0)
+                raise
+            if not (is_timeout or "failed" in err_str):
                 raise
             delay = base_delay * (2 ** (attempt - 1))
-            logger.warning(f"[Retry {attempt}/{max_attempts}] {e} — sleeping {delay:.1f}s")
             time.sleep(delay)
     raise last_err
 
@@ -216,6 +279,8 @@ def _save_cache(key: str, days: int, data: Dict[str, pd.Series]):
 
 # ── Source 1: yfinance batch ──────────────────────────────────────────────
 def _fetch_yf_batch(tickers: List[str], days: int = 756) -> pd.DataFrame:
+    if _is_rate_limited():
+        raise RuntimeError("yfinance rate-limit cooldown active")
     period = "2y" if days <= 500 else "5y"
     return _retry_call(
         yf.download,
@@ -225,7 +290,7 @@ def _fetch_yf_batch(tickers: List[str], days: int = 756) -> pd.DataFrame:
         group_by="ticker",
         auto_adjust=True,
         prepost=False,
-        threads=False,        # Streamlit + yf threads = deadlock
+        threads=False,
         progress=False,
         max_attempts=2,
         base_delay=3.0,
@@ -258,11 +323,10 @@ def _extract_close(df: pd.DataFrame, tickers: List[str]) -> Dict[str, pd.Series]
     return out
 
 
-# ── Source 2: Polygon.io fallback (US equities only) ──────────────────────
+# ── Polygon fallback ──────────────────────────────────────────────────────
 def _fetch_polygon_single(ticker: str, days: int = 756) -> Optional[pd.Series]:
     if not POLYGON_API_KEY:
         return None
-    # Skip non-US tickers (Polygon free tier doesn't cover)
     if "=" in ticker or "-USD" in ticker or "." in ticker or "^" in ticker:
         return None
     try:
@@ -281,12 +345,10 @@ def _fetch_polygon_single(ticker: str, days: int = 756) -> Optional[pd.Series]:
         df = pd.DataFrame(results)
         df["date"] = pd.to_datetime(df["t"], unit="ms")
         return pd.Series(df["c"].values, index=df["date"], name=ticker).dropna()
-    except Exception as e:
-        logger.debug(f"Polygon fetch failed for {ticker}: {e}")
+    except Exception:
         return None
 
 
-# ── Progress callback ─────────────────────────────────────────────────────
 def _safe_progress(cb, msg: str, pct: float):
     if cb is None:
         return
@@ -296,54 +358,71 @@ def _safe_progress(cb, msg: str, pct: float):
         pass
 
 
-# ── Public: load_prices (backwards compatible signature) ──────────────────
+# ── Public: load_prices ──────────────────────────────────────────────────
 def load_prices(tickers: List[str], days: int = 756,
                 max_age_hours: float = 12.0,
                 progress_cb=None) -> Dict[str, pd.Series]:
-    """
-    Tiered loading:
-      Tier 1 (CORE ~50): fetch blocking, must succeed
-      Tier 2 (SECONDARY ~200): fetch with fallback, can partially fail
-      Tail filtering: skip blacklisted tickers
-    """
     if not tickers:
         return {}
 
-    # Filter blacklist
-    clean = [t for t in tickers if not _is_bad(t)]
-    skipped = [t for t in tickers if _is_bad(t)]
-    if skipped:
-        logger.info(f"Skipping {len(skipped)} blacklisted tickers")
+    # STEP 1: Normalize (company names → tickers, OR None to skip)
+    normalized = []
+    skipped_unmappable = []
+    for t in tickers:
+        norm = _normalize_ticker(t)
+        if norm is None:
+            skipped_unmappable.append(t)
+            continue
+        normalized.append(norm)
+
+    if skipped_unmappable:
+        logger.info(f"Skipped {len(skipped_unmappable)} unmappable names: {skipped_unmappable[:8]}")
+
+    # STEP 2: Dedupe + filter blacklist
+    clean = []
+    seen = set()
+    skipped_bl = []
+    for t in normalized:
+        if t in seen:
+            continue
+        seen.add(t)
+        if _is_bad(t):
+            skipped_bl.append(t)
+            continue
+        clean.append(t)
+
+    if skipped_bl:
+        logger.info(f"Skipped {len(skipped_bl)} blacklisted tickers")
 
     tickers_key = _hash_tickers(clean)
 
-    # Try fresh cache first
+    # STEP 3: Try fresh cache
     cached = _load_cache(tickers_key, days, max_age_hours)
     if cached is not None and len(cached) > len(clean) * 0.6:
         _safe_progress(progress_cb, "Loaded from price cache", 0.55)
         logger.info(f"Cache HIT: {len(cached)} series")
         return cached
 
-    # Split into tiers
+    # STEP 4: Tier split
     core = [t for t in clean if t in TIER_CORE]
     secondary = [t for t in clean if t not in TIER_CORE]
 
     _safe_progress(progress_cb, f"Tier 1: Core ({len(core)} tickers)...", 0.10)
     all_data: Dict[str, pd.Series] = {}
 
-    # ── TIER 1 — CORE (blocking) ──
     if core:
-        all_data.update(_fetch_tier(core, days, batch_size=15, source_priority=["yfinance", "polygon"]))
-        _safe_progress(progress_cb, f"Tier 1 done: {len(all_data)}/{len(core)} core", 0.30)
+        all_data.update(_fetch_tier(core, days, batch_size=15))
+        _safe_progress(progress_cb, f"Tier 1 done: {len(all_data)}/{len(core)}", 0.30)
 
-    # ── TIER 2 — SECONDARY (best-effort) ──
-    if secondary:
-        _safe_progress(progress_cb, f"Tier 2: Secondary ({len(secondary)} tickers)...", 0.32)
-        sec_data = _fetch_tier(secondary, days, batch_size=20, source_priority=["yfinance", "polygon"])
+    if secondary and not _is_rate_limited():
+        _safe_progress(progress_cb, f"Tier 2: Secondary ({len(secondary)})...", 0.32)
+        sec_data = _fetch_tier(secondary, days, batch_size=20)
         all_data.update(sec_data)
         _safe_progress(progress_cb, f"Tier 2 done: {len(sec_data)}/{len(secondary)}", 0.52)
+    elif _is_rate_limited():
+        logger.warning("Skipping Tier 2 — rate limit active")
 
-    # Save fresh cache
+    # Save cache if we have a meaningful amount
     if len(all_data) > max(len(clean) * 0.5, 10):
         _save_cache(tickers_key, days, all_data)
     elif len(all_data) == 0:
@@ -352,7 +431,6 @@ def load_prices(tickers: List[str], days: int = 756,
             logger.warning("Live fetch returned 0 — using STALE cache")
             return stale
 
-    # Persist runtime blacklist
     _save_runtime_blacklist()
 
     loaded, total = len(all_data), len(clean)
@@ -363,67 +441,52 @@ def load_prices(tickers: List[str], days: int = 756,
     return all_data
 
 
-def _fetch_tier(tickers: List[str], days: int, batch_size: int = 20,
-                source_priority: List[str] = None) -> Dict[str, pd.Series]:
-    """Fetch a tier of tickers with cascading sources."""
-    source_priority = source_priority or ["yfinance"]
+def _fetch_tier(tickers: List[str], days: int, batch_size: int = 20) -> Dict[str, pd.Series]:
     out: Dict[str, pd.Series] = {}
     total_batches = math.ceil(len(tickers) / batch_size)
 
     for i in range(total_batches):
+        if _is_rate_limited():
+            logger.warning(f"Stopping tier fetch — rate-limited at batch {i+1}/{total_batches}")
+            break
+
         batch = tickers[i * batch_size:(i + 1) * batch_size]
+        try:
+            df = _fetch_yf_batch(batch, days)
+            batch_data = _extract_close(df, batch)
+            out.update(batch_data)
+            missing = [t for t in batch if t not in batch_data]
 
-        # Try yfinance batch
-        if "yfinance" in source_priority:
-            try:
-                df = _fetch_yf_batch(batch, days)
-                batch_data = _extract_close(df, batch)
-                out.update(batch_data)
-                missing = [t for t in batch if t not in batch_data]
-                if missing and "polygon" in source_priority:
-                    # Try Polygon for missing
-                    for t in missing[:5]:  # cap polygon calls
-                        s = _fetch_polygon_single(t, days)
-                        if s is not None and len(s) > 10:
-                            out[t] = s
-                        else:
-                            _mark_bad(t)
-                else:
-                    for t in missing:
+            # Try Polygon for missing US tickers
+            if missing and POLYGON_API_KEY and not _is_rate_limited():
+                for t in missing[:3]:
+                    s = _fetch_polygon_single(t, days)
+                    if s is not None and len(s) > 10:
+                        out[t] = s
+                    else:
                         _mark_bad(t)
-            except Exception as e:
-                err = str(e).lower()
-                if "429" in err or "rate limit" in err or "too many" in err:
-                    logger.warning(f"Rate limit hit — backing off 10s")
-                    time.sleep(10)
-                else:
-                    logger.error(f"Batch {i+1} failed: {e}")
-                    # Try single-ticker fallback for this batch
-                    for t in batch:
-                        if t in out:
-                            continue
-                        s = _fetch_polygon_single(t, days) if "polygon" in source_priority else None
-                        if s is not None:
-                            out[t] = s
-                        else:
-                            try:
-                                s_yf = yf.Ticker(t).history(period="2y", interval="1d", progress=False)["Close"].dropna()
-                                if len(s_yf) > 5:
-                                    out[t] = s_yf
-                                else:
-                                    _mark_bad(t)
-                            except Exception:
-                                _mark_bad(t)
-                        time.sleep(0.2)
+            else:
+                for t in missing:
+                    _mark_bad(t)
+        except Exception as e:
+            err = str(e).lower()
+            if "429" in err or "rate" in err or "too many" in err:
+                logger.warning(f"Rate limit hit batch {i+1} — aborting remaining batches")
+                _set_rate_limit(60.0)
+                break
+            else:
+                logger.error(f"Batch {i+1} failed: {e}")
+                for t in batch:
+                    if t not in out:
+                        _mark_bad(t)
 
-        # Inter-batch jitter to avoid rate limit
         if i < total_batches - 1:
-            time.sleep(0.4)
+            time.sleep(0.5)
 
     return out
 
 
-# ── Snapshot persistence (unchanged from v3.2) ────────────────────────────
+# ── Snapshot persistence (unchanged) ──────────────────────────────────────
 SNAP_PATH = Path(".cache/snapshot_v3.json")
 SNAP_PATH.parent.mkdir(parents=True, exist_ok=True)
 

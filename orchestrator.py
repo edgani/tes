@@ -1449,7 +1449,8 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         # ---- Risk Ranges ----
         _safe_progress(progress_cb, "Computing Risk Ranges (TRR/LRR)...", 0.72)
         try:
-            ranges = RiskRangeEngine().run(prices)
+            # v2 — pass quad + vix for regime-conditional ranges
+            ranges = RiskRangeEngine(current_quad=quad, vix=vix_last).run(prices)
             if ranges and ranges.get("asset_ranges"):
                 merged_ranges = dict(rr_proxy.get("asset_ranges", {}))
                 merged_ranges.update(ranges.get("asset_ranges", {}))
