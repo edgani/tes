@@ -2608,39 +2608,64 @@ if page == "🏠 Dashboard":
                     st.caption(f"📊 {a['next_bias']}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # V2 MACRO ENGINES (Sprint 1-5) — DASHBOARD = MACRO ONLY, NO TICKERS
-    # All ticker-specific data moved to ⚡ Alpha Center
+    # V2.3 MACRO COMMAND CENTER (Sprint 1-7) — DASHBOARD = MACRO ONLY
     # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("## 🚀 V2 Macro Engine Outputs")
-    st.caption("Detailed ticker tables → ⚡ Alpha Center")
+    st.markdown("## 🚀 V2.3 Macro Command Center")
+    st.caption("Macro signals only. Ticker tables → ⚡ Alpha Center · Specific markets → US/Forex/Commodity/Crypto/IHSG tabs")
 
     v2_summary = snap.get("summary", {})
 
-    # ── KPI Row (5 cols) — no tickers, just counts/states ──
-    v2c1, v2c2, v2c3, v2c4, v2c5 = st.columns(5)
-    with v2c1:
+    # ── TOP KPI ROW (6 cols, more dense) ──
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    with k1:
+        st.metric("Markov Regime", str(v2_summary.get("v7_markov_regime", "—")).split("_")[0] if v2_summary.get("v7_markov_regime") else "—",
+                 f"{v2_summary.get('v7_markov_confidence', 0):.0%} conf")
+    with k2:
+        cp_alert = v2_summary.get("v7_markov_cp_alert", False)
+        st.metric("CP Alert", "🚨 YES" if cp_alert else "✓ No",
+                 "regime shift risk" if cp_alert else "stable")
+    with k3:
         st.metric("Yves Alerts", v2_summary.get("v2_yves_alerts", 0),
                  v2_summary.get("v2_yves_top_level", "—"))
-    with v2c2:
-        st.metric("Cascade Shocks", v2_summary.get("v2_cascade_shocks", 0))
-    with v2c3:
-        disc_summary_raw = snap.get("discovery_brain", {}).get("summary", {}) or {}
-        st.metric("Discovery", v2_summary.get("v2_discovery_total", 0),
-                 f"A={disc_summary_raw.get('adaptive', 0)} R={disc_summary_raw.get('reactive', 0)} P={disc_summary_raw.get('proactive', 0)}")
-    with v2c4:
-        st.metric("New Tickers", v2_summary.get("v2_new_tickers", 0))
-    with v2c5:
-        deployed = v2_summary.get("v2_portfolio_deployed_pct", 0) or 0
-        st.metric("Portfolio Deployed", f"{deployed:.0%}" if isinstance(deployed, (int, float)) else "—")
+    with k4:
+        kelly = v2_summary.get("v7_markov_kelly", 0.25) or 0.25
+        st.metric("Kelly Fraction", f"{kelly:.0%}",
+                 "regime-adjusted")
+    with k5:
+        st.metric("Smart $ Consensus", v2_summary.get("v7_smart_money_consensus", 0),
+                 f"{v2_summary.get('v7_smart_money_funds', 0)} funds")
+    with k6:
+        n_flipped = v2_summary.get("v2_composite_flipped_count", 0)
+        st.metric("Direction Flips", n_flipped,
+                 "⚠️ check" if n_flipped > 5 else "OK")
 
-    # ── Tabs untuk grouping rapi ──
-    v2_tab1, v2_tab2, v2_tab3, v2_tab4, v2_tab5 = st.tabs([
+    # ── SECONDARY KPI ROW (4 cols) ──
+    s1, s2, s3, s4 = st.columns(4)
+    with s1:
+        st.metric("Cascade Shocks", v2_summary.get("v2_cascade_shocks", 0))
+    with s2:
+        st.metric("Discovery", v2_summary.get("v2_discovery_total", 0),
+                 f"Top {v2_summary.get('v7_top_theses_count', 0)} theses")
+    with s3:
+        fiscal = v2_summary.get("v7_fiscal_dominance_score", 0) or 0
+        st.metric("Fiscal Stress", f"{fiscal}/100",
+                 "🔴 SEVERE" if fiscal >= 70 else "🟡 ACTIVE" if fiscal >= 50 else "✓")
+    with s4:
+        rot = v2_summary.get("v7_capital_rotation_regime") or "—"
+        st.metric("Capital Rotation", rot.split(" ")[0] if rot != "—" else "—")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # TABS: 7 macro views — clean grouping
+    # ═══════════════════════════════════════════════════════════════════
+    v2_tab1, v2_tab2, v2_tab3, v2_tab4, v2_tab5, v2_tab6, v2_tab7 = st.tabs([
         "🧠 Yves Behavioral",
-        "📊 GIP v10 Bayesian",
-        "🔍 Discovery Summary",
-        "⚡ Cascade Summary",
-        "🪙 Bonds-XAU Regime",
+        "🎯 Markov Regime V3",
+        "💼 Smart Money 13F",
+        "🪙 Bonds-XAU + Fiscal",
+        "⚡ Cascade + Capital Rotation",
+        "🔍 Top Theses (Investor Lens)",
+        "📊 GIP v10 + Discovery",
     ])
 
     # ── TAB 1: Yves Behavioral ──
@@ -2648,16 +2673,13 @@ if page == "🏠 Dashboard":
         yves_v2 = snap.get("yves_v2", {}) or {}
         alerts = yves_v2.get("alerts", [])
         if not alerts:
-            st.info("Tidak ada alert aktif — kondisi behavioral balanced.")
+            st.info("✓ Tidak ada alert aktif — kondisi behavioral balanced.")
         else:
-            # Compact summary first
             top_alert = alerts[0]
             sc1, sc2, sc3 = st.columns(3)
-            sc1.metric("Top Alert", top_alert.get("level", "—"))
+            sc1.metric("Top Alert Level", top_alert.get("level", "—"))
             sc2.metric("Category", top_alert.get("category", "—").replace("_", " ").title()[:18])
             sc3.metric("Confidence", f"{top_alert.get('confidence', 0):.0%}")
-
-            # Full alert cards (compact)
             for alert in alerts:
                 level_emoji = {"CRITICAL": "🔴", "OPPORTUNITY": "🟢", "WARNING": "🟡",
                               "CAUTION": "🟠", "NEUTRAL": "⚪"}.get(alert.get("level", ""), "⚪")
@@ -2672,149 +2694,206 @@ if page == "🏠 Dashboard":
                     with cB:
                         st.caption(f"**Invalidation:**\n{alert.get('invalidation', '—')}")
                         st.caption(f"**Horizon:** {alert.get('time_horizon', '—')}")
-                        if alert.get("historical_analogs"):
-                            st.caption(f"**Analogs:** {', '.join(alert['historical_analogs'])}")
 
-    # ── TAB 2: GIP v10 Bayesian Regime ──
+    # ── TAB 2: Markov Regime V3 (HSMM + BOCPD) ──
     with v2_tab2:
-        gip_v10_data = snap.get("gip_v10", {}) or {}
-        if not gip_v10_data:
-            st.info("GIP v10 data unavailable")
+        markov = snap.get("markov_v3", {}) or {}
+        if not markov:
+            st.info("Markov V3 unavailable")
         else:
-            # Top: structural vs monthly quads
-            gc1, gc2 = st.columns(2)
-            with gc1:
-                st.metric("Structural Quad", gip_v10_data.get("structural_quad", "-"),
-                         f"Conf {gip_v10_data.get('structural_confidence', 0):.0%}")
-                st.metric("Growth Momentum", f"{gip_v10_data.get('growth_momentum', 0):+.3f}",
-                         f"Nowcast adj {gip_v10_data.get('nowcast_growth_adj', 0):+.3f}")
-            with gc2:
-                st.metric("Monthly Quad", gip_v10_data.get("monthly_quad", "-"),
-                         f"Conf {gip_v10_data.get('monthly_confidence', 0):.0%}")
-                st.metric("Inflation Momentum", f"{gip_v10_data.get('inflation_momentum', 0):+.3f}",
-                         f"Nowcast adj {gip_v10_data.get('nowcast_inflation_adj', 0):+.3f}")
+            mc1, mc2, mc3 = st.columns(3)
+            with mc1:
+                st.metric("Current Regime", markov.get("current_regime", "—").replace("_", " "),
+                         f"{markov.get('confidence', 0):.0%} confidence")
+            with mc2:
+                cp_p = markov.get("change_point_probability", 0)
+                st.metric("Change-Point Prob", f"{cp_p:.0%}",
+                         "🚨 ALERT" if markov.get("change_point_alert") else "stable")
+            with mc3:
+                dur = markov.get("expected_duration_days", 30)
+                st.metric("Expected Duration", f"{dur:.0f} days",
+                         "regime persistence")
 
-            # Quad probability bar (visual)
-            probs = gip_v10_data.get("quad_probabilities", {}) or {}
-            if probs:
-                st.markdown("**Quad Probability Distribution**")
-                prob_cols = st.columns(4)
-                for i, q in enumerate(("Q1", "Q2", "Q3", "Q4")):
-                    p = probs.get(q, 0)
-                    label = {"Q1": "Q1 Goldilocks", "Q2": "Q2 Reflation",
-                             "Q3": "Q3 Stagflation", "Q4": "Q4 Deflation"}[q]
-                    bar = "█" * max(1, int(p * 20)) + "░" * (20 - max(1, int(p * 20)))
-                    prob_cols[i].metric(label, f"{p:.0%}", bar)
+            st.markdown("**Regime Probabilities Right Now**")
+            rp = markov.get("regime_probabilities", {})
+            if rp:
+                rp_cols = st.columns(5)
+                for i, (regime, prob) in enumerate(rp.items()):
+                    rp_cols[i % 5].metric(regime.replace("_", " ").title()[:15], f"{prob:.0%}")
 
-            n_loaded = gip_v10_data.get("n_series_loaded", 0)
-            n_total = gip_v10_data.get("n_series_total", 0)
-            st.caption(f"FRED series: {n_loaded}/{n_total} loaded")
+            st.markdown("**Forward Forecasts (Transition Matrix Projection)**")
+            for label, key in [("1 Month", "forecast_1m"), ("3 Months", "forecast_3m"), ("6 Months", "forecast_6m")]:
+                f = markov.get(key, {})
+                if f:
+                    cols = st.columns(5)
+                    cols[0].markdown(f"**{label}:**")
+                    sorted_f = sorted(f.items(), key=lambda x: x[1], reverse=True)
+                    for i, (regime, prob) in enumerate(sorted_f[:4]):
+                        cols[i+1].caption(f"{regime.split('_')[0]}: {prob:.0%}")
 
-    # ── TAB 3: Discovery Summary (no ticker tables) ──
+            kelly = markov.get("kelly_fraction", 0.25)
+            st.markdown(f"**Regime-Conditional Kelly:** {kelly:.0%}")
+            if markov.get("notes"):
+                for n in markov["notes"]:
+                    st.caption(n)
+
+    # ── TAB 3: Smart Money 13F ──
     with v2_tab3:
-        discovery_v2 = snap.get("discovery_brain", {}) or {}
-        if not discovery_v2.get("by_mode"):
-            st.info("Discovery Brain — no candidates this snapshot")
+        sm = snap.get("smart_money", {}) or {}
+        if not sm.get("ok"):
+            st.info("Smart money data unavailable")
         else:
-            dsumm = discovery_v2.get("summary", {})
-            dc1, dc2, dc3, dc4 = st.columns(4)
-            dc1.metric("🎯 Adaptive", dsumm.get("adaptive", 0))
-            dc2.metric("⚡ Reactive", dsumm.get("reactive", 0))
-            dc3.metric("🔮 Proactive", dsumm.get("proactive", 0))
-            dc4.metric("High Conviction", dsumm.get("high_conviction", 0))
+            sm1, sm2, sm3 = st.columns(3)
+            sm1.metric("Funds Tracked", sm.get("n_funds_tracked", 0))
+            sm2.metric("Consensus Picks", len(sm.get("consensus_picks", [])))
+            sm3.metric("Top Conviction Names", len(sm.get("top_conviction", [])))
 
-            # Top 5 highest conviction with NAMES not tickers
-            top_items = discovery_v2.get("top_10", [])[:5]
-            if top_items:
-                st.markdown("**Top 5 Highest-Conviction Theses**")
-                for item in top_items:
-                    cnf = item.get("confidence", 0)
-                    mode_emoji = {"adaptive": "🎯", "reactive": "⚡", "proactive": "🔮"}.get(item.get("mode", ""), "•")
-                    st.markdown(f"{mode_emoji} **{item.get('name','-').replace('_', ' ')}** · conf {cnf:.0%} · {item.get('stage','-')}")
-                    st.caption(f"_{item.get('thesis', '-')[:200]}_")
-            st.info("📊 Full discovery list with ticker beneficiaries → ⚡ Alpha Center")
+            st.markdown("**🎯 Cross-Fund Consensus Picks (held by 3+ smart money funds)**")
+            consensus = sm.get("consensus_picks", [])[:15]
+            if consensus:
+                df_rows = []
+                for c in consensus:
+                    df_rows.append({
+                        "Ticker": c.get("ticker"),
+                        "# Holders": c.get("n_holders"),
+                        "Funds": ", ".join(c.get("holders", [])[:3]),
+                        "Avg %": f"{c.get('avg_pct', 0):.1%}",
+                        "Weighted $B": f"${c.get('weighted_pct_bn', 0):.1f}",
+                    })
+                st.dataframe(pd.DataFrame(df_rows), width="stretch", hide_index=True)
 
-    # ── TAB 4: Cascade Summary (no ticker tables) ──
+            st.markdown("**📊 Funds Overview**")
+            for fund in sm.get("fund_overview", []):
+                with st.expander(f"**{fund.get('name', '?')}** · ${fund.get('aum_bn', 0):.1f}B AUM · {fund.get('n_holdings', 0)} holdings"):
+                    st.caption(f"_Philosophy:_ {fund.get('philosophy', '—')}")
+                    if fund.get("ytd_return_2026"):
+                        st.markdown(f"**YTD 2026 return:** +{fund['ytd_return_2026']:.0%}")
+
+    # ── TAB 4: Bonds-XAU + Fiscal ──
     with v2_tab4:
-        cascade_v2 = snap.get("cascade_analysis", {}) or {}
-        if not cascade_v2.get("cascades"):
-            st.info("No active shocks detected this snapshot")
-        else:
-            active_shocks = cascade_v2.get("active_shocks", {})
-            n_shocks = len(active_shocks)
-            total_impacts = sum(c.get("total_impacts", 0) for c in cascade_v2.get("cascades", {}).values())
-
-            sc1, sc2 = st.columns(2)
-            sc1.metric("Active Shocks", n_shocks)
-            sc2.metric("Total Cascade Impacts", total_impacts)
-
-            # List shocks (sources) without target tickers
-            st.markdown("**Active Shock Sources**")
-            for src, mag in active_shocks.items():
-                emoji = "🔼" if mag > 0 else "🔽"
-                st.caption(f"{emoji} **{src}**: {mag:+.1%} · {cascade_v2['cascades'].get(src, {}).get('total_impacts', 0)} downstream impacts")
-            st.info("📊 Full first/second/third-order ticker breakdown → ⚡ Alpha Center")
-
-    # ── TAB 5: Bonds-XAU Regime (NEW Sprint 6) ──
-    with v2_tab5:
         bxau = snap.get("bonds_xau_regime", {}) or {}
-        if not bxau.get("ok") or bxau.get("regime") == "UNKNOWN":
-            st.info("Bonds-XAU regime data unavailable")
+        ust = snap.get("ust_auction", {}) or {}
+
+        bx1, bx2 = st.columns(2)
+        with bx1:
+            st.markdown("**🪙 Bonds-XAU Regime**")
+            if bxau.get("ok"):
+                regime = bxau.get("regime", "UNKNOWN").replace("_", " ").title()
+                emoji = {"Risk Off Bonds Bid": "🔴", "Stagflation Gold Bull": "🟡",
+                        "Tight Fed Gold Headwind": "🟠", "Re Acceleration": "🟢"}.get(regime, "⚪")
+                st.markdown(f"### {emoji} {regime}")
+                m = bxau.get("metrics", {})
+                ry, yc = m.get("real_yield"), m.get("yield_curve_2s10s")
+                gs = m.get("gold_silver_ratio")
+                st.caption(f"Real Yield: {ry:.2f}% | Curve 2s10s: {yc:+.2f} | Gold/Silver: {gs:.1f}" if (ry and yc and gs) else "Metrics loading...")
+                biases = bxau.get("position_biases", {})
+                if biases:
+                    bc1, bc2 = st.columns(2)
+                    for col, key in [(bc1, "gold"), (bc1, "silver"), (bc2, "bonds"), (bc2, "miners")]:
+                        v = biases.get(key, {})
+                        col.markdown(f"**{key.title()}:** {v.get('bias', '—')} ({v.get('score', 0):+.2f})")
+
+        with bx2:
+            st.markdown("**💰 Fiscal Dominance**")
+            if ust.get("ok"):
+                fd = ust.get("fiscal_dominance", {})
+                st.markdown(f"### {fd.get('regime', '—')}")
+                st.caption(f"Score: {fd.get('score', 0)}/100")
+                st.markdown(f"**Position bias:** {fd.get('position_bias', '—')}")
+                for flag in fd.get("flags", [])[:5]:
+                    st.caption(f"• {flag}")
+
+        if ust.get("ok"):
+            st.markdown("**📋 Recent UST Auctions**")
+            auctions = ust.get("recent_auctions", {})
+            for key, a in list(auctions.items())[:3]:
+                with st.expander(f"{a.get('tenor', '—')} · {a.get('date', '—')} · Grade {a.get('grade', '—')}"):
+                    ac1, ac2, ac3, ac4 = st.columns(4)
+                    ac1.metric("High Yield", f"{a.get('high_yield_pct', 0):.3f}%")
+                    ac2.metric("Bid/Cover", f"{a.get('bid_to_cover', 0):.2f}x")
+                    ac3.metric("Indirect %", f"{a.get('indirect_bidder_pct', 0):.1f}%")
+                    ac4.metric("Primary Dealer", f"{a.get('primary_dealer_pct', 0):.2f}%")
+                    st.caption(a.get("interpretation", ""))
+
+    # ── TAB 5: Cascade + Capital Rotation ──
+    with v2_tab5:
+        cascade_v2 = snap.get("cascade_analysis", {}) or {}
+        cap_rot = snap.get("capital_rotation", {}) or {}
+
+        st.markdown("**⚡ Cascade Analysis**")
+        if cascade_v2.get("cascades"):
+            active_shocks = cascade_v2.get("active_shocks", {})
+            for src, mag in list(active_shocks.items())[:5]:
+                emoji = "🔼" if mag > 0 else "🔽"
+                impacts = cascade_v2["cascades"].get(src, {}).get("total_impacts", 0)
+                st.caption(f"{emoji} **{src}**: {mag:+.1%} → {impacts} downstream impacts")
         else:
-            # Regime headline
-            regime_colors = {
-                "RISK_OFF_BONDS_BID": "🔴",
-                "STAGFLATION_GOLD_BULL": "🟡",
-                "TIGHT_FED_GOLD_HEADWIND": "🟠",
-                "RE_ACCELERATION": "🟢",
-                "NEUTRAL": "⚪",
-            }
-            emoji = regime_colors.get(bxau["regime"], "⚪")
-            st.markdown(f"### {emoji} **Regime: {bxau['regime'].replace('_', ' ').title()}**")
-            if bxau.get("flags"):
-                st.caption(f"**Flags:** {' · '.join(bxau['flags'])}")
+            st.info("No active shocks detected")
 
-            # Metrics grid
-            metrics = bxau.get("metrics", {})
-            m1, m2, m3 = st.columns(3)
-            with m1:
-                ry = metrics.get("real_yield")
-                st.metric("Real Yield (10y)", f"{ry:.2f}%" if ry is not None else "—",
-                         f"{'Low' if ry and ry < 1 else 'High' if ry and ry > 2 else 'Mid'}")
-                yc = metrics.get("yield_curve_2s10s")
-                st.metric("Yield Curve 2s10s", f"{yc:+.2f}" if yc is not None else "—",
-                         f"{'Inverted ⚠️' if yc and yc < 0 else 'Normal'}")
-            with m2:
-                gs = metrics.get("gold_silver_ratio")
-                st.metric("Gold/Silver Ratio", f"{gs:.1f}" if gs else "—",
-                         f"{'Risk Off >80' if gs and gs > 80 else 'Risk On <60' if gs and gs < 60 else 'Mid'}")
-                tg = metrics.get("tlt_gld_ratio")
-                st.metric("TLT/GLD Ratio", f"{tg:.3f}" if tg else "—")
-            with m3:
-                dxg = metrics.get("dxy_gold_corr_60d")
-                st.metric("DXY-Gold Corr 60d", f"{dxg:+.2f}" if dxg is not None else "—",
-                         f"{'Classic Inverse' if dxg and dxg < -0.5 else 'Rare Decorr' if dxg and dxg > 0.3 else 'Mid'}")
-                cs = metrics.get("credit_spread_30d")
-                st.metric("Credit Spread (HYG-LQD) 30d", f"{cs:+.2%}" if cs else "—")
+        st.markdown("---")
+        st.markdown("**💱 Capital Rotation (COATUE Thesis)**")
+        if cap_rot.get("ok"):
+            cr1, cr2, cr3 = st.columns(3)
+            cr1.metric("Hyperscaler 3M", f"{(cap_rot.get('hyperscaler_avg_3m') or 0)*100:.1f}%")
+            cr2.metric("Semi 3M", f"{(cap_rot.get('semi_avg_3m') or 0)*100:.1f}%")
+            cr3.metric("Power 3M", f"{(cap_rot.get('power_avg_3m') or 0)*100:.1f}%")
+            spread = cap_rot.get("rotation_spread_3m_pp", 0)
+            st.markdown(f"**Spread:** {spread:+.1f}pp · {cap_rot.get('regime_label', '')}")
+            st.caption(cap_rot.get("shortage_premium_status", ""))
+            fm = cap_rot.get("funding_math", {})
+            if fm:
+                st.caption(f"💰 {fm.get('interpretation', '')}")
 
-            # Position biases
-            st.markdown("**Asset Class Bias**")
-            biases = bxau.get("position_biases", {})
-            b1, b2, b3, b4 = st.columns(4)
-            for col, (asset, key) in zip([b1, b2, b3, b4],
-                                          [(b1, "gold"), (b2, "silver"), (b3, "bonds"), (b4, "miners")]):
-                v = biases.get(key, {})
-                score = v.get("score", 0)
-                bias_label = v.get("bias", "NEUTRAL")
-                color = "🟢" if score > 0.2 else "🔴" if score < -0.2 else "⚪"
-                col.metric(key.title(), f"{color} {bias_label}", f"score {score:+.2f}")
+    # ── TAB 6: Top Theses (Investor Lens) ──
+    with v2_tab6:
+        top_theses = snap.get("top_theses", [])
+        if not top_theses:
+            st.info("No top theses yet")
+        else:
+            st.markdown(f"**Top {len(top_theses)} highest-thesis-score tickers (Leopold + COATUE + Citrini + Hedgeye + Druckenmiller + Soros)**")
+            for i, t in enumerate(top_theses[:15]):
+                with st.expander(f"#{i+1} **{t.get('ticker')}** · Score {t.get('thesis_score', 0):.0f}/100 · {t.get('primary_role', '—')}"):
+                    st.markdown(f"_{t.get('primary_thesis', '')[:300]}_")
+                    if t.get("thesis_rationale"):
+                        st.markdown(t["thesis_rationale"])
+                    fr = t.get("matched_frameworks", [])
+                    if fr:
+                        st.caption(f"**Frameworks matched:** {', '.join([x.title() for x in fr])}")
+                    if t.get("conflicts"):
+                        for c in t["conflicts"]:
+                            st.warning(f"⚠️ {c}")
+
+    # ── TAB 7: GIP v10 + Discovery ──
+    with v2_tab7:
+        gip_v10_data = snap.get("gip_v10", {}) or {}
+        discovery_v2 = snap.get("discovery_brain", {}) or {}
+
+        gv1, gv2 = st.columns(2)
+        with gv1:
+            st.markdown("**📊 GIP v10 (Bayesian)**")
+            if gip_v10_data:
+                st.markdown(f"### {gip_v10_data.get('structural_quad', '—')} · {gip_v10_data.get('structural_confidence', 0):.0%}")
+                st.caption(f"Monthly: {gip_v10_data.get('monthly_quad', '—')} ({gip_v10_data.get('monthly_confidence', 0):.0%})")
+                probs = gip_v10_data.get("quad_probabilities", {})
+                if probs:
+                    for q, p in probs.items():
+                        st.caption(f"P({q}) = {p:.0%}")
+        with gv2:
+            st.markdown("**🔍 Discovery Brain**")
+            dsumm = discovery_v2.get("summary", {})
+            st.markdown(f"### {discovery_v2.get('total', 0)} candidates")
+            st.caption(f"Adaptive: {dsumm.get('adaptive', 0)} · Reactive: {dsumm.get('reactive', 0)} · Proactive: {dsumm.get('proactive', 0)}")
+            for item in discovery_v2.get("top_10", [])[:3]:
+                st.markdown(f"• **{item.get('name', '—').replace('_', ' ')}** ({item.get('confidence', 0):.0%})")
 
     # ═══════════════════════════════════════════════════════════════════
-    # FOOTER — minimal caption (background, not prominent)
+    # FOOTER
     # ═══════════════════════════════════════════════════════════════════
     n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
     flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note} · v28-Sprint6")
+    cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v29-Sprint7")
+
 
 elif page == "⚡ Alpha Center":
     st.markdown("## ⚡ Alpha Center")

@@ -390,6 +390,92 @@ except Exception as e:
     def classify_ticker(t): return "us_equity"
     def filter_for_tab(tickers, tab): return tickers
 
+# ═══════════════════════════════════════════════════════════════════════
+# SPRINT 7 NEW ENGINES — thought process, markov v3, smart money,
+# capital rotation, UST auction, VRP, squeeze
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from engines.thought_process_engine import compute_thesis as v7_compute_thesis, analyze_multi as v7_thesis_multi
+    _V7_THOUGHT = True
+except Exception as e:
+    logger.error(f"Failed to import thought_process_engine: {e}")
+    _V7_THOUGHT = False
+    def v7_compute_thesis(*a, **k): return {"thesis_score": 0, "matched_frameworks": []}
+    def v7_thesis_multi(*a, **k): return {}
+
+try:
+    from engines.markov_regime_engine_v3 import run_markov_v3
+    _V7_MARKOV = True
+except Exception as e:
+    logger.error(f"Failed to import markov_regime_engine_v3: {e}")
+    _V7_MARKOV = False
+    def run_markov_v3(*a, **k):
+        from dataclasses import dataclass
+        @dataclass
+        class _M:
+            current_regime = "UNKNOWN"
+            confidence = 0
+            kelly_fraction = 0.25
+            notes = ["v3 unavailable"]
+            forecast_1m = {}
+            forecast_3m = {}
+            forecast_6m = {}
+            change_point_alert = False
+            change_point_probability = 0
+            stationary = {}
+            regime_probabilities = {}
+        return _M()
+
+try:
+    from engines.smart_money_tracker import run_smart_money_analysis, get_ticker_smart_money
+    _V7_SMART = True
+except Exception as e:
+    logger.error(f"Failed to import smart_money_tracker: {e}")
+    _V7_SMART = False
+    def run_smart_money_analysis(*a, **k): return {"ok": False, "n_funds_tracked": 0}
+    def get_ticker_smart_money(*a, **k): return {"smart_money_held": False}
+
+try:
+    from engines.capital_rotation_engine import compute_capital_rotation, get_ticker_capital_rotation_role
+    _V7_CAPROT = True
+except Exception as e:
+    logger.error(f"Failed to import capital_rotation_engine: {e}")
+    _V7_CAPROT = False
+    def compute_capital_rotation(*a, **k): return {"ok": False}
+    def get_ticker_capital_rotation_role(*a, **k): return None
+
+try:
+    from engines.ust_auction_tracker import run_ust_auction_tracker
+    _V7_UST = True
+except Exception as e:
+    logger.error(f"Failed to import ust_auction_tracker: {e}")
+    _V7_UST = False
+    def run_ust_auction_tracker(*a, **k): return {"ok": False}
+
+try:
+    from engines.vrp_scanner import scan_vrp
+    _V7_VRP = True
+except Exception as e:
+    logger.error(f"Failed to import vrp_scanner: {e}")
+    _V7_VRP = False
+    def scan_vrp(*a, **k): return {"ok": False, "calls_to_action": []}
+
+try:
+    from engines.squeeze_scanner import scan_squeezes
+    _V7_SQUEEZE = True
+except Exception as e:
+    logger.error(f"Failed to import squeeze_scanner: {e}")
+    _V7_SQUEEZE = False
+    def scan_squeezes(*a, **k): return {"ok": False, "imminent_squeezes": [], "strong_candidates": [], "watch_list": []}
+
+try:
+    from engines.tab_filter_engine import apply_tab_filter
+    _V7_TAB_FILTER = True
+except Exception as e:
+    logger.error(f"Failed to import tab_filter_engine: {e}")
+    _V7_TAB_FILTER = False
+    def apply_tab_filter(*a, **k): return {"passes_filter": True, "filter_score": 50}
+
 logger.info(
     "V2 engines loaded: "
     f"cascade={_V2_CASCADE} yves={_V2_YVES} sizing={_V2_SIZING} "
@@ -397,6 +483,11 @@ logger.info(
     f"edgar={_V2_EDGAR} supply={_V2_SUPPLY} gip10={_V2_GIP10} "
     f"composite={_V2_COMPOSITE} risk_setup={_V2_RISK_SETUP} "
     f"bonds_xau={_V2_BONDS_XAU} classifier={_V2_CLASSIFIER}"
+)
+logger.info(
+    "V7 (Sprint 7) engines loaded: "
+    f"thought_process={_V7_THOUGHT} markov_v3={_V7_MARKOV} smart_money={_V7_SMART} "
+    f"capital_rotation={_V7_CAPROT} ust_auction={_V7_UST} vrp={_V7_VRP} squeeze={_V7_SQUEEZE}"
 )
 
 def _strip_html(text):
@@ -707,14 +798,40 @@ def _classify_market(ticker: str) -> str:
         return "ihsg"
     return "us_equity"
 
-def _alpha_center_proxy(prices: dict, risk_ranges: dict, quad: str, vix: float, news_analysis: dict = None) -> dict:
+def _alpha_center_proxy(prices: dict, risk_ranges: dict, quad: str, vix: float,
+                       news_analysis: dict = None, composite_signals: dict = None,
+                       cot_data: dict = None, oi_data: dict = None,
+                       greeks_data: dict = None, gamma_data: dict = None) -> dict:
+    """v2.2 — Now uses composite_signal_engine for direction (FIXES Alpha Center vs US Stocks tab inconsistency).
+
+    If composite_signals dict passed in, direction comes from there (consistent with
+    US Stocks/Forex/Commodities/Crypto tabs). Falls back to naive composite if not.
+    """
     ar = risk_ranges.get("asset_ranges", {})
     alpha_items = []
     news_map = (news_analysis or {}).get("ticker_specific", {}) if news_analysis else {}
+    composite_signals = composite_signals or {}
+
     for ticker, v in ar.items():
-        comp = v.get("composite", "neutral")
-        if comp == "neutral":
-            continue
+        # ── v2.2: Use composite signal engine direction if available ──
+        cs = composite_signals.get(ticker, {})
+        if cs:
+            direction_from_composite = cs.get("direction", "NEUTRAL")
+            if direction_from_composite in ("NEUTRAL", "AVOID"):
+                continue  # Skip neutral/avoid in alpha center
+            side = "long" if direction_from_composite == "LONG" else "short"
+            confidence = cs.get("confidence", 0.5)
+            flipped = cs.get("flipped_from_composite", False)
+            comp = "bullish" if side == "long" else "bearish"  # Backwards-compat label
+        else:
+            # Fallback: naive composite (only used if composite_signals not provided)
+            comp = v.get("composite", "neutral")
+            if comp == "neutral":
+                continue
+            side = "long" if comp == "bullish" else "short"
+            confidence = 0.5
+            flipped = False
+
         px = v.get("px", 0)
         tr = v.get("trade", {})
         lrr = tr.get("lrr", 0)
@@ -722,15 +839,39 @@ def _alpha_center_proxy(prices: dict, risk_ranges: dict, quad: str, vix: float, 
         if not lrr or not trr:
             continue
         spread = trr - lrr
-        side = "long" if comp == "bullish" else "short"
-        if side == "long":
-            entry = round(lrr, 2); tp1 = round(lrr + spread * 0.5, 2); tp2 = round(trr, 2); stop = round(lrr - spread * 0.25, 2)
-        else:
-            entry = round(trr, 2); tp1 = round(trr - spread * 0.5, 2); tp2 = round(lrr, 2); stop = round(trr + spread * 0.25, 2)
-        rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
-        pos = (px - lrr) / spread if spread > 0 else 0.5
-        near_entry = (side == "long" and pos <= 0.35) or (side == "short" and pos >= 0.65)
+
+        # ── v2.2: Use risk_setup_engine for entry/target/stop if available ──
+        try:
+            from engines.risk_setup_engine import calculate_risk_setup as _rs
+            setup = _rs(
+                ticker=ticker, direction=side.upper(), price=px,
+                risk_range=v,
+                composite_signal=cs,
+                gamma_data=(gamma_data or {}).get(ticker),
+                greek_data=(greeks_data or {}).get(ticker),
+            )
+            entry = setup.get("entry")
+            tp1 = setup.get("target1")
+            tp2 = setup.get("target2")
+            stop = setup.get("stop")
+            rr = setup.get("rr", 0)
+            near_entry = setup.get("near_entry", False)
+        except Exception:
+            # Fallback to proxy
+            if side == "long":
+                entry = round(lrr, 2); tp1 = round(lrr + spread * 0.5, 2); tp2 = round(trr, 2); stop = round(lrr - spread * 0.25, 2)
+            else:
+                entry = round(trr, 2); tp1 = round(trr - spread * 0.5, 2); tp2 = round(lrr, 2); stop = round(trr + spread * 0.25, 2)
+            rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
+            pos = (px - lrr) / spread if spread > 0 else 0.5
+            near_entry = (side == "long" and pos <= 0.35) or (side == "short" and pos >= 0.65)
+
         grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
+        # v2.2: Boost grade by confidence
+        if confidence >= 0.7 and grade == "B":
+            grade = "A"
+        elif confidence < 0.3 and grade == "A":
+            grade = "B"
         worth = "YES" if near_entry else "WAIT"
         action = "Buy Now" if side == "long" and near_entry else ("Sell Now" if side == "short" and near_entry else "Wait")
         scanner = "structural"
@@ -740,9 +881,11 @@ def _alpha_center_proxy(prices: dict, risk_ranges: dict, quad: str, vix: float, 
             scanner = "regime_aligned"
         elif near_entry and rr >= 2.0:
             scanner = "bottleneck"
+        elif flipped:
+            scanner = "composite_flip"  # v2.2: special scanner for direction flips
         news = news_map.get(ticker, {})
         news_signal = news.get("front_run_signal")
-        priority_score = round(rr * 10 + (50 if near_entry else 0), 1)
+        priority_score = round(rr * 10 + (50 if near_entry else 0) + (confidence * 20), 1)
         if news_signal in ["STRONG_BULLISH_RUMOR", "NEWS_MOMENTUM_BUILDING", "BULLISH_CLUSTER"]:
             if side == "long":
                 priority_score += 30; scanner = "news_momentum"
@@ -1695,7 +1838,15 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                     vix_last = float(vix_s.iloc[-1])
                 except Exception:
                     pass
-            ac_proxy = _alpha_center_proxy(prices, result["risk_ranges"], quad, vix_last, news_analysis)
+            # v2.2: Pass composite_signals so Alpha Center direction matches other tabs
+            ac_proxy = _alpha_center_proxy(
+                prices, result["risk_ranges"], quad, vix_last, news_analysis,
+                composite_signals=result.get("composite_signals", {}),
+                cot_data=(result.get("cot_oi", {}) or {}).get("cot", {}),
+                oi_data=(result.get("cot_oi", {}) or {}).get("oi", {}),
+                greeks_data=result.get("greeks_data", {}),
+                gamma_data=result.get("gamma_data", {}),
+            )
             alpha_items = ac_proxy.get("all", [])
             result["alpha_center"] = ac_proxy
         else:
@@ -2290,9 +2441,121 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 n_flipped = sum(1 for s in composite_signals.values() if s.get("flipped_from_composite"))
                 n_total = len(composite_signals)
                 logger.info(f"Composite signals: {n_total} tickers, {n_flipped} direction flipped from naive composite")
+
+                # ── v2.2 FIX: Re-run alpha_center_proxy with composite_signals so
+                # Alpha Center direction is CONSISTENT with US Stocks/Forex/etc tabs ──
+                try:
+                    ac_proxy_v2 = _alpha_center_proxy(
+                        prices, result["risk_ranges"], quad, vix_last,
+                        news_analysis=result.get("news_analysis", {}),
+                        composite_signals=composite_signals,
+                        cot_data=(result.get("cot_oi", {}) or {}).get("cot", {}),
+                        oi_data=(result.get("cot_oi", {}) or {}).get("oi", {}),
+                        greeks_data=result.get("greeks_data", {}),
+                        gamma_data=result.get("gamma_data", {}),
+                    )
+                    result["alpha_center"] = ac_proxy_v2
+                    logger.info(f"Alpha Center re-synced with composite signals: {len(ac_proxy_v2.get('all', []))} items")
+                except Exception as e:
+                    logger.warning(f"Alpha Center re-sync failed: {e}")
             except Exception as e:
                 logger.warning(f"Composite signal engine failed: {e}")
                 result["errors"].append(f"composite: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 7: Thought Process, Markov V3, Smart Money, Cap Rotation,
+        # UST Auction, VRP, Squeeze
+        # ═══════════════════════════════════════════════════════════════
+
+        if _V7_MARKOV:
+            _safe_progress(progress_cb, "Markov Regime V3 (HSMM + BOCPD)...", 0.96)
+            try:
+                markov = run_markov_v3(prices, fred)
+                result["markov_v3"] = {
+                    "current_regime": markov.current_regime,
+                    "confidence": markov.confidence,
+                    "regime_probabilities": markov.regime_probabilities,
+                    "forecast_1m": markov.forecast_1m,
+                    "forecast_3m": markov.forecast_3m,
+                    "forecast_6m": markov.forecast_6m,
+                    "stationary": markov.stationary,
+                    "change_point_probability": markov.change_point_probability,
+                    "change_point_alert": markov.change_point_alert,
+                    "expected_duration_days": markov.expected_duration_days,
+                    "kelly_fraction": markov.kelly_fraction,
+                    "notes": markov.notes,
+                    "n_observations": markov.n_observations,
+                }
+                logger.info(f"Markov V3: {markov.current_regime} ({markov.confidence:.0%}), Kelly {markov.kelly_fraction:.0%}")
+            except Exception as e:
+                logger.warning(f"Markov V3 failed: {e}")
+                result["errors"].append(f"markov_v3: {e}")
+
+        if _V7_SMART:
+            _safe_progress(progress_cb, "Smart money 13F analysis...", 0.97)
+            try:
+                all_tickers = list(prices.keys())
+                smart_money = run_smart_money_analysis(all_tickers)
+                result["smart_money"] = smart_money
+                logger.info(f"Smart money: {len(smart_money.get('consensus_picks', []))} consensus picks")
+            except Exception as e:
+                logger.warning(f"Smart money tracker failed: {e}")
+
+        if _V7_CAPROT:
+            _safe_progress(progress_cb, "Capital rotation monitor...", 0.975)
+            try:
+                cap_rotation = compute_capital_rotation(prices)
+                result["capital_rotation"] = cap_rotation
+                logger.info(f"Capital rotation: {cap_rotation.get('regime_label', 'N/A')}")
+            except Exception as e:
+                logger.warning(f"Capital rotation failed: {e}")
+
+        if _V7_UST:
+            _safe_progress(progress_cb, "UST auction tracker...", 0.98)
+            try:
+                ust_data = run_ust_auction_tracker()
+                result["ust_auction"] = ust_data
+            except Exception as e:
+                logger.warning(f"UST auction failed: {e}")
+
+        if _V7_THOUGHT:
+            _safe_progress(progress_cb, "Investment thesis analysis...", 0.985)
+            try:
+                rr_keys = list(result.get("risk_ranges", {}).get("asset_ranges", {}).keys())
+                bb_stage = result.get("boom_bust", {}).get("stage", "ACCELERATION")
+                bubble_score = result.get("reflexivity", {}).get("super_bubble_score", 0)
+                thesis_results = v7_thesis_multi(rr_keys, quad=quad,
+                                                 boom_bust_stage=bb_stage,
+                                                 super_bubble_score=bubble_score,
+                                                 prices=prices, fred=fred)
+                result["thought_process"] = thesis_results
+                top_theses = sorted(thesis_results.values(),
+                                    key=lambda x: x.get("thesis_score", 0),
+                                    reverse=True)[:20]
+                result["top_theses"] = top_theses
+                logger.info(f"Thought process: {len(thesis_results)} tickers analyzed")
+            except Exception as e:
+                logger.warning(f"Thought process failed: {e}")
+
+        if _V7_VRP:
+            _safe_progress(progress_cb, "VRP vol scanner...", 0.99)
+            try:
+                vrp_tickers = [t for t in ["SPY", "QQQ", "IWM", "NVDA", "TSLA", "AAPL", "MSFT", "META",
+                                            "GOOGL", "AMZN", "AMD", "GLD", "SLV", "TLT", "BTC-USD", "ETH-USD"]
+                              if t in prices]
+                vrp_results = scan_vrp(vrp_tickers, prices, vix=vix_last)
+                result["vrp_scanner"] = vrp_results
+            except Exception as e:
+                logger.warning(f"VRP scanner failed: {e}")
+
+        if _V7_SQUEEZE:
+            _safe_progress(progress_cb, "Squeeze scanner...", 0.995)
+            try:
+                squeeze_results = scan_squeezes(prices=prices,
+                                                 gamma_data=result.get("gamma_data", {}))
+                result["squeeze_scanner"] = squeeze_results
+            except Exception as e:
+                logger.warning(f"Squeeze scanner failed: {e}")
 
         # ---- Summary ----
         result["summary"] = {
@@ -2318,6 +2581,18 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             # Sprint 6 additions
             "v2_composite_flipped_count": sum(1 for s in result.get("composite_signals", {}).values() if isinstance(s, dict) and s.get("flipped_from_composite")),
             "v2_bonds_xau_regime": result.get("bonds_xau_regime", {}).get("regime", "UNKNOWN"),
+            # Sprint 7 additions
+            "v7_markov_regime": result.get("markov_v3", {}).get("current_regime", "UNKNOWN"),
+            "v7_markov_confidence": result.get("markov_v3", {}).get("confidence", 0),
+            "v7_markov_cp_alert": result.get("markov_v3", {}).get("change_point_alert", False),
+            "v7_markov_kelly": result.get("markov_v3", {}).get("kelly_fraction", 0.25),
+            "v7_smart_money_funds": result.get("smart_money", {}).get("n_funds_tracked", 0),
+            "v7_smart_money_consensus": len(result.get("smart_money", {}).get("consensus_picks", [])),
+            "v7_capital_rotation_regime": result.get("capital_rotation", {}).get("regime_label"),
+            "v7_fiscal_dominance_score": result.get("ust_auction", {}).get("fiscal_dominance", {}).get("score", 0),
+            "v7_top_theses_count": len(result.get("top_theses", [])),
+            "v7_vrp_sell_count": len(result.get("vrp_scanner", {}).get("high_vrp_sell_premium", [])),
+            "v7_squeeze_imminent": len(result.get("squeeze_scanner", {}).get("imminent_squeezes", [])),
         }
 
         result["ok"] = True
