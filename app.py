@@ -829,30 +829,102 @@ def _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, market_type, 
     if "BEARISH" in greek_comp and composite == "bearish": option_boost += 1
     if gamma_reg in ("DEEP_POSITIVE", "POSITIVE") and composite == "bullish": option_boost += 1
     if gamma_reg in ("DEEP_NEGATIVE", "NEGATIVE") and composite == "bearish": option_boost += 1
-    if composite == "bullish" and cot_bias in ("Bullish", "Neutral") and "High at lows" in oi_conc and (delta_bullish or option_boost >= 2):
-        direction = "LONG"; rec = "STRONG LONG — Oversold + COT bullish + OI accumulation + Delta/Greeks confirm"
-    elif composite == "bearish" and cot_bias in ("Bearish", "Neutral") and "High at highs" in oi_conc and (delta_bearish or option_boost >= 2):
-        direction = "SHORT"; rec = "STRONG SHORT — Overbought + COT bearish + OI distribution + Delta/Greeks confirm"
-    elif composite == "bullish" and "High at highs" in oi_conc:
-        direction = "LONG"; rec = "CAUTIOUS LONG — Setup bullish but OI shows profit-taking at resistance"
-    elif composite == "bearish" and "High at lows" in oi_conc:
-        direction = "SHORT"; rec = "CAUTIOUS SHORT — Bearish signal but OI shows accumulation at lows"
-    elif composite == "bullish" and cot_bias == "Bearish":
-        direction = "LONG"; rec = "CONFLICTED — Price oversold but COT bearish, smart money disagrees"
-    elif composite == "bearish" and cot_bias == "Bullish":
-        direction = "SHORT"; rec = "CONFLICTED — Price extended but COT bullish, smart money buying dip"
-    elif composite == "bullish":
-        direction = "LONG"; rec = "MODERATE LONG — Price oversold but mixed signals"
-    elif composite == "bearish":
-        direction = "SHORT"; rec = "MODERATE SHORT — Price extended but mixed signals"
-    else:
-        direction = "NEUTRAL"; rec = "NO EDGE — Mixed signals, wait for clarity"
-    rr_val = rl.get("rr", 0)
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 6: USE COMPOSITE SIGNAL ENGINE (FIXES "long when should be short" bug)
+    # Falls back to legacy logic if v2 engine unavailable
+    # ═══════════════════════════════════════════════════════════════════
+    direction = None
+    rec = None
+    composite_v2 = None
+
+    try:
+        from engines.composite_signal_engine import compute_composite_signal as _csig
+        # Get SMA50/200 for trend signal
+        sma50 = sma200 = None
+        if s is not None:
+            s_clean_inner = pd.to_numeric(s, errors="coerce").dropna()
+            if len(s_clean_inner) >= 50:
+                sma50 = float(s_clean_inner.tail(50).mean())
+            if len(s_clean_inner) >= 200:
+                sma200 = float(s_clean_inner.tail(200).mean())
+            elif len(s_clean_inner) >= 100:
+                sma200 = float(s_clean_inner.tail(100).mean())
+        # Determine current quad from session
+        try:
+            current_quad_v2 = st.session_state.get("current_quad", "Q3")
+        except Exception:
+            current_quad_v2 = "Q3"
+        composite_v2 = _csig(
+            ticker=ticker, price=px, trade_l=lrr, trade_r=trr,
+            sma50=sma50, sma200=sma200,
+            cot=cot, oi=oi,
+            greek=greek, gamma=gamma,
+            news=(news_narratives or {}).get("ticker_specific", {}).get(ticker) if news_narratives else None,
+            quad=current_quad_v2, market_type=market_type,
+        )
+        direction = composite_v2.get("direction")
+        if direction in ("NEUTRAL", "AVOID"):
+            return None  # don't show neutral/avoid in long/short tabs
+        # Build recommendation from composite output
+        conf = composite_v2.get("confidence", 0)
+        flipped = composite_v2.get("flipped_from_composite", False)
+        if flipped:
+            rec = f"⚠️ FLIPPED {direction} — Multi-signal override from naive composite"
+        elif conf >= 0.7:
+            rec = f"STRONG {direction} — Multi-signal aligned (conf {conf:.0%})"
+        elif conf >= 0.4:
+            rec = f"MODERATE {direction} — Composite score {composite_v2.get('score', 0):+.2f}"
+        else:
+            rec = f"WEAK {direction} — Low conviction (conf {conf:.0%})"
+    except Exception as e:
+        composite_v2 = None
+        # Fall back to legacy logic if v2 unavailable
+        if composite == "bullish" and cot_bias in ("Bullish", "Neutral") and "High at lows" in oi_conc and (delta_bullish or option_boost >= 2):
+            direction = "LONG"; rec = "STRONG LONG — Legacy: Oversold + COT bullish + OI accumulation"
+        elif composite == "bearish" and cot_bias in ("Bearish", "Neutral") and "High at highs" in oi_conc and (delta_bearish or option_boost >= 2):
+            direction = "SHORT"; rec = "STRONG SHORT — Legacy: Overbought + COT bearish + OI distribution"
+        elif composite == "bullish":
+            direction = "LONG"; rec = "MODERATE LONG — Legacy proxy"
+        elif composite == "bearish":
+            direction = "SHORT"; rec = "MODERATE SHORT — Legacy proxy"
+        else:
+            return None  # Don't show neutral
+
+    # SPRINT 6: Use v2 risk_setup_engine for entry/target/stop instead of naive _rr_levels
+    setup_v2 = None
+    if composite_v2:
+        try:
+            from engines.risk_setup_engine import calculate_risk_setup as _rsetup
+            # Build risk_range dict in v2 shape
+            risk_range_v2 = {
+                "trade": {"lrr": lrr, "trr": trr},
+                "trend": {"lrr": trend_l, "trr": trend_r} if trend_l and trend_r else {},
+                "tail": {"lrr": tail_l, "trr": tail_r} if tail_l and tail_r else {},
+                "atr_14": v.get("atr_14"),
+                "atr_30": v.get("atr_30"),
+                "expected_move_weekly_pct": v.get("expected_move_weekly_pct"),
+                "daily_vol_pct": v.get("daily_vol_pct"),
+            }
+            setup_v2 = _rsetup(
+                ticker=ticker, direction=direction, price=px,
+                risk_range=risk_range_v2,
+                composite_signal=composite_v2,
+                gamma_data=gamma if gamma.get("ok") else None,
+                greek_data=greek if greek.get("ok") else None,
+                market_type=market_type,
+            )
+        except Exception:
+            setup_v2 = None
+
+    rr_val = (setup_v2.get("rr") if setup_v2 else rl.get("rr", 0)) or 0
     row = {
-        "ticker": ticker, "price": px, "entry": rl.get("entry"),
+        "ticker": ticker, "price": px,
+        "entry": (setup_v2 or rl).get("entry"),
         "direction": direction, "market_type": market_type,
-        "target_1": rl.get("tp1"), "target_2": rl.get("tp2"),
-        "stop": rl.get("stop"), "rr": rl.get("rr"),
+        "target_1": (setup_v2 or {}).get("target1", rl.get("tp1")),
+        "target_2": (setup_v2 or {}).get("target2", rl.get("tp2")),
+        "stop": (setup_v2 or rl).get("stop"),
+        "rr": rr_val,
         "max_pain": max_pain, "pain_note": pain_note,
         "delta": greek.get("delta","—") if greek.get("ok") else "—",
         "gamma": greek.get("gamma","—") if greek.get("ok") else "—",
@@ -880,7 +952,17 @@ def _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, market_type, 
         "put_wall": gamma.get("put_wall") if gamma.get("ok") else None,
         "call_wall": gamma.get("call_wall") if gamma.get("ok") else None,
         "greek_composite": greek.get("composite") if greek.get("ok") else None,
-        "options_source": "LIVE" if (gamma_data and gamma_data.get(ticker,{}).get("ok") and greeks_data and greeks_data.get(ticker,{}).get("ok")) else "PROXY"
+        "options_source": "LIVE" if (gamma_data and gamma_data.get(ticker,{}).get("ok") and greeks_data and greeks_data.get(ticker,{}).get("ok")) else "PROXY",
+        # Sprint 6 — Composite signal + risk setup metadata
+        "composite_score": composite_v2.get("score") if composite_v2 else None,
+        "composite_confidence": composite_v2.get("confidence") if composite_v2 else None,
+        "composite_flipped": composite_v2.get("flipped_from_composite") if composite_v2 else False,
+        "composite_signals": composite_v2.get("contributing_signals") if composite_v2 else None,
+        "composite_rationale": composite_v2.get("rationale") if composite_v2 else None,
+        "setup_entry_rationale": setup_v2.get("entry_rationale") if setup_v2 else None,
+        "setup_stop_rationale": setup_v2.get("stop_rationale") if setup_v2 else None,
+        "setup_options_magnet": setup_v2.get("options_magnet") if setup_v2 else None,
+        "near_entry": setup_v2.get("near_entry") if setup_v2 else rl.get("near_entry", False),
     }
     # News injection
     if news_narratives and news_narratives.get("ticker_specific"):
@@ -2553,11 +2635,12 @@ if page == "🏠 Dashboard":
         st.metric("Portfolio Deployed", f"{deployed:.0%}" if isinstance(deployed, (int, float)) else "—")
 
     # ── Tabs untuk grouping rapi ──
-    v2_tab1, v2_tab2, v2_tab3, v2_tab4 = st.tabs([
+    v2_tab1, v2_tab2, v2_tab3, v2_tab4, v2_tab5 = st.tabs([
         "🧠 Yves Behavioral",
         "📊 GIP v10 Bayesian",
         "🔍 Discovery Summary",
         "⚡ Cascade Summary",
+        "🪙 Bonds-XAU Regime",
     ])
 
     # ── TAB 1: Yves Behavioral ──
@@ -2672,10 +2755,66 @@ if page == "🏠 Dashboard":
                 st.caption(f"{emoji} **{src}**: {mag:+.1%} · {cascade_v2['cascades'].get(src, {}).get('total_impacts', 0)} downstream impacts")
             st.info("📊 Full first/second/third-order ticker breakdown → ⚡ Alpha Center")
 
+    # ── TAB 5: Bonds-XAU Regime (NEW Sprint 6) ──
+    with v2_tab5:
+        bxau = snap.get("bonds_xau_regime", {}) or {}
+        if not bxau.get("ok") or bxau.get("regime") == "UNKNOWN":
+            st.info("Bonds-XAU regime data unavailable")
+        else:
+            # Regime headline
+            regime_colors = {
+                "RISK_OFF_BONDS_BID": "🔴",
+                "STAGFLATION_GOLD_BULL": "🟡",
+                "TIGHT_FED_GOLD_HEADWIND": "🟠",
+                "RE_ACCELERATION": "🟢",
+                "NEUTRAL": "⚪",
+            }
+            emoji = regime_colors.get(bxau["regime"], "⚪")
+            st.markdown(f"### {emoji} **Regime: {bxau['regime'].replace('_', ' ').title()}**")
+            if bxau.get("flags"):
+                st.caption(f"**Flags:** {' · '.join(bxau['flags'])}")
+
+            # Metrics grid
+            metrics = bxau.get("metrics", {})
+            m1, m2, m3 = st.columns(3)
+            with m1:
+                ry = metrics.get("real_yield")
+                st.metric("Real Yield (10y)", f"{ry:.2f}%" if ry is not None else "—",
+                         f"{'Low' if ry and ry < 1 else 'High' if ry and ry > 2 else 'Mid'}")
+                yc = metrics.get("yield_curve_2s10s")
+                st.metric("Yield Curve 2s10s", f"{yc:+.2f}" if yc is not None else "—",
+                         f"{'Inverted ⚠️' if yc and yc < 0 else 'Normal'}")
+            with m2:
+                gs = metrics.get("gold_silver_ratio")
+                st.metric("Gold/Silver Ratio", f"{gs:.1f}" if gs else "—",
+                         f"{'Risk Off >80' if gs and gs > 80 else 'Risk On <60' if gs and gs < 60 else 'Mid'}")
+                tg = metrics.get("tlt_gld_ratio")
+                st.metric("TLT/GLD Ratio", f"{tg:.3f}" if tg else "—")
+            with m3:
+                dxg = metrics.get("dxy_gold_corr_60d")
+                st.metric("DXY-Gold Corr 60d", f"{dxg:+.2f}" if dxg is not None else "—",
+                         f"{'Classic Inverse' if dxg and dxg < -0.5 else 'Rare Decorr' if dxg and dxg > 0.3 else 'Mid'}")
+                cs = metrics.get("credit_spread_30d")
+                st.metric("Credit Spread (HYG-LQD) 30d", f"{cs:+.2%}" if cs else "—")
+
+            # Position biases
+            st.markdown("**Asset Class Bias**")
+            biases = bxau.get("position_biases", {})
+            b1, b2, b3, b4 = st.columns(4)
+            for col, (asset, key) in zip([b1, b2, b3, b4],
+                                          [(b1, "gold"), (b2, "silver"), (b3, "bonds"), (b4, "miners")]):
+                v = biases.get(key, {})
+                score = v.get("score", 0)
+                bias_label = v.get("bias", "NEUTRAL")
+                color = "🟢" if score > 0.2 else "🔴" if score < -0.2 else "⚪"
+                col.metric(key.title(), f"{color} {bias_label}", f"score {score:+.2f}")
+
     # ═══════════════════════════════════════════════════════════════════
     # FOOTER — minimal caption (background, not prominent)
     # ═══════════════════════════════════════════════════════════════════
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines · v28-Sprint5")
+    n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
+    flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note} · v28-Sprint6")
 
 elif page == "⚡ Alpha Center":
     st.markdown("## ⚡ Alpha Center")

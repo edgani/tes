@@ -350,11 +350,53 @@ except Exception as e:
     _V2_GIP10 = False
     gip_v10_call = None
 
+# ═══════════════════════════════════════════════════════════════════════
+# SPRINT 6 NEW ENGINES — composite signal, risk setup, bonds-XAU
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from engines.composite_signal_engine import (
+        analyze_multi as composite_analyze_multi,
+        compute_composite_signal,
+    )
+    _V2_COMPOSITE = True
+except Exception as e:
+    logger.error(f"Failed to import composite_signal_engine: {e}")
+    _V2_COMPOSITE = False
+    def composite_analyze_multi(*a, **k): return {}
+    def compute_composite_signal(*a, **k): return {"direction": "NEUTRAL", "confidence": 0}
+
+try:
+    from engines.risk_setup_engine import calculate_risk_setup as v2_risk_setup
+    _V2_RISK_SETUP = True
+except Exception as e:
+    logger.error(f"Failed to import risk_setup_engine: {e}")
+    _V2_RISK_SETUP = False
+    v2_risk_setup = None
+
+try:
+    from engines.bonds_xau_regime import run_bonds_xau_regime
+    _V2_BONDS_XAU = True
+except Exception as e:
+    logger.error(f"Failed to import bonds_xau_regime: {e}")
+    _V2_BONDS_XAU = False
+    def run_bonds_xau_regime(*a, **k): return {"ok": False, "regime": "UNKNOWN", "ticker_biases": {}}
+
+try:
+    from engines.market_classifier import classify_ticker, filter_for_tab
+    _V2_CLASSIFIER = True
+except Exception as e:
+    logger.error(f"Failed to import market_classifier: {e}")
+    _V2_CLASSIFIER = False
+    def classify_ticker(t): return "us_equity"
+    def filter_for_tab(tickers, tab): return tickers
+
 logger.info(
     "V2 engines loaded: "
     f"cascade={_V2_CASCADE} yves={_V2_YVES} sizing={_V2_SIZING} "
     f"discovery={_V2_DISCOVERY} cem={_V2_CEM} expander={_V2_EXPANDER} "
-    f"edgar={_V2_EDGAR} supply={_V2_SUPPLY} gip10={_V2_GIP10}"
+    f"edgar={_V2_EDGAR} supply={_V2_SUPPLY} gip10={_V2_GIP10} "
+    f"composite={_V2_COMPOSITE} risk_setup={_V2_RISK_SETUP} "
+    f"bonds_xau={_V2_BONDS_XAU} classifier={_V2_CLASSIFIER}"
 )
 
 def _strip_html(text):
@@ -2211,6 +2253,47 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 logger.warning(f"Portfolio sizing v2 failed: {e}")
                 result["errors"].append(f"portfolio_sizing_v2: {e}")
 
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 6: Composite Signal + Risk Setup + Bonds-XAU
+        # These fix direction bugs and add new edge
+        # ═══════════════════════════════════════════════════════════════
+
+        # ── Sprint 6: Bonds-XAU Regime (macro edge) ──
+        if _V2_BONDS_XAU:
+            _safe_progress(progress_cb, "Bonds-XAU regime analysis...", 0.94)
+            try:
+                bxau = run_bonds_xau_regime(prices, fred)
+                result["bonds_xau_regime"] = bxau
+            except Exception as e:
+                logger.warning(f"Bonds-XAU regime failed: {e}")
+                result["errors"].append(f"bonds_xau: {e}")
+
+        # ── Sprint 6: Composite Signal (multi-factor direction) ──
+        if _V2_COMPOSITE:
+            _safe_progress(progress_cb, "Composite signal analysis...", 0.95)
+            try:
+                # Run for all tickers with risk_ranges
+                rr_keys = list(result.get("risk_ranges", {}).get("asset_ranges", {}).keys())
+                composite_signals = composite_analyze_multi(
+                    tickers=rr_keys,
+                    risk_ranges=result.get("risk_ranges", {}),
+                    prices=prices,
+                    cot_data=result.get("cot_oi", {}).get("cot", {}),
+                    oi_data=result.get("cot_oi", {}).get("oi", {}),
+                    greeks_data=result.get("greeks_data", {}),
+                    gamma_data=result.get("gamma_data", {}),
+                    news_data=result.get("news_analysis", {}).get("ticker_specific", {}),
+                    quad=quad,
+                )
+                result["composite_signals"] = composite_signals
+                # Log how many flipped
+                n_flipped = sum(1 for s in composite_signals.values() if s.get("flipped_from_composite"))
+                n_total = len(composite_signals)
+                logger.info(f"Composite signals: {n_total} tickers, {n_flipped} direction flipped from naive composite")
+            except Exception as e:
+                logger.warning(f"Composite signal engine failed: {e}")
+                result["errors"].append(f"composite: {e}")
+
         # ---- Summary ----
         result["summary"] = {
             "regime": getattr(gip, "operating_regime", "Unknown"),
@@ -2232,6 +2315,9 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             "v2_discovery_total": result.get("discovery_brain", {}).get("total", 0),
             "v2_new_tickers": len(result.get("ticker_universe_expansion", {}).get("new_tickers", [])),
             "v2_portfolio_deployed_pct": result.get("portfolio_sizing_v2", {}).get("total_deployed_pct", 0),
+            # Sprint 6 additions
+            "v2_composite_flipped_count": sum(1 for s in result.get("composite_signals", {}).values() if isinstance(s, dict) and s.get("flipped_from_composite")),
+            "v2_bonds_xau_regime": result.get("bonds_xau_regime", {}).get("regime", "UNKNOWN"),
         }
 
         result["ok"] = True
