@@ -964,6 +964,48 @@ def _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, market_type, 
         "setup_options_magnet": setup_v2.get("options_magnet") if setup_v2 else None,
         "near_entry": setup_v2.get("near_entry") if setup_v2 else rl.get("near_entry", False),
     }
+    # ── Sprint 7: Inject thought_process + smart_money + tab_filter ──
+    try:
+        snap_ref = st.session_state.get("snap_cache", {})
+        # Thought process (per-ticker)
+        thought = (snap_ref.get("thought_process", {}) or {}).get(ticker, {}) if snap_ref else {}
+        if thought:
+            row["thesis_score"] = thought.get("thesis_score", 0)
+            row["thesis_primary_role"] = thought.get("primary_role")
+            row["thesis_primary"] = (thought.get("primary_thesis") or "")[:200]
+            row["thesis_frameworks"] = thought.get("matched_frameworks", [])
+            row["thesis_rationale"] = thought.get("thesis_rationale", "")
+            row["thesis_n_matches"] = thought.get("n_matches", 0)
+        # Smart money
+        sm_ticker = (snap_ref.get("smart_money", {}) or {}).get("per_ticker", {}).get(ticker, {}) if snap_ref else {}
+        if sm_ticker.get("smart_money_held"):
+            row["smart_money_held"] = True
+            row["smart_money_n_holders"] = sm_ticker.get("n_holders", 0)
+            row["smart_money_top_holder"] = sm_ticker.get("top_holder")
+            row["smart_money_thesis"] = sm_ticker.get("top_holder_thesis")
+            row["smart_money_label"] = sm_ticker.get("consensus_label")
+            row["smart_money_action"] = sm_ticker.get("recent_action")
+        else:
+            row["smart_money_held"] = False
+        # Capital rotation role
+        from engines.capital_rotation_engine import get_ticker_capital_rotation_role
+        cr_role = get_ticker_capital_rotation_role(ticker)
+        if cr_role:
+            row["cap_rotation_role"] = cr_role.get("role")
+            row["cap_rotation_thesis"] = cr_role.get("thesis")
+        # Tab filter score (per market)
+        from engines.tab_filter_engine import apply_tab_filter
+        if snap_ref:
+            current_quad = st.session_state.get("current_quad", "Q3")
+            tab_key = {"us_equity": "us_stocks", "forex": "forex", "commodity": "commodities",
+                       "crypto": "crypto", "ihsg": "ihsg"}.get(market_type, market_type)
+            filter_result = apply_tab_filter(ticker, tab_key, snap_ref, current_quad)
+            row["filter_score"] = filter_result.get("filter_score", 0)
+            row["filter_passes"] = filter_result.get("passes_filter", False)
+            row["filter_rationale"] = filter_result.get("filter_rationale", [])
+            row["filter_tab_signals"] = filter_result.get("tab_specific_signals", {})
+    except Exception:
+        pass
     # News injection
     if news_narratives and news_narratives.get("ticker_specific"):
         t_news = news_narratives["ticker_specific"].get(ticker, {})
@@ -1601,6 +1643,9 @@ with st.sidebar:
 # DATA LOADING — defensive, no NameError possible
 # ═══════════════════════════════════════════════════════════════════
 snap = st.session_state.snap
+# Sprint 8: Always sync snap_cache for _build_consolidated_row injection
+if snap and isinstance(snap, dict):
+    st.session_state["snap_cache"] = snap
 if snap is None:
     try:
         snap = load_snapshot(max_age_hours=6.0)
@@ -2061,6 +2106,189 @@ def _render_transmission_dashboard():
             em = sc.get("em_impact", {})
             if em:
                 st.caption(f"EM: DXY {em.get('DXY', 0):+.1%} | EM {em.get('EM', 0):+.1%} | Rupiah {em.get('Rupiah', 0):+.1%}")
+
+
+# ════════════════════════════════════════════════════════════════════════
+# SPRINT 8 — Universal ticker card renderer (used by ALL ticker pages)
+# This consolidates the per-card layout so thought_process + smart_money +
+# tab_filter signals show consistently everywhere.
+# ════════════════════════════════════════════════════════════════════════
+
+def render_thesis_badge(row):
+    """Compact thesis badge — shows Leopold/COATUE/Citrini matches."""
+    thesis_score = row.get("thesis_score", 0) or 0
+    role = row.get("thesis_primary_role")
+    if thesis_score <= 0 or not role:
+        return None
+    color = "🟢" if thesis_score >= 75 else "🟡" if thesis_score >= 50 else "⚪"
+    return f"{color} **Thesis {thesis_score:.0f}**/100 · _{role}_"
+
+
+def render_smart_money_badge(row):
+    """Smart money badge."""
+    if not row.get("smart_money_held"):
+        return None
+    n = row.get("smart_money_n_holders", 1)
+    label = row.get("smart_money_label", "")
+    top = row.get("smart_money_top_holder", "")
+    return f"💼 **{label}** · {n} funds · _{top}_"
+
+
+def render_filter_score_badge(row):
+    """Per-tab filter score (0-100)."""
+    fs = row.get("filter_score", 0) or 0
+    passes = row.get("filter_passes", False)
+    if fs <= 0:
+        return None
+    emoji = "🟢" if fs >= 70 else "🟡" if fs >= 40 else "🔴"
+    return f"{emoji} Filter {fs:.0f}/100 {'✓ PASS' if passes else '✗ FAIL'}"
+
+
+def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=True):
+    """Universal ticker card — replaces the inline blocks in each tab."""
+    ticker = row.get("ticker", "?")
+    direction = row.get("direction", "NEUTRAL")
+    px = row.get("price", 0)
+    conf = row.get("composite_confidence", 0) or 0
+    flipped = row.get("composite_flipped", False)
+
+    # Header
+    dir_emoji = "🟢" if direction == "LONG" else "🔴" if direction == "SHORT" else "⚪"
+    flip_marker = " ⚠️FLIP" if flipped else ""
+    header = f"{dir_emoji} **{ticker}** @ {px:.2f} · {direction}{flip_marker} · conf {conf:.0%}"
+
+    # Filter score in label
+    fs = row.get("filter_score", 0) or 0
+    if fs > 0:
+        header += f" · 🎯 {fs:.0f}/100"
+
+    with st.expander(header, expanded=expanded):
+        # ── ROW 1: Entry/Target/Stop/RR ──
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Entry", f"{row.get('entry') or 0:.2f}" if row.get('entry') else "—")
+        m2.metric("Target 1", f"{row.get('target_1') or 0:.2f}" if row.get('target_1') else "—")
+        m3.metric("Target 2", f"{row.get('target_2') or 0:.2f}" if row.get('target_2') else "—")
+        m4.metric("Stop", f"{row.get('stop') or 0:.2f}" if row.get('stop') else "—")
+        m5.metric("R:R", f"{row.get('rr') or 0:.1f}x" if row.get('rr') else "—")
+
+        # ── ROW 2: Badges (thesis + smart money + filter) ──
+        badges = []
+        if show_thesis:
+            t_badge = render_thesis_badge(row)
+            if t_badge: badges.append(t_badge)
+        if show_smart_money:
+            sm_badge = render_smart_money_badge(row)
+            if sm_badge: badges.append(sm_badge)
+        if badges:
+            st.markdown(" · ".join(badges))
+
+        # ── ROW 3: Thesis rationale (collapsible) ──
+        if show_thesis and row.get("thesis_rationale"):
+            st.markdown("**💡 Why this ticker:**")
+            st.markdown(row["thesis_rationale"])
+            if row.get("thesis_primary"):
+                st.caption(f"_{row['thesis_primary']}_")
+
+        # ── ROW 4: Composite signal breakdown ──
+        if row.get("composite_signals"):
+            with st.expander("📊 Composite signal breakdown"):
+                sigs = row["composite_signals"]
+                sig_cols = st.columns(4)
+                for i, (k, v) in enumerate(sigs.items()):
+                    if abs(v or 0) >= 0.05:
+                        color = "🟢" if v > 0 else "🔴"
+                        sig_cols[i % 4].caption(f"{color} {k}: {v:+.2f}")
+                if row.get("composite_rationale"):
+                    st.caption(row["composite_rationale"])
+
+        # ── ROW 5: Cap rotation role ──
+        if row.get("cap_rotation_role"):
+            st.markdown(f"💱 **Capital Rotation:** {row['cap_rotation_role']}")
+            if row.get("cap_rotation_thesis"):
+                st.caption(row["cap_rotation_thesis"])
+
+        # ── ROW 6: News ──
+        if row.get("news_headline"):
+            st.markdown(f"📰 **News:** _{row.get('news_headline','')[:140]}_")
+            if row.get("news_signal"):
+                st.caption(f"Signal: {row['news_signal']}")
+
+        # ── ROW 7: Smart money detail ──
+        if show_smart_money and row.get("smart_money_held"):
+            with st.expander("💼 Smart money detail"):
+                st.markdown(f"**Top holder:** {row.get('smart_money_top_holder', '?')}")
+                st.caption(f"_{row.get('smart_money_thesis', '')}_")
+                st.markdown(f"**Action:** {row.get('smart_money_action', '—')}")
+
+        # ── Entry/Stop rationale ──
+        if row.get("setup_entry_rationale"):
+            st.caption(f"📍 _Entry:_ {row['setup_entry_rationale']}")
+        if row.get("setup_stop_rationale"):
+            st.caption(f"🛡️ _Stop:_ {row['setup_stop_rationale']}")
+
+
+def render_market_header(market_label: str, snap_in, tickers_in_tab=None):
+    """Per-market header — shows tab-specific KPIs at the top of each market page."""
+    summary = snap_in.get("summary", {})
+
+    if market_label == "us_stocks":
+        # Show: Quad, Top Theme, Smart Money Top, VRP opportunities
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Quad Regime", summary.get("v7_markov_regime", "—").split("_")[0] if summary.get("v7_markov_regime") else "—")
+        c2.metric("Smart $ Consensus", summary.get("v7_smart_money_consensus", 0))
+        c3.metric("Cap Rotation", (summary.get("v7_capital_rotation_regime") or "—").split(" ")[0])
+        c4.metric("Top Theses", summary.get("v7_top_theses_count", 0))
+
+    elif market_label == "forex":
+        # Show: DXY trend, Real Yield, Carry winners, Fiscal stress
+        bxau = snap_in.get("bonds_xau_regime", {})
+        m = bxau.get("metrics", {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Real Yield", f"{m.get('real_yield', 0):.2f}%" if m.get('real_yield') is not None else "—")
+        c2.metric("DXY-Gold Corr", f"{m.get('dxy_gold_corr_60d', 0):+.2f}" if m.get('dxy_gold_corr_60d') is not None else "—")
+        c3.metric("Yield Curve", f"{m.get('yield_curve_2s10s', 0):+.2f}" if m.get('yield_curve_2s10s') is not None else "—")
+        c4.metric("Fiscal Stress", f"{summary.get('v7_fiscal_dominance_score', 0)}/100")
+
+    elif market_label == "commodities":
+        # Show: COT shifts, USD-Gold, Cascade shocks, Bonds-XAU regime
+        cascade = snap_in.get("cascade_analysis", {})
+        bxau = snap_in.get("bonds_xau_regime", {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Active Shocks", len(cascade.get("active_shocks", {})))
+        biases = bxau.get("position_biases", {})
+        c2.metric("Gold Bias", biases.get("gold", {}).get("bias", "—"))
+        c3.metric("Silver Bias", biases.get("silver", {}).get("bias", "—"))
+        c4.metric("BXau Regime", bxau.get("regime", "—").replace("_", " ").split()[0] if bxau.get("regime") else "—")
+
+    elif market_label == "crypto":
+        # Show: Markov regime, BTC momentum, QQQ corr, Squeeze
+        markov = snap_in.get("markov_v3", {})
+        squeeze = snap_in.get("squeeze_scanner", {})
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Markov Regime", markov.get("current_regime", "—").split("_")[0] if markov.get("current_regime") else "—")
+        c2.metric("Confidence", f"{markov.get('confidence', 0):.0%}" if markov.get('confidence') else "—")
+        c3.metric("CP Alert", "🚨" if markov.get("change_point_alert") else "✓")
+        c4.metric("Imminent Squeezes", len(squeeze.get("imminent_squeezes", [])))
+
+    elif market_label == "ihsg":
+        # Show: IHSG, USDIDR, Coal/Nickel proxy
+        c1, c2, c3, c4 = st.columns(4)
+        try:
+            usdidr_s = snap_in.get("_prices_ref", {}).get("USDIDR=X")
+            usdidr_now = float(pd.to_numeric(usdidr_s, errors='coerce').dropna().iloc[-1]) if usdidr_s is not None else None
+            c1.metric("USDIDR", f"{usdidr_now:,.0f}" if usdidr_now else "—")
+        except Exception:
+            c1.metric("USDIDR", "—")
+        c2.metric("Quad", summary.get("structural_quad", "—"))
+        c3.metric("Crude Oil 3M", "—")  # placeholder
+        c4.metric("Copper 3M", "—")
+    elif market_label == "alpha":
+        # Cross-market — high bar
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Markov Regime", summary.get("v7_markov_regime", "—").split("_")[0] if summary.get("v7_markov_regime") else "—")
+        c2.metric("Kelly Fraction", f"{summary.get('v7_markov_kelly', 0.25):.0%}")
+        c3.metric("Top Theses", summary.get("v7_top_theses_count", 0))
+        c4.metric("CP Alert", "🚨" if summary.get("v7_markov_cp_alert") else "✓ Stable")
 
 
 if page == "🏠 Dashboard":
@@ -2897,28 +3125,139 @@ if page == "🏠 Dashboard":
 
 elif page == "⚡ Alpha Center":
     st.markdown("## ⚡ Alpha Center")
-    st.caption("Front-Run Intelligence — Bottleneck Research + News + Options Proxy + Cascade Monitor")
+    st.caption("Cross-market top tier — HIGH BAR (≥70/100 filter score). Composite + Thesis + Smart Money + Risk Range A+/A.")
+
+    # ── HEADER: Alpha-specific KPIs ──
+    render_market_header("alpha", snap)
+
+    # ── TOP-LEVEL ALPHA CANDIDATES (cross-market) ──
+    st.markdown("---")
+    st.markdown("### 🏆 Top Alpha Candidates (Cross-Market, Filter ≥70/100)")
+
+    alpha_candidates = []
+    for ticker, sig in (snap.get("composite_signals", {}) or {}).items():
+        if not sig or sig.get("direction") in ("NEUTRAL", "AVOID"):
+            continue
+        if sig.get("confidence", 0) < 0.4:
+            continue
+        thesis = (snap.get("thought_process", {}) or {}).get(ticker, {})
+        if thesis.get("thesis_score", 0) < 60:
+            continue
+        rr = (snap.get("risk_ranges", {}) or {}).get("asset_ranges", {}).get(ticker, {})
+        if rr.get("quality") not in ("A+", "A"):
+            continue
+        sm = (snap.get("smart_money", {}) or {}).get("per_ticker", {}).get(ticker, {})
+        sm_boost = 15 if sm.get("smart_money_held") else 0
+        alpha_candidates.append({
+            "ticker": ticker,
+            "direction": sig.get("direction"),
+            "confidence": sig.get("confidence", 0),
+            "thesis_score": thesis.get("thesis_score", 0),
+            "primary_role": thesis.get("primary_role", "—"),
+            "primary_thesis": thesis.get("primary_thesis", "")[:200],
+            "rr_quality": rr.get("quality", "C"),
+            "smart_money": sm.get("smart_money_held", False),
+            "alpha_score": sig.get("confidence", 0) * 35 + thesis.get("thesis_score", 0) * 0.3 + {"A+": 20, "A": 15}.get(rr.get("quality"), 0) + sm_boost,
+        })
+    alpha_candidates.sort(key=lambda x: x["alpha_score"], reverse=True)
+    top_alpha = [c for c in alpha_candidates if c["alpha_score"] >= 70][:20]
+
+    ac1, ac2, ac3 = st.columns(3)
+    ac1.metric("Total Alpha Candidates", len(alpha_candidates))
+    ac2.metric("Pass High Bar (≥70)", len(top_alpha))
+    ac3.metric("With Smart Money", sum(1 for c in top_alpha if c.get("smart_money")))
+
+    if not top_alpha:
+        st.info("No cross-market candidates meet Alpha Center high bar. Lower filter thresholds in market-specific tabs to see more candidates.")
+    else:
+        for i, c in enumerate(top_alpha):
+            dir_emoji = "🟢" if c["direction"] == "LONG" else "🔴"
+            sm_badge = " 💼" if c.get("smart_money") else ""
+            header = f"#{i+1} {dir_emoji} **{c['ticker']}** · Score {c['alpha_score']:.0f}/100 · {c['direction']} · {c['primary_role']}{sm_badge}"
+            with st.expander(header, expanded=(i < 3)):
+                hc1, hc2, hc3, hc4 = st.columns(4)
+                hc1.metric("Confidence", f"{c['confidence']:.0%}")
+                hc2.metric("Thesis", f"{c['thesis_score']:.0f}/100")
+                hc3.metric("RR Quality", c['rr_quality'])
+                hc4.metric("Smart $", "✓" if c['smart_money'] else "—")
+                if c.get("primary_thesis"):
+                    st.markdown(f"_{c['primary_thesis']}_")
 
     # ═══════════════════════════════════════════════════════════════════
-    # V2 TICKER-LEVEL DETAILS (moved from Dashboard per Edward request)
-    # Grouped in tabs to avoid scroll fatigue
+    # SUB-TABS: VRP, Squeeze, Sizing, Cascade, Discovery
     # ═══════════════════════════════════════════════════════════════════
     st.markdown("---")
-    st.markdown("### 🚀 V2 Ticker-Level Outputs")
+    st.markdown("### 🎯 Sub-Tools")
 
-    ac_tab1, ac_tab2, ac_tab3, ac_tab4, ac_tab5 = st.tabs([
-        "💰 Sizing (% portfolio)",
+    ac_tab1, ac_tab2, ac_tab3, ac_tab4, ac_tab5, ac_tab6 = st.tabs([
+        "📊 VRP Scanner",
+        "🔥 Squeeze Scanner",
+        "💰 Position Sizing",
         "⚡ Cascade Detail",
         "🔮 Discovery Detail",
-        "🆕 New Tickers",
         "🔗 Supply Chain",
     ])
 
-    # ── AC TAB 1: Portfolio Sizing v2 (with ticker table) ──
+    # ── AC TAB 1: VRP Scanner ──
     with ac_tab1:
+        vrp = snap.get("vrp_scanner", {}) or {}
+        if not vrp.get("ok"):
+            st.info("VRP scanner unavailable")
+        else:
+            vc1, vc2, vc3 = st.columns(3)
+            vc1.metric("VIX", f"{vrp.get('vix_regime', 20):.1f}")
+            vc2.metric("Sell-Premium Candidates", len(vrp.get("high_vrp_sell_premium", [])))
+            vc3.metric("Buy-Premium Candidates", len(vrp.get("low_vrp_buy_premium", [])))
+
+            st.markdown("**🔴 SELL PREMIUM (IV >> RV — sell options)**")
+            for item in vrp.get("high_vrp_sell_premium", [])[:5]:
+                st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')} · RV21d {item.get('rv_21d_pct', 0):.1f}%")
+
+            st.markdown("**🟢 BUY PREMIUM (IV cheap — buy options)**")
+            for item in vrp.get("low_vrp_buy_premium", [])[:5]:
+                st.markdown(f"• **{item.get('ticker')}** · VRP {item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')} · RV21d {item.get('rv_21d_pct', 0):.1f}%")
+
+            if vrp.get("calls_to_action"):
+                st.markdown("**Calls to Action:**")
+                for cta in vrp["calls_to_action"][:6]:
+                    st.markdown(f"• {cta}")
+
+    # ── AC TAB 2: Squeeze Scanner ──
+    with ac_tab2:
+        sq = snap.get("squeeze_scanner", {}) or {}
+        if not sq.get("ok"):
+            st.info("Squeeze scanner unavailable")
+        else:
+            sc1, sc2, sc3, sc4 = st.columns(4)
+            sc1.metric("Total Scanned", sq.get("total_scanned", 0))
+            sc2.metric("🔴 Imminent", len(sq.get("imminent_squeezes", [])))
+            sc3.metric("🟠 Strong", len(sq.get("strong_candidates", [])))
+            sc4.metric("🟡 Watch", len(sq.get("watch_list", [])))
+
+            for label, key in [("🔴 IMMINENT", "imminent_squeezes"), ("🟠 STRONG", "strong_candidates"), ("🟡 WATCH", "watch_list")]:
+                items = sq.get(key, [])
+                if not items: continue
+                st.markdown(f"**{label} ({len(items)})**")
+                for item in items[:5]:
+                    with st.expander(f"**{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}"):
+                        comps = item.get("components", {})
+                        if comps.get("short_interest"):
+                            si = comps["short_interest"]
+                            st.caption(f"📊 Short interest: {si.get('short_float_pct'):.0f}% of float, {si.get('days_to_cover')} days to cover")
+                        if comps.get("gamma"):
+                            st.caption(f"⚡ Gamma: {comps['gamma'].get('regime')}")
+                        if comps.get("volume_spike"):
+                            st.caption(f"📈 Volume spike: {comps['volume_spike'].get('ratio')}x baseline")
+                        if comps.get("momentum_21d"):
+                            st.caption(f"🚀 Momentum 21d: {comps['momentum_21d'].get('return', 0)*100:+.1f}%")
+                        if item.get("rationale"):
+                            st.markdown("**Why:**\n" + "\n".join(f"• {r}" for r in item["rationale"]))
+
+    # ── AC TAB 3: Position Sizing v2 ──
+    with ac_tab3:
         sizing_v2 = snap.get("portfolio_sizing_v2", {}) or {}
         if not sizing_v2.get("positions"):
-            st.info("No sized positions yet. Alpha ideas will populate after build.")
+            st.info("No sized positions yet.")
         else:
             sc1, sc2, sc3, sc4 = st.columns(4)
             sc1.metric("Portfolio Value", f"{sizing_v2.get('portfolio_value', 0):,.0f}")
@@ -2940,7 +3279,7 @@ elif page == "⚡ Alpha Center":
             st.dataframe(pd.DataFrame(positions_rows), width="stretch", hide_index=True)
 
     # ── AC TAB 2: Cascade Detail (with ticker tables) ──
-    with ac_tab2:
+    with ac_tab4:
         cascade_v2 = snap.get("cascade_analysis", {}) or {}
         if not cascade_v2.get("cascades"):
             st.info("No active shocks detected this snapshot")
@@ -2968,7 +3307,7 @@ elif page == "⚡ Alpha Center":
                                 st.caption(f"No {key.replace('_', ' ')} impacts")
 
     # ── AC TAB 3: Discovery Detail (full ticker lists) ──
-    with ac_tab3:
+    with ac_tab5:
         discovery_v2 = snap.get("discovery_brain", {}) or {}
         if not discovery_v2.get("by_mode"):
             st.info("Discovery Brain — no candidates this snapshot")
@@ -2996,8 +3335,11 @@ elif page == "⚡ Alpha Center":
                                 if item.get("invalidators"):
                                     st.caption(f"**Invalidators:** {', '.join(item['invalidators'])}")
 
-    # ── AC TAB 4: New Tickers (auto-discovery) ──
-    with ac_tab4:
+    # ── AC TAB 4: New Tickers (merged into Discovery above) ──
+    # NEW TICKERS TAB REMOVED — content moved under ac_tab5 (Discovery)
+    with ac_tab5:
+        st.markdown("---")
+        st.markdown("**🆕 New Ticker Discovery (Auto-Expansion)**")
         expansion_v2 = snap.get("ticker_universe_expansion", {}) or {}
         if not expansion_v2.get("candidates"):
             st.info("No new tickers discovered this snapshot")
@@ -3016,8 +3358,8 @@ elif page == "⚡ Alpha Center":
                 })
             st.dataframe(pd.DataFrame(cand_rows), width="stretch", hide_index=True)
 
-    # ── AC TAB 5: Supply Chain Chokepoints ──
-    with ac_tab5:
+    # ── AC TAB 6: Supply Chain Chokepoints ──
+    with ac_tab6:
         supply_v2 = snap.get("supply_chain_analysis", {}) or {}
         if not supply_v2.get("chokepoints"):
             st.info("Supply chain analysis unavailable")
@@ -3502,7 +3844,10 @@ elif page == "⚡ Alpha Center":
 
 elif page == "🇺🇸 US Stocks":
     st.markdown("## 🇺🇸 US Stocks")
-    st.caption("US Equities - Options - Greeks - COT - OI - Risk Ranges")
+    st.caption("Filter: Composite 40 + Thought Process 30 + Smart Money 15 + Risk Range 15 · Min score: 35/100")
+
+    # ── HEADER: Market-specific KPIs ──
+    render_market_header("us_stocks", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
@@ -3518,62 +3863,123 @@ elif page == "🇺🇸 US Stocks":
     for ticker in us_tickers:
         row = _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, "us_equity", vix_now, gamma_data, greeks_data, forward_returns, news_narratives)
         if row: us_rows.append(row)
-    longs, shorts = _split_long_short(us_rows)
 
-    all_us = longs + shorts
-    if not all_us:
-        st.info("No US stock setups.")
+    # Apply Sprint 8 filter (pass-through if engine unavailable)
+    us_passing = [r for r in us_rows if r.get("filter_score", 0) >= 35 or r.get("filter_score") is None]
+    us_passing.sort(key=lambda x: x.get("filter_score", 0), reverse=True)
+    longs = [r for r in us_passing if r.get("direction") == "LONG"]
+    shorts = [r for r in us_passing if r.get("direction") == "SHORT"]
 
-    # ── TICKER DETAIL REPORTS ──
-    if all_us:
-        st.markdown("### 📋 Ticker Detail Reports")
-        st.caption("Expand any ticker for full setup: Risk Range · Options · Greeks · Thesis")
-        for i, row in enumerate(all_us):
-            _render_narrative_card_native(row, i, "us_equity")
+    st.markdown("---")
+    f1, f2, f3, f4 = st.columns(4)
+    f1.metric("Universe", len(us_rows))
+    f2.metric("Passes Filter", len(us_passing))
+    f3.metric("🟢 LONG", len(longs))
+    f4.metric("🔴 SHORT", len(shorts))
+
+    if not us_passing:
+        st.info("No tickers pass filter threshold (35/100). Check Markov regime + thought_process matches.")
+
+    # ── 3 sub-tabs: Longs | Shorts | Smart Money Holdings ──
+    tab_l, tab_s, tab_sm = st.tabs([
+        f"🟢 LONG ({len(longs)})",
+        f"🔴 SHORT ({len(shorts)})",
+        "💼 Smart Money Holdings"
+    ])
+
+    with tab_l:
+        if not longs:
+            st.info("No LONG candidates pass filter.")
+        else:
+            st.caption(f"Sorted by filter score · Top {len(longs)} LONG candidates")
+            for i, row in enumerate(longs):
+                render_ticker_card(row, expanded=(i < 3), show_thesis=True, show_smart_money=True)
+
+    with tab_s:
+        if not shorts:
+            st.info("No SHORT candidates pass filter.")
+        else:
+            for i, row in enumerate(shorts):
+                render_ticker_card(row, expanded=(i < 3), show_thesis=True, show_smart_money=True)
+
+    with tab_sm:
+        sm_data = snap.get("smart_money", {}) or {}
+        consensus = sm_data.get("consensus_picks", [])
+        if consensus:
+            st.markdown(f"**{len(consensus)} consensus picks across {sm_data.get('n_funds_tracked', 0)} smart money funds**")
+            for c in consensus[:20]:
+                with st.expander(f"**{c.get('ticker')}** · {c.get('n_holders')} funds · ${c.get('weighted_pct_bn', 0):.1f}B weighted"):
+                    st.markdown(f"**Funds:** {', '.join(c.get('holders', []))}")
+                    st.caption(f"Avg position: {c.get('avg_pct', 0):.1%}")
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: FOREX
 # ═══════════════════════════════════════════════════════════════════
 elif page == "💱 Forex":
     st.markdown("## 💱 Forex")
-    st.caption("FX - DXY + COT - OI - Greeks - Risk Ranges")
+    st.caption("Filter: Composite 30 + Carry diff 25 + DXY/Real Yield 15 + Range tightness 15 + RR 15 · Min: 30/100")
+
+    # ── HEADER: FX-specific KPIs ──
+    render_market_header("forex", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
     cot_data = snap.get("cot_oi",{}).get("cot",{}) if snap else {}
     oi_data = snap.get("cot_oi",{}).get("oi",{}) if snap else {}
 
-    # DXY Header
-    dxy_val = None; dxy_trend = "-"
-    if prices.get("DX-Y.NYB") is not None:
-        try:
-            dxy_s = pd.to_numeric(prices["DX-Y.NYB"], errors="coerce").dropna()
-            if len(dxy_s) > 0: dxy_val = float(dxy_s.iloc[-1])
-            if len(dxy_s) >= 22: dxy_trend = f"{float(dxy_s.iloc[-1]/dxy_s.iloc[-22]-1):+.1%}"
-        except: pass
-    st.markdown(f'<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:8px;padding:12px;text-align:center;margin-bottom:12px;"><div style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;">US DOLLAR INDEX (DXY)</div><div style="font-size:24px;font-weight:700;color:var(--text-primary);margin:6px 0;">${dxy_val:.2f}</div><div style="font-size:12px;color:var(--text-secondary);">1M: {dxy_trend} - When DXY falls, EM and commodities rise</div></div>', unsafe_allow_html=True)
-
     fx_rows = []
     for ticker in list(FOREX_PAIRS.keys()):
         row = _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, "forex", vix_now, gamma_data, greeks_data, forward_returns, news_narratives)
         if row: fx_rows.append(row)
-    longs, shorts = _split_long_short(fx_rows)
-    all_fx = longs + shorts
-    if not all_fx:
-        st.info("No forex setups.")
-    # ── TICKER DETAIL REPORTS ──
-    if all_fx:
-        st.markdown("### 📋 Ticker Detail Reports")
-        st.caption("Expand any ticker for full setup: Risk Range · Options · Greeks · Thesis")
-        for i, row in enumerate(all_fx):
-            _render_narrative_card_native(row, i, "forex")
+
+    # Filter
+    fx_passing = [r for r in fx_rows if r.get("filter_score", 0) >= 30 or r.get("filter_score") is None]
+    fx_passing.sort(key=lambda x: x.get("filter_score", 0), reverse=True)
+    longs = [r for r in fx_passing if r.get("direction") == "LONG"]
+    shorts = [r for r in fx_passing if r.get("direction") == "SHORT"]
+
+    st.markdown("---")
+    f1, f2, f3, f4 = st.columns(4)
+    f1.metric("Pairs Universe", len(fx_rows))
+    f2.metric("Passes Filter", len(fx_passing))
+    f3.metric("🟢 LONG", len(longs))
+    f4.metric("🔴 SHORT", len(shorts))
+
+    if not fx_passing:
+        st.info("No FX pairs pass filter (30/100 minimum).")
+
+    tab_l, tab_s, tab_carry = st.tabs([
+        f"🟢 LONG ({len(longs)})",
+        f"🔴 SHORT ({len(shorts)})",
+        "💰 Carry Trades"
+    ])
+
+    with tab_l:
+        if not longs: st.info("No LONG FX setups.")
+        for i, row in enumerate(longs):
+            render_ticker_card(row, expanded=(i < 3), show_thesis=False, show_smart_money=False)
+
+    with tab_s:
+        if not shorts: st.info("No SHORT FX setups.")
+        for i, row in enumerate(shorts):
+            render_ticker_card(row, expanded=(i < 3), show_thesis=False, show_smart_money=False)
+
+    with tab_carry:
+        st.markdown("**Best carry trade candidates** (sorted by rate differential)")
+        with_carry = [(r, r.get("filter_tab_signals", {}).get("rate_differential_pct", 0)) for r in fx_passing]
+        with_carry.sort(key=lambda x: abs(x[1]), reverse=True)
+        for r, diff in with_carry[:10]:
+            st.markdown(f"**{r.get('ticker')}** · {r.get('direction')} · rate diff {diff:+.1f}% · filter {r.get('filter_score', 0):.0f}")
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: COMMODITIES
 # ═══════════════════════════════════════════════════════════════════
 elif page == "🛢️ Commodities":
     st.markdown("## 🛢️ Commodities")
-    st.caption("Commodities - COT - OI - Greeks - Risk Ranges")
+    st.caption("Filter: COT bias 30 + Composite 25 + USD inverse 15 + Bonds-XAU 15 + Cascade 15 · Min: 35/100")
+
+    # ── HEADER: Commodity-specific KPIs ──
+    render_market_header("commodities", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
@@ -3584,16 +3990,43 @@ elif page == "🛢️ Commodities":
     for ticker in list(COMMODITIES.keys()):
         row = _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, "commodity", vix_now, gamma_data, greeks_data, forward_returns, news_narratives)
         if row: comm_rows.append(row)
-    longs, shorts = _split_long_short(comm_rows)
-    all_comm = longs + shorts
-    if not all_comm:
-        st.info("No commodity setups.")
-    # ── TICKER DETAIL REPORTS ──
-    if all_comm:
-        st.markdown("### 📋 Ticker Detail Reports")
-        st.caption("Expand any ticker for full setup: Risk Range · Options · Greeks · Thesis")
-        for i, row in enumerate(all_comm):
-            _render_narrative_card_native(row, i, "commodity")
+
+    # Filter
+    comm_passing = [r for r in comm_rows if r.get("filter_score", 0) >= 35 or r.get("filter_score") is None]
+    comm_passing.sort(key=lambda x: x.get("filter_score", 0), reverse=True)
+
+    # Group by category
+    by_cat = {"Energy": [], "Metals": [], "Agricultural": [], "Softs": [], "Other": []}
+    for r in comm_passing:
+        cat = r.get("filter_tab_signals", {}).get("category", "Other")
+        if cat not in by_cat: cat = "Other"
+        by_cat[cat].append(r)
+
+    st.markdown("---")
+    f1, f2, f3, f4, f5 = st.columns(5)
+    f1.metric("Universe", len(comm_rows))
+    f2.metric("⚡ Energy", len(by_cat["Energy"]))
+    f3.metric("🥇 Metals", len(by_cat["Metals"]))
+    f4.metric("🌾 Ag", len(by_cat["Agricultural"]))
+    f5.metric("🍫 Softs", len(by_cat["Softs"]))
+
+    if not comm_passing:
+        st.info("No commodity tickers pass filter (35/100 minimum).")
+
+    tab_e, tab_m, tab_a, tab_s = st.tabs([
+        f"⚡ Energy ({len(by_cat['Energy'])})",
+        f"🥇 Metals ({len(by_cat['Metals'])})",
+        f"🌾 Agricultural ({len(by_cat['Agricultural'])})",
+        f"🍫 Softs ({len(by_cat['Softs'])})"
+    ])
+    for tab, cat in [(tab_e, "Energy"), (tab_m, "Metals"), (tab_a, "Agricultural"), (tab_s, "Softs")]:
+        with tab:
+            items = by_cat[cat]
+            if not items:
+                st.info(f"No {cat} tickers pass filter.")
+            else:
+                for i, row in enumerate(items):
+                    render_ticker_card(row, expanded=(i < 2), show_thesis=False, show_smart_money=False)
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -3864,16 +4297,51 @@ elif page == "₿ Crypto":
 
     crypto_rows.sort(key=_crypto_sort_key)
 
-    longs, shorts = _split_long_short(crypto_rows)
+    # ── Sprint 8: Apply Crypto-specific filter ──
+    crypto_passing = [r for r in crypto_rows if r.get("filter_score", 0) >= 35 or r.get("filter_score") is None]
+    crypto_passing.sort(key=lambda x: x.get("filter_score", 0), reverse=True)
+    longs = [r for r in crypto_passing if r.get("direction") == "LONG"]
+    shorts = [r for r in crypto_passing if r.get("direction") == "SHORT"]
 
-    all_crypto = longs + shorts
-    if not all_crypto:
-        st.info("No crypto setups.")
+    # Group by category (Major/L1/DeFi/Meme/AI_Crypto)
+    by_cat = {"Major": [], "L1": [], "DeFi": [], "Meme": [], "AI_Crypto": [], "Other": []}
+    for r in crypto_passing:
+        cat = r.get("filter_tab_signals", {}).get("category", "Other")
+        if cat not in by_cat: cat = "Other"
+        by_cat[cat].append(r)
+
+    st.markdown("---")
+    st.markdown("### 🎯 Filter Results (Crypto-Specific: Momentum 30 + Markov 15 + QQQ corr 15)")
+    fc1, fc2, fc3, fc4 = st.columns(4)
+    fc1.metric("Universe", len(crypto_rows))
+    fc2.metric("Passes Filter", len(crypto_passing))
+    fc3.metric("🟢 LONG", len(longs))
+    fc4.metric("🔴 SHORT", len(shorts))
+
+    if not crypto_passing:
+        st.info("No crypto tickers pass filter. Check Markov regime + momentum.")
     else:
-        st.markdown("### 📋 Ticker Detail Reports")
-        st.caption("Compact view: Funding · Unlock · Narrative · Whale · Options · Thesis")
-        for i, row in enumerate(all_crypto):
-            _render_crypto_card_compact(row, i)
+        tabs_crypto = st.tabs([
+            f"🟢 LONG ({len(longs)})",
+            f"🔴 SHORT ({len(shorts)})",
+            f"₿ Major ({len(by_cat['Major'])})",
+            f"🔗 L1 ({len(by_cat['L1'])})",
+            f"🤖 AI Crypto ({len(by_cat['AI_Crypto'])})",
+        ])
+        with tabs_crypto[0]:
+            if not longs: st.info("No LONG setups.")
+            for i, row in enumerate(longs):
+                render_ticker_card(row, expanded=(i < 3), show_thesis=False, show_smart_money=False)
+        with tabs_crypto[1]:
+            if not shorts: st.info("No SHORT setups.")
+            for i, row in enumerate(shorts):
+                render_ticker_card(row, expanded=(i < 3), show_thesis=False, show_smart_money=False)
+        for tab_idx, cat in [(2, "Major"), (3, "L1"), (4, "AI_Crypto")]:
+            with tabs_crypto[tab_idx]:
+                items = by_cat[cat]
+                if not items: st.info(f"No {cat}.")
+                for i, row in enumerate(items):
+                    render_ticker_card(row, expanded=(i < 2), show_thesis=False, show_smart_money=False)
 
 elif page == "🌍 Global & EM":
     st.markdown("## 🌍 Global & EM")
@@ -4052,22 +4520,53 @@ elif page == "🌍 Global & EM":
             for part in narrative_parts:
                 st.markdown(part)
 
-        # IHSG Table
+        # IHSG Table — Sprint 8 filter applied
         ihsg_rows = []
         for ticker in list(IHSG_UNIVERSE.keys()):
             row = _build_ihsg_row(ticker, prices, ar, ihsg_sector_momentum, ihsg_commodity_overlay, ihsg_rupiah_regime, ihsg_foreign_flow, ihsg_macro_overlay, forward_returns, news_narratives)
             if row:
+                # ── Inject tab filter score for IHSG ──
+                try:
+                    snap_ref = st.session_state.get("snap_cache", {})
+                    from engines.tab_filter_engine import apply_tab_filter
+                    fr = apply_tab_filter(ticker, "ihsg", snap_ref, st.session_state.get("current_quad", "Q3"))
+                    row["filter_score"] = fr.get("filter_score", 0)
+                    row["filter_passes"] = fr.get("passes_filter", False)
+                    row["filter_tab_signals"] = fr.get("tab_specific_signals", {})
+                except Exception:
+                    pass
                 ihsg_rows.append(row)
 
-        if not ihsg_rows:
-            st.info("No IHSG setups.")
+        # ── Sprint 8: IHSG-specific filter (min 35) ──
+        ihsg_passing = [r for r in ihsg_rows if r.get("filter_score", 0) >= 35 or r.get("filter_score") is None]
+        ihsg_passing.sort(key=lambda x: x.get("filter_score", 0), reverse=True)
 
-        # Ticker Detail Reports
-        if ihsg_rows:
-            st.markdown("### 📋 Ticker Detail Reports")
-            st.caption("Expand any ticker for full setup: Risk Range · Sector Context · Thesis")
-            for i, row in enumerate(ihsg_rows):
-                _render_narrative_card_native(row, i, "ihsg")
+        # Group by sector
+        by_sector = {}
+        for r in ihsg_passing:
+            sect = r.get("filter_tab_signals", {}).get("sector") or "Other"
+            by_sector.setdefault(sect, []).append(r)
+
+        st.markdown("---")
+        st.markdown("### 🎯 IHSG Filter (Sprint 8: Composite 30 + USDIDR 20 + Commodity proxy 15 + RR 15)")
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        fc1.metric("Universe", len(ihsg_rows))
+        fc2.metric("Passes Filter", len(ihsg_passing))
+        fc3.metric("🥇 Coal/Nickel", len(by_sector.get("Coal", [])) + len(by_sector.get("Nickel", [])))
+        fc4.metric("🏦 Banks", len(by_sector.get("Banks", [])))
+
+        if not ihsg_passing:
+            st.info("No IHSG tickers pass filter (35/100).")
+        else:
+            # Render by sector with sub-tabs
+            sectors_order = ["Banks", "Coal", "Nickel", "Consumer", "Telecom", "Property", "Other"]
+            sectors_with_data = [s for s in sectors_order if by_sector.get(s)]
+            if sectors_with_data:
+                sect_tabs = st.tabs([f"{s} ({len(by_sector[s])})" for s in sectors_with_data])
+                for tab_idx, sect_name in enumerate(sectors_with_data):
+                    with sect_tabs[tab_idx]:
+                        for i, row in enumerate(by_sector[sect_name]):
+                            render_ticker_card(row, expanded=(i < 2), show_thesis=False, show_smart_money=False)
 
         # Structural Diagnostics
         st.markdown("### 🔬 Structural Diagnostics")
