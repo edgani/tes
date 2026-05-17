@@ -21,6 +21,163 @@ logger = logging.getLogger(__name__)
 st.set_page_config(page_title="MacroRegime Pro", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
+# SPRINT 17: DESIGN SYSTEM CSS (Blueprint spec)
+# Tight padding, compact cards, proper typography hierarchy
+# ═══════════════════════════════════════════════════════════════════
+st.markdown("""<style>
+/* Reset Streamlit defaults for tighter layout */
+.block-container {
+    padding-top: 1.2rem !important;
+    padding-bottom: 1rem !important;
+    padding-left: 1.5rem !important;
+    padding-right: 1.5rem !important;
+    max-width: 1500px !important;
+}
+
+/* Tighter headers */
+h1 { font-size: 1.7rem !important; margin: 0.5rem 0 0.6rem !important; font-weight: 700 !important; }
+h2 { font-size: 1.35rem !important; margin: 0.6rem 0 0.5rem !important; font-weight: 700 !important; letter-spacing: -0.2px; }
+h3 { font-size: 1.1rem !important; margin: 0.8rem 0 0.4rem !important; font-weight: 700 !important; letter-spacing: -0.1px; }
+h4 { font-size: 0.95rem !important; margin: 0.5rem 0 0.3rem !important; font-weight: 600 !important; }
+
+/* Reduce vertical gaps between elements */
+.element-container { margin-bottom: 0.4rem !important; }
+hr { margin: 0.8rem 0 !important; opacity: 0.15; }
+
+/* Compact metric cards */
+[data-testid="stMetric"] {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 8px 12px !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    opacity: 0.65;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    font-variant-numeric: tabular-nums;
+}
+[data-testid="stMetricDelta"] {
+    font-size: 0.72rem !important;
+}
+
+/* Tighter columns */
+[data-testid="column"] { padding: 0 0.4rem !important; }
+
+/* Compact captions */
+.stCaption, p[data-testid="stCaption"] {
+    font-size: 0.78rem !important;
+    line-height: 1.4 !important;
+    opacity: 0.75 !important;
+}
+
+/* Markdown paragraphs tighter */
+[data-testid="stMarkdownContainer"] p {
+    margin-bottom: 0.4rem !important;
+    line-height: 1.45 !important;
+}
+
+/* Expander compact */
+[data-testid="stExpander"] {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px !important;
+    margin-bottom: 0.5rem !important;
+}
+[data-testid="stExpander"] > details > summary {
+    padding: 0.55rem 0.8rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+}
+[data-testid="stExpander"] > details > div {
+    padding: 0.2rem 0.8rem 0.8rem !important;
+}
+
+/* Alert boxes compact */
+[data-testid="stAlert"] {
+    padding: 0.55rem 0.85rem !important;
+    margin-bottom: 0.5rem !important;
+    border-radius: 6px !important;
+}
+[data-testid="stAlert"] p { font-size: 0.85rem !important; margin: 0 !important; }
+
+/* Sticky top bar holder */
+.top-bar-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 999;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+/* Card design system */
+.mr-card {
+    background: rgba(255,255,255,0.025);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+}
+.mr-card-title {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    opacity: 0.65;
+    margin-bottom: 6px;
+}
+.mr-card-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.mr-card-sub {
+    font-size: 0.75rem;
+    opacity: 0.7;
+    margin-top: 2px;
+}
+
+/* Pill badges */
+.mr-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    margin-right: 6px;
+}
+
+/* Compact tables */
+[data-testid="stDataFrame"] { font-size: 0.85rem !important; }
+
+/* Color tokens */
+:root {
+    --color-long: #22c55e;
+    --color-short: #ef4444;
+    --color-neutral: #eab308;
+    --color-warn: #f97316;
+    --color-mute: #9ca3af;
+}
+
+/* Sidebar tighter */
+[data-testid="stSidebar"] .block-container { padding-top: 1rem !important; }
+[data-testid="stSidebar"] h2 { font-size: 1rem !important; }
+
+/* Tabs compact */
+.stTabs [data-baseweb="tab-list"] { gap: 4px !important; }
+.stTabs [data-baseweb="tab"] {
+    padding: 6px 12px !important;
+    font-size: 0.85rem !important;
+}
+</style>""", unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════════
 # DEFENSIVE DEFAULTS — prevent NameError on any execution path
 # ═══════════════════════════════════════════════════════════════════
 inc_us = True
@@ -2513,16 +2670,18 @@ if page == "🏠 Dashboard":
     sorted_fc = sorted(fc_3m.items(), key=lambda x: x[1], reverse=True)[:4]
     fc_str = " > ".join([f"{q.split('_')[0]} {p:.0%}" for q, p in sorted_fc])
 
-    tb_style = f"""<div style='background:linear-gradient(90deg, {quad_label_id[2]}22 0%, rgba(15,15,20,0.6) 50%); border:1px solid {quad_label_id[2]}66; border-radius:8px; padding:10px 14px; margin-bottom:16px;'>
-      <div style='display:flex; gap:24px; flex-wrap:wrap; align-items:center;'>
-        <div><span style='font-size:18px; font-weight:700; color:{quad_label_id[2]};'>{quad_label_id[0]}</span>
-             <span style='font-size:11px; color:#aaa; margin-left:8px;'>{quad_label_id[1]}</span></div>
-        <div style='font-size:12px; color:#bbb;'>Keyakinan <b style='color:#eee;'>{confidence:.0%}</b></div>
-        <div style='font-size:11px; color:#888;'>3M: {fc_str or "—"}</div>
-        <div style='font-size:11px;'>{"🎰 <b>Mode Kasino</b>" if casino_mode else "🧊 Mode Tenang"}</div>
-        <div style='font-size:11px;'>🏦 Fiskal <b>{fiscal_score:.0f}/100</b></div>
-        <div style='font-size:11px;'>🩺 Pasar <b>{market_health_score:.0f}/100</b></div>
-        <div style='font-size:11px;'>🌊 <b>{advancing_pct:.0f}%</b> saham naik</div>
+    tb_style = f"""<div class='top-bar-sticky' style='background:linear-gradient(90deg, {quad_label_id[2]}26 0%, rgba(15,15,20,0.85) 60%); border:1px solid {quad_label_id[2]}66; border-radius:8px; padding:8px 14px; margin-bottom:12px;'>
+      <div style='display:flex; gap:18px; flex-wrap:wrap; align-items:center; font-size:11px;'>
+        <div style='display:flex; align-items:baseline; gap:6px;'>
+          <span style='font-size:17px; font-weight:800; color:{quad_label_id[2]}; letter-spacing:-0.3px;'>{quad_label_id[0]}</span>
+          <span style='font-size:10px; color:#999;'>{quad_label_id[1]}</span>
+        </div>
+        <div style='color:#ccc;'>Keyakinan <b style='color:#fff;'>{confidence:.0%}</b></div>
+        <div style='color:#999;'>3M: {fc_str or "—"}</div>
+        <div>{"🎰 <b style='color:#f97316;'>Mode Kasino</b>" if casino_mode else "🧊 Mode Tenang"}</div>
+        <div>🏦 Fiskal <b>{fiscal_score:.0f}</b></div>
+        <div>🩺 Pasar <b>{market_health_score:.0f}</b></div>
+        <div>🌊 <b>{advancing_pct:.0f}%</b> saham naik</div>
       </div>
     </div>"""
     st.markdown(tb_style, unsafe_allow_html=True)
@@ -2610,27 +2769,38 @@ if page == "🏠 Dashboard":
         st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
-    # SECTION 2: 3 KEMUNGKINAN (Bull/Base/Bear scenarios — compact)
+    # SECTION 2: 3 KEMUNGKINAN (HTML cards — compact)
     # ═══════════════════════════════════════════════════════════════════
     st.markdown("### 🎲 3 Kemungkinan ke Depan")
-    sc1, sc2, sc3 = st.columns(3)
     dom = scenarios.get("dominant_scenario", "base")
-    for col, scen_name, label_id, emoji in [
-        (sc1, "bull", "BULL", "🟢"),
-        (sc2, "base", "BASE", "🟡"),
-        (sc3, "bear", "BEAR", "🔴"),
-    ]:
+    scen_colors = {"bull": "#22c55e", "base": "#eab308", "bear": "#ef4444"}
+    scen_labels = {"bull": "BULL", "base": "BASE", "bear": "BEAR"}
+    scen_emojis = {"bull": "🟢", "base": "🟡", "bear": "🔴"}
+
+    cards_html = '<div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; margin-bottom:10px;">'
+    for scen_name in ["bull", "base", "bear"]:
         scen = scenarios.get(scen_name, {})
-        with col:
-            p = scen.get("probability", 0)
-            badge = " ⭐ PALING MUNGKIN" if dom == scen_name else ""
-            st.markdown(f"**{emoji} {label_id} — {p:.0%}{badge}**")
-            longs = ", ".join(scen.get("long_picks", [])[:4])
-            shorts = ", ".join(scen.get("short_picks", [])[:3])
-            st.caption(f"📈 LONG: {longs}")
-            st.caption(f"📉 SHORT: {shorts}")
-            if scen.get("options_play"):
-                st.caption(f"⚡ {scen['options_play'][:80]}")
+        p = scen.get("probability", 0)
+        is_dom = dom == scen_name
+        color = scen_colors[scen_name]
+        longs = ", ".join(scen.get("long_picks", [])[:4])
+        shorts = ", ".join(scen.get("short_picks", [])[:3])
+        opt_play = (scen.get("options_play", "") or "")[:70]
+        badge = "<span style='background:#fff; color:#000; padding:1px 6px; border-radius:8px; font-size:9px; font-weight:700; margin-left:6px;'>PALING MUNGKIN</span>" if is_dom else ""
+
+        cards_html += f"""
+        <div style='background:{color}11; border:1px solid {color}55; border-left:4px solid {color}; border-radius:8px; padding:10px 12px;'>
+          <div style='display:flex; align-items:baseline; gap:8px;'>
+            <span style='font-size:13px; font-weight:700; color:{color};'>{scen_emojis[scen_name]} {scen_labels[scen_name]}</span>
+            <span style='font-size:18px; font-weight:800; color:{color};'>{p:.0%}</span>
+            {badge}
+          </div>
+          <div style='font-size:11px; opacity:0.85; margin-top:6px;'><b>📈</b> {longs or '—'}</div>
+          <div style='font-size:11px; opacity:0.85; margin-top:2px;'><b>📉</b> {shorts or '—'}</div>
+          <div style='font-size:10px; opacity:0.6; margin-top:4px; font-style:italic;'>⚡ {opt_play}</div>
+        </div>"""
+    cards_html += '</div>'
+    st.markdown(cards_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -2697,100 +2867,92 @@ if page == "🏠 Dashboard":
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
-    # SECTION 5: HEATMAP ASSET CLASS
+    # SECTION 5: HEATMAP ASSET CLASS (single HTML grid — compact)
     # ═══════════════════════════════════════════════════════════════════
     st.markdown("### 🌡️ Heatmap Asset Class")
     asset_class_proxies = {
-        "📈 Saham (SPY)": "SPY",
-        "📊 Bonds (TLT)": "TLT",
-        "🛢️ Komoditas (DBC)": "DBC",
-        "₿ Crypto (BTC)": "BTC-USD",
-        "💱 USD (DXY)": "DX-Y.NYB",
-        "🌏 EM (EEM)": "EEM",
-        "💎 Emas (GLD)": "GLD",
-        "⚡ Energi (XLE)": "XLE",
+        "Saham": "SPY", "Bonds": "TLT", "Komoditas": "DBC", "Crypto": "BTC-USD",
+        "USD": "DX-Y.NYB", "EM": "EEM", "Emas": "GLD", "Energi": "XLE",
     }
-    hm_cols = st.columns(8)
-    for i, (label, ticker) in enumerate(asset_class_proxies.items()):
-        with hm_cols[i % 8]:
-            try:
-                s = prices.get(ticker)
-                if s is not None:
-                    ser = pd.to_numeric(s, errors="coerce").dropna()
-                    if len(ser) >= 22:
-                        m_21d = float(ser.iloc[-1] / ser.iloc[-22] - 1)
-                        if m_21d > 0.03:
-                            emoji, color = "🟢", "#22c55e"
-                            hm_status = "KUAT"
-                        elif m_21d > 0:
-                            emoji, color = "🟡", "#eab308"
-                            hm_status = "CUKUP"
-                        elif m_21d > -0.03:
-                            emoji, color = "🟠", "#f97316"
-                            hm_status = "LEMAH"
-                        else:
-                            emoji, color = "🔴", "#ef4444"
-                            hm_status = "SAKIT"
-                        st.markdown(
-                            f"<div style='background:{color}22; border:1px solid {color}; border-radius:6px; padding:6px; text-align:center; min-height:60px;'>"
-                            f"<div style='font-size:11px;'>{label.split(' ',1)[1] if ' ' in label else label}</div>"
-                            f"<div style='font-size:14px; font-weight:700; color:{color};'>{emoji} {hm_status}</div>"
-                            f"<div style='font-size:10px; color:#888;'>{m_21d*100:+.1f}% 21d</div>"
-                            f"</div>", unsafe_allow_html=True)
+    hm_html = '<div style="display:grid; grid-template-columns:repeat(8, 1fr); gap:6px; margin-bottom:8px;">'
+    for label, ticker in asset_class_proxies.items():
+        try:
+            s = prices.get(ticker)
+            if s is not None:
+                ser = pd.to_numeric(s, errors="coerce").dropna()
+                if len(ser) >= 22:
+                    m_21d = float(ser.iloc[-1] / ser.iloc[-22] - 1)
+                    if m_21d > 0.03:
+                        emoji, color, hm_status = "🟢", "#22c55e", "KUAT"
+                    elif m_21d > 0:
+                        emoji, color, hm_status = "🟡", "#eab308", "CUKUP"
+                    elif m_21d > -0.03:
+                        emoji, color, hm_status = "🟠", "#f97316", "LEMAH"
                     else:
-                        st.caption(f"{label}: —")
+                        emoji, color, hm_status = "🔴", "#ef4444", "SAKIT"
+                    hm_html += f"""<div style='background:{color}1f; border:1px solid {color}66; border-radius:6px; padding:6px 4px; text-align:center;'>
+                      <div style='font-size:10px; opacity:0.7;'>{label}</div>
+                      <div style='font-size:11px; font-weight:700; color:{color}; margin-top:2px;'>{emoji} {hm_status}</div>
+                      <div style='font-size:9px; opacity:0.55; margin-top:1px;'>{m_21d*100:+.1f}%</div>
+                    </div>"""
                 else:
-                    st.caption(f"{label}: —")
-            except Exception:
-                st.caption(f"{label}: —")
+                    hm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+            else:
+                hm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+        except Exception:
+            hm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+    hm_html += '</div>'
+    st.markdown(hm_html, unsafe_allow_html=True)
 
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
-    # SECTION 6: ROTASI MODAL (Capital Flow tracking via 3M returns)
+    # SECTION 6: ROTASI MODAL (HTML grid — compact 2-col)
     # ═══════════════════════════════════════════════════════════════════
-    st.markdown("### 💰 Rotasi Modal (Cross-Sector Flow)")
+    st.markdown("### 💰 Rotasi Modal (Cross-Sector Flow 3M)")
     coatue = snap.get("coatue_scan", {}) or {}
     rotation_spread = coatue.get("capital_rotation_spread", {})
 
-    rm_col1, rm_col2 = st.columns(2)
-    with rm_col1:
-        st.markdown("**📤 UANG KELUAR DARI (3M):**")
-        # Use bottom performers
-        bottom_performers = []
-        for ticker in ["QQQ", "XLK", "ARKK", "META", "IWM", "KRE", "BTC-USD"]:
-            s = prices.get(ticker)
-            if s is not None:
-                try:
-                    ser = pd.to_numeric(s, errors="coerce").dropna()
-                    if len(ser) >= 64:
-                        ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
-                        bottom_performers.append((ticker, ret_3m))
-                except Exception:
-                    pass
-        bottom_performers.sort(key=lambda x: x[1])
-        for ticker, ret in bottom_performers[:4]:
-            st.markdown(f"• **{ticker}**: {ret*100:+.1f}%")
+    bottom_performers = []
+    for ticker in ["QQQ", "XLK", "ARKK", "META", "IWM", "KRE", "BTC-USD"]:
+        s = prices.get(ticker)
+        if s is not None:
+            try:
+                ser = pd.to_numeric(s, errors="coerce").dropna()
+                if len(ser) >= 64:
+                    bottom_performers.append((ticker, float(ser.iloc[-1] / ser.iloc[-64] - 1)))
+            except Exception:
+                pass
+    bottom_performers.sort(key=lambda x: x[1])
 
-    with rm_col2:
-        st.markdown("**📥 UANG MASUK KE (3M):**")
-        top_performers = []
-        for ticker in ["XLE", "GLD", "SLV", "VST", "BE", "CCJ", "URA", "LITE"]:
-            s = prices.get(ticker)
-            if s is not None:
-                try:
-                    ser = pd.to_numeric(s, errors="coerce").dropna()
-                    if len(ser) >= 64:
-                        ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
-                        top_performers.append((ticker, ret_3m))
-                except Exception:
-                    pass
-        top_performers.sort(key=lambda x: x[1], reverse=True)
-        for ticker, ret in top_performers[:4]:
-            st.markdown(f"• **{ticker}**: {ret*100:+.1f}%")
+    top_performers = []
+    for ticker in ["XLE", "GLD", "SLV", "VST", "BE", "CCJ", "URA", "LITE"]:
+        s = prices.get(ticker)
+        if s is not None:
+            try:
+                ser = pd.to_numeric(s, errors="coerce").dropna()
+                if len(ser) >= 64:
+                    top_performers.append((ticker, float(ser.iloc[-1] / ser.iloc[-64] - 1)))
+            except Exception:
+                pass
+    top_performers.sort(key=lambda x: x[1], reverse=True)
 
+    out_str = " · ".join([f"<b>{t}</b> <span style='color:#ef4444;'>{r*100:+.1f}%</span>" for t, r in bottom_performers[:4]])
+    in_str = " · ".join([f"<b>{t}</b> <span style='color:#22c55e;'>{r*100:+.1f}%</span>" for t, r in top_performers[:4]])
+
+    rotasi_html = f"""<div style='display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px;'>
+      <div style='background:#ef444411; border-left:3px solid #ef4444; border-radius:6px; padding:8px 12px;'>
+        <div style='font-size:11px; opacity:0.7; font-weight:600;'>📤 UANG KELUAR</div>
+        <div style='font-size:12px; margin-top:4px; line-height:1.6;'>{out_str or '—'}</div>
+      </div>
+      <div style='background:#22c55e11; border-left:3px solid #22c55e; border-radius:6px; padding:8px 12px;'>
+        <div style='font-size:11px; opacity:0.7; font-weight:600;'>📥 UANG MASUK</div>
+        <div style='font-size:12px; margin-top:4px; line-height:1.6;'>{in_str or '—'}</div>
+      </div>
+    </div>"""
+    st.markdown(rotasi_html, unsafe_allow_html=True)
     if rotation_spread.get("interpretation"):
-        st.caption(f"🔄 **COATUE Interpretasi:** {rotation_spread['interpretation']}")
+        st.caption(f"🔄 COATUE: {rotation_spread['interpretation']}")
 
     st.markdown("---")
     # TOP BAR — 4 KPIs ONLY (was 6+4=10, now 4 essential)
