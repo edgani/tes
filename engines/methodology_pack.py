@@ -240,7 +240,7 @@ def evaluate_schadner(ticker: str, prices_series=None, vix: float = 20.0,
     - Cross-reference with Markov change-point alert
     - Recommend structure (buy convexity vs sell premium + tail hedge)
     """
-    result = {"framework": "Schadner", "matched": False, "score": 0, "role": None,
+    result = {"framework": "VolDecomp", "matched": False, "score": 0, "role": None,
               "thesis": None, "rationale": [], "transition_risk": "LOW",
               "bs_decomposition": None}
     
@@ -490,7 +490,7 @@ def evaluate_profplum99(ticker: str, gamma_data: Dict = None, greeks_data: Dict 
     - Cross-reference with Risk Range location (Trade low/high)
     - Sweep type detection (proxy)
     """
-    result = {"framework": "profplum99", "matched": False, "score": 0, "role": None,
+    result = {"framework": "FlowContext", "matched": False, "score": 0, "role": None,
               "thesis": None, "rationale": [], "flow_interpretation": None}
     
     if not (gamma_data and gamma_data.get("ok")) and not (greeks_data and greeks_data.get("ok")):

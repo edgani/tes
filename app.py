@@ -964,6 +964,57 @@ def _build_consolidated_row(ticker, prices, ar, cot_data, oi_data, market_type, 
         "setup_options_magnet": setup_v2.get("options_magnet") if setup_v2 else None,
         "near_entry": setup_v2.get("near_entry") if setup_v2 else rl.get("near_entry", False),
     }
+    # ── Sprint 13: Compute action_status (ENTRY NOW / WAIT / SKIP) ──
+    try:
+        direction = row.get("direction", "NEUTRAL")
+        px = row.get("price")
+        entry = row.get("entry")
+        near_entry = row.get("near_entry", False)
+        
+        if direction in ("NEUTRAL", "AVOID") or not px or not entry:
+            row["action_status"] = "SKIP"
+            row["action_label"] = "⛔ SKIP — no clear setup"
+            row["wait_target"] = None
+        elif direction == "LONG":
+            if near_entry:
+                row["action_status"] = "ENTRY_NOW"
+                row["action_label"] = f"🟢 ENTRY NOW @ ${px:.2f}"
+                row["wait_target"] = None
+            elif px > entry * 1.04:  # too high above entry
+                row["action_status"] = "WAIT"
+                row["action_label"] = f"⏳ WAIT — buy pullback to ${entry:.2f}"
+                row["wait_target"] = entry
+            elif px < entry * 0.96:  # already below entry, may be at risk
+                stop = row.get("stop", 0) or 0
+                if stop and px < stop * 1.02:
+                    row["action_status"] = "AT_RISK"
+                    row["action_label"] = f"⚠️ AT RISK — near stop ${stop:.2f}"
+                else:
+                    row["action_status"] = "ENTRY_NOW"
+                    row["action_label"] = f"🟢 ENTRY NOW @ ${px:.2f} (below LRR)"
+                row["wait_target"] = None
+            else:
+                row["action_status"] = "NEAR_ENTRY"
+                row["action_label"] = f"📊 NEAR ENTRY (within 4%) @ ${px:.2f}"
+                row["wait_target"] = entry
+        elif direction == "SHORT":
+            if near_entry:
+                row["action_status"] = "ENTRY_NOW"
+                row["action_label"] = f"🔴 ENTRY NOW SHORT @ ${px:.2f}"
+                row["wait_target"] = None
+            elif px < entry * 0.96:  # too low below entry zone
+                row["action_status"] = "WAIT"
+                row["action_label"] = f"⏳ WAIT — short bounce to ${entry:.2f}"
+                row["wait_target"] = entry
+            else:
+                row["action_status"] = "NEAR_ENTRY"
+                row["action_label"] = f"📊 NEAR ENTRY (within 4%) @ ${px:.2f}"
+                row["wait_target"] = entry
+    except Exception:
+        row["action_status"] = "SKIP"
+        row["action_label"] = "⛔ SKIP"
+        row["wait_target"] = None
+
     # ── Sprint 7: Inject thought_process + smart_money + tab_filter ──
     try:
         snap_ref = st.session_state.get("snap_cache", {})
@@ -2292,68 +2343,278 @@ def render_market_header(market_label: str, snap_in, tickers_in_tab=None):
 
 
 if page == "🏠 Dashboard":
-    st.markdown("## 🏠 MacroRegime Dashboard")
-    st.caption("30-second read · The Machine front-running")
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 14: Dashboard rebuild matching Final Blueprint (Bahasa Indonesia)
+    # Structure: TOP BAR → REGIME HARI INI → 3 KEMUNGKINAN → ALERT → RANTAI →
+    #            HEATMAP ASSET CLASS → ROTASI MODAL → [Expander Detail Teknis]
+    # ═══════════════════════════════════════════════════════════════════
 
-    # ═══════════════════════════════════════════════════════════════════
-    # SPRINT 11: SIMPLIFIED Narrative Card
-    # Headline + 3 scenarios + 1-line action (no nested tabs)
-    # ═══════════════════════════════════════════════════════════════════
+    # ── Pull all engine outputs ──
     narrative = snap.get("narrative", {}) or {}
-    if narrative:
-        macro_nar = narrative.get("macro_narrative", {})
-        scenarios = narrative.get("scenarios", {})
-        action = narrative.get("action_summary", {})
+    macro_nar = narrative.get("macro_narrative", {})
+    scenarios = narrative.get("scenarios", {})
+    action = narrative.get("action_summary", {})
+    quad_seq = narrative.get("quad_sequencing", {})
+    chains = narrative.get("active_causal_chains", [])
+    bottlenecks = narrative.get("active_bottlenecks", [])
+    divergences = narrative.get("behavioral_divergences", [])
 
-        # Single headline
-        st.markdown(f"### {macro_nar.get('headline', '⚪ Loading…')}")
-        st.markdown(f"_{macro_nar.get('narrative', '')[:300]}_")
+    markov = snap.get("markov_v3", {}) or {}
+    yves_v2 = snap.get("yves_v2", {}) or {}
+    ust = snap.get("ust_auction", {}) or {}
+    cap_rot = snap.get("capital_rotation", {}) or {}
+    health_snap = snap.get("market_health", {}) or {}
+    breadth = snap.get("breadth", {}) or {}
 
-        # 3 Scenarios row — COMPACT (no captions tertumpuk)
-        dom = scenarios.get("dominant_scenario", "base")
-        sc1, sc2, sc3 = st.columns(3)
-        for col, scen_name, emoji in [(sc1, "bull", "🟢"), (sc2, "base", "🟡"), (sc3, "bear", "🔴")]:
-            scen = scenarios.get(scen_name, {})
-            with col:
-                p = scen.get("probability", 0)
-                star = " ⭐" if dom == scen_name else ""
-                col.metric(f"{emoji} {scen_name.upper()}{star}", f"{p:.0%}",
-                           f"{', '.join(scen.get('long_picks', [])[:3])}")
-
-        # 1-line action (no expandable, direct)
-        st.info(f"**🎯 {action.get('primary_action', '—')}** · "
-                f"Longs: {', '.join(action.get('top_longs', [])[:4])} · "
-                f"Shorts: {', '.join(action.get('top_shorts', [])[:3])}")
-
-        # ── HEDGEYE-STYLE QUAD SEQUENCING CARD (NEW Sprint 12) ──
-        qs = narrative.get("quad_sequencing", {}) or {}
-        if qs:
-            st.markdown("---")
-            qsc1, qsc2 = st.columns([3, 2])
-            with qsc1:
-                st.markdown(f"**📊 Quad Sequencing (Hedgeye-style):** {qs.get('current_quad', '—')}")
-                for line in qs.get("narrative_lines", []):
-                    st.markdown(line)
-            with qsc2:
-                if qs.get("path_dependencies"):
-                    st.markdown("**🛤️ Path Dependencies:**")
-                    for p in qs.get("path_dependencies", [])[:4]:
-                        st.caption(f"• {p}")
-            if qs.get("stag_on_a_lag"):
-                st.warning(
-                    "⚠️ **\"Flation Now, Stag-On-A-Lag\"** signal active. "
-                    "Hedgeye-style transition warning: Q2 reflation now, but Q3 stagflation building. "
-                    "Tighten stops, prep defensive rotation."
-                )
-
-        # Compact summary line
-        st.caption(f"🔗 {narrative.get('n_active_chains', 0)} causal chains · "
-                   f"🚧 {narrative.get('n_active_bottlenecks', 0)} bottlenecks · "
-                   f"🎭 {narrative.get('n_behavioral_divergences', 0)} behavioral divergences "
-                   f"→ Detail expanders di bawah")
-        st.markdown("---")
+    quad_label_id = {
+        "Q1_GOLDILOCKS": ("🟢 GOLDILOCKS", "Pertumbuhan ↑ Inflasi ↓", "#22c55e"),
+        "Q2_REFLATION":  ("🟠 REFLASI",    "Pertumbuhan ↑ Inflasi ↑", "#f97316"),
+        "Q3_STAGFLATION":("🟡 STAGFLASI",  "Pertumbuhan ↓ Inflasi ↑", "#eab308"),
+        "Q4_DEFLATION":  ("🔴 DEFLASI",    "Pertumbuhan ↓ Inflasi ↓", "#ef4444"),
+        "Q5_CRASH":      ("⚫ CRASH",      "Risk-off ekstrem",         "#000000"),
+    }.get(markov.get("current_regime"), ("⚪ UNKNOWN", "—", "#9ca3af"))
 
     # ═══════════════════════════════════════════════════════════════════
+    # TOP BAR (Persistent context strip)
+    # ═══════════════════════════════════════════════════════════════════
+    yves_alerts = yves_v2.get("alerts", []) or []
+    casino_mode = any(a.get("category", "").lower() == "casino_mode" for a in yves_alerts)
+    fiscal_score = ust.get("fiscal_dominance", {}).get("score", 0) or 0
+    market_health_score = health_snap.get("score", health_snap.get("composite_score", 60))
+
+    advancing_pct = 0
+    try:
+        adv = breadth.get("advancing_pct") or breadth.get("a_d_ratio")
+        if adv is not None:
+            advancing_pct = float(adv) * 100 if abs(adv) <= 1 else float(adv)
+    except Exception:
+        pass
+
+    confidence = markov.get("confidence", 0)
+    fc_3m = markov.get("forecast_3m", {}) or {}
+    sorted_fc = sorted(fc_3m.items(), key=lambda x: x[1], reverse=True)[:4]
+    fc_str = " > ".join([f"{q.split('_')[0]} {p:.0%}" for q, p in sorted_fc])
+
+    tb_style = f"""<div style='background:linear-gradient(90deg, {quad_label_id[2]}22 0%, rgba(15,15,20,0.6) 50%); border:1px solid {quad_label_id[2]}66; border-radius:8px; padding:10px 14px; margin-bottom:16px;'>
+      <div style='display:flex; gap:24px; flex-wrap:wrap; align-items:center;'>
+        <div><span style='font-size:18px; font-weight:700; color:{quad_label_id[2]};'>{quad_label_id[0]}</span>
+             <span style='font-size:11px; color:#aaa; margin-left:8px;'>{quad_label_id[1]}</span></div>
+        <div style='font-size:12px; color:#bbb;'>Keyakinan <b style='color:#eee;'>{confidence:.0%}</b></div>
+        <div style='font-size:11px; color:#888;'>3M: {fc_str or "—"}</div>
+        <div style='font-size:11px;'>{"🎰 <b>Mode Kasino</b>" if casino_mode else "🧊 Mode Tenang"}</div>
+        <div style='font-size:11px;'>🏦 Fiskal <b>{fiscal_score:.0f}/100</b></div>
+        <div style='font-size:11px;'>🩺 Pasar <b>{market_health_score:.0f}/100</b></div>
+        <div style='font-size:11px;'>🌊 <b>{advancing_pct:.0f}%</b> saham naik</div>
+      </div>
+    </div>"""
+    st.markdown(tb_style, unsafe_allow_html=True)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 1: REGIME HARI INI (single big card)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 🎯 Regime Hari Ini")
+    rg_col1, rg_col2 = st.columns([2, 3])
+    with rg_col1:
+        st.markdown(f"## {quad_label_id[0]}")
+        st.caption(quad_label_id[1])
+        if quad_seq.get("stag_on_a_lag"):
+            st.warning('"Inflasi Sekarang, Stagflasi Nanti" — Tighten stop loss')
+        elif macro_nar.get("headline"):
+            st.markdown(f"_{macro_nar['headline']}_")
+    with rg_col2:
+        if macro_nar.get("narrative"):
+            st.markdown(f"**Cerita:** {macro_nar['narrative'][:400]}")
+        if quad_seq.get("path_dependencies"):
+            st.caption("**🛤️ Path Dependencies:**")
+            for p in quad_seq["path_dependencies"][:3]:
+                st.caption(f"  • {p}")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 2: 3 KEMUNGKINAN (Bull/Base/Bear scenarios — compact)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 🎲 3 Kemungkinan ke Depan")
+    sc1, sc2, sc3 = st.columns(3)
+    dom = scenarios.get("dominant_scenario", "base")
+    for col, scen_name, label_id, emoji in [
+        (sc1, "bull", "BULL", "🟢"),
+        (sc2, "base", "BASE", "🟡"),
+        (sc3, "bear", "BEAR", "🔴"),
+    ]:
+        scen = scenarios.get(scen_name, {})
+        with col:
+            p = scen.get("probability", 0)
+            badge = " ⭐ PALING MUNGKIN" if dom == scen_name else ""
+            st.markdown(f"**{emoji} {label_id} — {p:.0%}{badge}**")
+            longs = ", ".join(scen.get("long_picks", [])[:4])
+            shorts = ", ".join(scen.get("short_picks", [])[:3])
+            st.caption(f"📈 LONG: {longs}")
+            st.caption(f"📉 SHORT: {shorts}")
+            if scen.get("options_play"):
+                st.caption(f"⚡ {scen['options_play'][:80]}")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 3: ALERT PALING PENTING (Behavioral + Bottleneck + Events)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### ⚠️ Alert Paling Penting")
+    alerts_to_show = []
+
+    # Yves casino mode
+    if casino_mode:
+        alerts_to_show.append({
+            "emoji": "🎰",
+            "title": "Mode Kasino aktif",
+            "detail": "Sentimen terlalu optimis. Trim 20% high-beta. Tighten stop.",
+        })
+
+    # Bottleneck top 3
+    for b in bottlenecks[:3]:
+        beneficiaries = ", ".join(b.get("beneficiaries", [])[:5])
+        alerts_to_show.append({
+            "emoji": "⚡" if "power" in b["name"] or "AI" in b["name"].upper() else "🚧",
+            "title": f"{b['name'].replace('_', ' ').title()}",
+            "detail": f"Beli: {beneficiaries}",
+        })
+
+    # Fiscal dominance
+    if fiscal_score >= 50:
+        alerts_to_show.append({
+            "emoji": "🏦",
+            "title": f"Dominasi Fiskal ({fiscal_score:.0f}/100)",
+            "detail": "Beli GLD, SLV, BTC sebagai hedge debasement.",
+        })
+
+    if not alerts_to_show:
+        st.info("Tidak ada alert prioritas tinggi saat ini.")
+    else:
+        for a in alerts_to_show[:5]:
+            st.markdown(f"{a['emoji']} **{a['title']}** — {a['detail']}")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 4: RANTAI AKTIF (Active causal chains)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 🔗 Rantai Aktif")
+    if not chains:
+        st.info("Tidak ada rantai sebab-akibat aktif.")
+    else:
+        for c in chains[:5]:
+            # Show first 2 steps inline + long/short exposure
+            steps = c.get("chain", [])
+            preview = " → ".join([s.replace("→ ", "").strip() for s in steps[:3]])
+            longs = ", ".join(c.get("long_exposure", [])[:5])
+            shorts = ", ".join(c.get("short_exposure", [])[:3])
+            with st.expander(f"🔗 **{c['name'].replace('_', ' ').title()}** ({c['duration_months']}bln) — {preview[:120]}"):
+                for s in steps:
+                    st.markdown(f"  {s}")
+                if longs:
+                    st.markdown(f"**📈 BELI:** {longs}")
+                if shorts:
+                    st.markdown(f"**📉 SHORT:** {shorts}")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 5: HEATMAP ASSET CLASS
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 🌡️ Heatmap Asset Class")
+    asset_class_proxies = {
+        "📈 Saham (SPY)": "SPY",
+        "📊 Bonds (TLT)": "TLT",
+        "🛢️ Komoditas (DBC)": "DBC",
+        "₿ Crypto (BTC)": "BTC-USD",
+        "💱 USD (DXY)": "DX-Y.NYB",
+        "🌏 EM (EEM)": "EEM",
+        "💎 Emas (GLD)": "GLD",
+        "⚡ Energi (XLE)": "XLE",
+    }
+    hm_cols = st.columns(8)
+    for i, (label, ticker) in enumerate(asset_class_proxies.items()):
+        with hm_cols[i % 8]:
+            try:
+                s = prices.get(ticker)
+                if s is not None:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) >= 22:
+                        m_21d = float(ser.iloc[-1] / ser.iloc[-22] - 1)
+                        if m_21d > 0.03:
+                            emoji, color = "🟢", "#22c55e"
+                            health = "KUAT"
+                        elif m_21d > 0:
+                            emoji, color = "🟡", "#eab308"
+                            health = "CUKUP"
+                        elif m_21d > -0.03:
+                            emoji, color = "🟠", "#f97316"
+                            health = "LEMAH"
+                        else:
+                            emoji, color = "🔴", "#ef4444"
+                            health = "SAKIT"
+                        st.markdown(
+                            f"<div style='background:{color}22; border:1px solid {color}; border-radius:6px; padding:6px; text-align:center; min-height:60px;'>"
+                            f"<div style='font-size:11px;'>{label.split(' ',1)[1] if ' ' in label else label}</div>"
+                            f"<div style='font-size:14px; font-weight:700; color:{color};'>{emoji} {health}</div>"
+                            f"<div style='font-size:10px; color:#888;'>{m_21d*100:+.1f}% 21d</div>"
+                            f"</div>", unsafe_allow_html=True)
+                    else:
+                        st.caption(f"{label}: —")
+                else:
+                    st.caption(f"{label}: —")
+            except Exception:
+                st.caption(f"{label}: —")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SECTION 6: ROTASI MODAL (Capital Flow tracking via 3M returns)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 💰 Rotasi Modal (Cross-Sector Flow)")
+    coatue = snap.get("coatue_scan", {}) or {}
+    rotation_spread = coatue.get("capital_rotation_spread", {})
+
+    rm_col1, rm_col2 = st.columns(2)
+    with rm_col1:
+        st.markdown("**📤 UANG KELUAR DARI (3M):**")
+        # Use bottom performers
+        bottom_performers = []
+        for ticker in ["QQQ", "XLK", "ARKK", "META", "IWM", "KRE", "BTC-USD"]:
+            s = prices.get(ticker)
+            if s is not None:
+                try:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) >= 64:
+                        ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
+                        bottom_performers.append((ticker, ret_3m))
+                except Exception:
+                    pass
+        bottom_performers.sort(key=lambda x: x[1])
+        for ticker, ret in bottom_performers[:4]:
+            st.markdown(f"• **{ticker}**: {ret*100:+.1f}%")
+
+    with rm_col2:
+        st.markdown("**📥 UANG MASUK KE (3M):**")
+        top_performers = []
+        for ticker in ["XLE", "GLD", "SLV", "VST", "BE", "CCJ", "URA", "LITE"]:
+            s = prices.get(ticker)
+            if s is not None:
+                try:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) >= 64:
+                        ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
+                        top_performers.append((ticker, ret_3m))
+                except Exception:
+                    pass
+        top_performers.sort(key=lambda x: x[1], reverse=True)
+        for ticker, ret in top_performers[:4]:
+            st.markdown(f"• **{ticker}**: {ret*100:+.1f}%")
+
+    if rotation_spread.get("interpretation"):
+        st.caption(f"🔄 **COATUE Interpretasi:** {rotation_spread['interpretation']}")
+
+    st.markdown("---")
     # TOP BAR — 4 KPIs ONLY (was 6+4=10, now 4 essential)
     # ═══════════════════════════════════════════════════════════════════
     vix_val = health.get("vix_bucket", {}).get("vix_last", 18) if health else 18
@@ -2900,7 +3161,7 @@ if page == "🏠 Dashboard":
     n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
     flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
     cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.7-Sprint12")
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.8-Sprint14")
 
 
 
@@ -3178,9 +3439,9 @@ if page == "🏠 Dashboard":
                 "📊 Karsan",
                 "🧠 Yves",
                 "🌀 Soros",
-                "⚡ Schadner",
+                "⚡ Vol Decomp",
                 "💧 Druckenmiller",
-                "🎯 Tier1Alpha + profplum99",
+                "🎯 Tier1Alpha + Flow Context",
             ])
 
             with framework_tabs[0]:
@@ -3269,7 +3530,7 @@ if page == "🏠 Dashboard":
                         if count >= 8: break
 
             with framework_tabs[5]:
-                st.markdown("**⚡ Schadner — Transition Risk + BS Decomposition**")
+                st.markdown("**⚡ Vol Decomposition — Transition Risk + Black-Scholes IV Breakdown**")
                 count = 0
                 for tk, tp in (thought_process or {}).items():
                     sch = tp.get("framework_breakdown", {}).get("schadner", {})
@@ -3290,7 +3551,7 @@ if page == "🏠 Dashboard":
                         count += 1
 
             with framework_tabs[7]:
-                st.markdown("**🎯 Tier1Alpha (Dealer Gamma) + profplum99 (UOA Flow)**")
+                st.markdown("**🎯 Tier1Alpha (Dealer Gamma) + Flow Contextualizer (UOA + Risk Range)**")
                 count_t1 = count_pp = 0
                 for tk, tp in (thought_process or {}).items():
                     t1 = tp.get("framework_breakdown", {}).get("tier1alpha", {})
@@ -4023,6 +4284,73 @@ elif page == "⚡ Alpha Center":
 
 elif page == "🇺🇸 US Stocks":
     st.markdown("## 🇺🇸 US Stocks")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 14: Blueprint sections (Indonesian)
+    # KESEHATAN PASAR → PLAYBOOK Q3 → BOTTLENECK → IDE ALPHA → Tickers
+    # ═══════════════════════════════════════════════════════════════════
+    markov_us = snap.get("markov_v3", {}) or {}
+    quad_raw_us = markov_us.get("current_regime", "Q3_STAGFLATION")
+    quad_short_us = quad_raw_us.split("_")[0]
+    narrative_us = snap.get("narrative", {}) or {}
+    bottlenecks_us = narrative_us.get("active_bottlenecks", []) or []
+    health_us = snap.get("market_health", {}) or {}
+
+    # ── KESEHATAN PASAR ──
+    mh_score = health_us.get("score", health_us.get("composite_score", 60)) or 60
+    mh_emoji, mh_label = ("🟢", "KUAT") if mh_score >= 70 else ("🟡", "CUKUP") if mh_score >= 50 else ("🟠", "LEMAH") if mh_score >= 30 else ("🔴", "SAKIT")
+    breadth_us = snap.get("breadth", {}) or {}
+    adv_pct = (breadth_us.get("advancing_pct") or 0.5) * 100 if (breadth_us.get("advancing_pct") or 0) <= 1 else (breadth_us.get("advancing_pct") or 50)
+    iwm_mom = None
+    try:
+        iwm_s = pd.to_numeric(prices.get("IWM"), errors="coerce").dropna()
+        if len(iwm_s) >= 22:
+            iwm_mom = float(iwm_s.iloc[-1] / iwm_s.iloc[-22] - 1)
+    except Exception:
+        pass
+
+    with st.container():
+        st.markdown(f"### 🩺 Kesehatan Pasar — {mh_emoji} {mh_label} ({mh_score:.0f}/100)")
+        khp1, khp2, khp3 = st.columns(3)
+        khp1.metric("% Saham Naik", f"{adv_pct:.0f}%")
+        khp2.metric("VIX", f"{vix_now:.1f}",
+                    "santai" if vix_now < 16 else "waspada" if vix_now < 22 else "stress")
+        if iwm_mom is not None:
+            khp3.metric("IWM 21d", f"{iwm_mom*100:+.1f}%",
+                       "small cap sehat" if iwm_mom > 0 else "small cap sakit")
+
+    # ── PLAYBOOK QUAD ──
+    quad_playbook = {
+        "Q1": {"beli": ["QQQ", "XLK", "NVDA", "AAPL", "MSFT", "GOOGL", "META", "AMD", "ARKK", "MAGS"],
+               "short": ["XLU", "XLP", "TLT", "GLD"],
+               "gaya": "Growth, Tech, Momentum, Small Caps"},
+        "Q2": {"beli": ["XLF", "XLE", "XLI", "XLB", "KRE", "IWM", "XOM", "CVX", "FCX"],
+               "short": ["TLT", "IEF"],
+               "gaya": "Reflation, Cyclicals, Financials, Energy"},
+        "Q3": {"beli": ["XLE", "XLP", "XLU", "ITA", "GLD", "SLV", "VST", "CEG", "BE", "LITE", "CCJ"],
+               "short": ["QQQ", "XLK", "IWM", "ARKK", "KRE", "UAL", "DAL"],
+               "gaya": "Defensif, Dividen, Real Assets, Energy"},
+        "Q4": {"beli": ["TLT", "IEF", "GLD", "XLU", "XLP", "XLV"],
+               "short": ["QQQ", "XLK", "IWM", "XLY", "XLF", "XLE"],
+               "gaya": "Defensif, Bonds, Utilities, Defensives"},
+    }
+    pb_us = quad_playbook.get(quad_short_us, quad_playbook["Q3"])
+    st.markdown(f"### 📋 Playbook {quad_short_us}")
+    pb1, pb2 = st.columns(2)
+    pb1.success(f"✅ **BELI:** {', '.join(pb_us['beli'][:10])}")
+    pb2.error(f"❌ **SHORT:** {', '.join(pb_us['short'][:8])}")
+    st.caption(f"💡 Gaya: {pb_us['gaya']}")
+
+    # ── BOTTLENECK ──
+    if bottlenecks_us:
+        st.markdown("### 🚧 Bottleneck Aktif")
+        for b in bottlenecks_us[:5]:
+            conf_emoji = "🟢" if b['confidence'] == "HIGH" else "🟡"
+            beneficiaries_us = [t for t in b.get("beneficiaries", []) if t in us_tickers] if 'us_tickers' in dir() else b.get("beneficiaries", [])[:6]
+            st.markdown(f"{conf_emoji} **{b['name'].replace('_', ' ').title()}** "
+                       f"({b['confidence']}) → BELI: {', '.join(b.get('beneficiaries', [])[:6])}")
+
+    st.markdown("---")
     st.caption("Filter v2.7: Composite 35 + Methodology 40 + Risk Range 15 + Behavioral 10 · Min: 35/100")
 
     # ── HEADER: Market-specific KPIs ──
@@ -4796,9 +5124,90 @@ elif page == "🌍 Global & EM":
                 st.caption("No data")
 
 elif page == "📖 Themes":
-    st.markdown("## 📖 Themes")
-    st.caption("Top-down narratives + price clusters + news NLP")
+    st.markdown("## 🎯 Playbook & Themes")
+    st.caption("Portfolio allocation + Discovery Brain (proaktif/reaktif/adaptif) + Bottleneck cross-market")
 
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 14: PLAYBOOK section (Indonesian) — portfolio-level view
+    # ═══════════════════════════════════════════════════════════════════
+    narrative_pb = snap.get("narrative", {}) or {}
+    markov_pb = snap.get("markov_v3", {}) or {}
+    quad_pb = markov_pb.get("current_regime", "Q3_STAGFLATION").split("_")[0]
+    bottlenecks_pb = narrative_pb.get("active_bottlenecks", []) or []
+    chains_pb = narrative_pb.get("active_causal_chains", []) or []
+    discovery = snap.get("discovery_brain", {}) or {}
+
+    # ── ALOKASI PORTFOLIO (regime-based) ──
+    regime_allocation = {
+        "Q1": {"label": "🟢 GOLDILOCKS", "long_pct": 75, "short_pct": 5, "cash_pct": 20,
+               "long_split": "Tech 30% | Growth 20% | Crypto 15% | EM 5% | Defensives 5%",
+               "short_split": "TLT 3% | XLU 2%"},
+        "Q2": {"label": "🟠 REFLASI",   "long_pct": 70, "short_pct": 10, "cash_pct": 20,
+               "long_split": "Cyclicals 25% | Financials 15% | Energy 15% | Materials 10% | Small Caps 5%",
+               "short_split": "TLT 5% | Long-duration tech 5%"},
+        "Q3": {"label": "🟡 STAGFLASI", "long_pct": 60, "short_pct": 15, "cash_pct": 25,
+               "long_split": "Energi/Infra 20% | Real Assets/Emas 15% | Crypto 10% | EM/LatAm 8% | IHSG Energi 7%",
+               "short_split": "QQQ 5% | FXI 3% | EURUSD 3% | IWM 4%"},
+        "Q4": {"label": "🔴 DEFLASI",   "long_pct": 50, "short_pct": 20, "cash_pct": 30,
+               "long_split": "TLT 15% | Gold 10% | Utilities 10% | Staples 10% | Healthcare 5%",
+               "short_split": "QQQ 8% | IWM 5% | XLE 4% | KRE 3%"},
+    }
+    alloc = regime_allocation.get(quad_pb, regime_allocation["Q3"])
+
+    st.markdown(f"### 💼 Alokasi Portfolio — {alloc['label']}")
+    aa1, aa2, aa3 = st.columns(3)
+    aa1.metric("📈 LONG", f"{alloc['long_pct']}%", "defensive bias" if quad_pb in ("Q3","Q4") else "risk-on")
+    aa2.metric("📉 SHORT", f"{alloc['short_pct']}%", "tactical hedges")
+    aa3.metric("💵 CASH", f"{alloc['cash_pct']}%", "🎰 Casino Mode alert" if any(a.get('category','').lower()=='casino_mode' for a in (snap.get('yves_v2',{}).get('alerts',[]))) else "dry powder")
+
+    st.markdown(f"**📈 LONG Distribution:** {alloc['long_split']}")
+    st.markdown(f"**📉 SHORT Distribution:** {alloc['short_split']}")
+
+    # ── RINGKASAN BOTTLENECK CROSS-MARKET ──
+    st.markdown("---")
+    st.markdown("### 🌐 Ringkasan Bottleneck Cross-Market")
+    if not bottlenecks_pb:
+        st.info("Tidak ada bottleneck aktif.")
+    else:
+        for b in bottlenecks_pb[:7]:
+            emoji = "⚡" if "power" in b['name'].lower() or "ai" in b['name'].lower() else \
+                    "🔥" if "oil" in b['name'].lower() else \
+                    "💎" if "silver" in b['name'].lower() or "metal" in b['name'].lower() else \
+                    "🏦" if "fiscal" in b['name'].lower() else "🚧"
+            beneficiaries = ", ".join(b.get("beneficiaries", [])[:8])
+            st.markdown(f"{emoji} **{b['name'].replace('_', ' ').title()}** ({b['confidence']}) → {beneficiaries}")
+
+    # ── DISCOVERY BRAIN 3-MODE ──
+    st.markdown("---")
+    st.markdown("### 🔮 Discovery Brain (3-Mode)")
+    db1, db2, db3 = st.columns(3)
+    dsumm = discovery.get("summary", {})
+    db1.metric("🔵 Adaptif", dsumm.get("adaptive", 0), "Quad shift detection")
+    db2.metric("🟡 Reaktif", dsumm.get("reactive", 0), "Price action confirm")
+    db3.metric("🟢 Proaktif", dsumm.get("proactive", 0), "Pre-narrative (early)")
+
+    if discovery.get("top_10"):
+        st.markdown("**Top Discovery Candidates:**")
+        for item in discovery.get("top_10", [])[:8]:
+            st.markdown(f"• **{item.get('name', '—').replace('_', ' ')}** ({item.get('confidence', 0):.0%}) — {item.get('source', '—')}")
+
+    # ── RANTAI AKTIF (top 3) ──
+    if chains_pb:
+        st.markdown("---")
+        st.markdown("### 🔗 Top 3 Rantai Aktif")
+        for c in chains_pb[:3]:
+            longs_c = ", ".join(c.get("long_exposure", [])[:6])
+            shorts_c = ", ".join(c.get("short_exposure", [])[:4])
+            with st.expander(f"**{c['name'].replace('_', ' ').title()}** ({c['duration_months']}bln)"):
+                for s in c.get("chain", []):
+                    st.markdown(f"  {s}")
+                if longs_c:
+                    st.markdown(f"**📈 BELI:** {longs_c}")
+                if shorts_c:
+                    st.markdown(f"**📉 SHORT:** {shorts_c}")
+
+    st.markdown("---")
+    st.markdown("## 📖 Themes & Narratives (Legacy)")
     narratives_list = narr.get("narratives",[]) if narr else []
 
     # Add emergent narratives from news engine
