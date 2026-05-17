@@ -180,6 +180,16 @@ hr { margin: 0.8rem 0 !important; opacity: 0.15; }
 # ═══════════════════════════════════════════════════════════════════
 # DEFENSIVE DEFAULTS — prevent NameError on any execution path
 # ═══════════════════════════════════════════════════════════════════
+# HTML RENDERING HELPER — strips indent/newlines so Streamlit's markdown
+# parser doesn't treat indented multi-line HTML as code blocks
+# ═══════════════════════════════════════════════════════════════════
+def _html(html_str: str) -> str:
+    """Compact HTML: strip leading whitespace from each line to prevent
+    Streamlit markdown from treating indented HTML as a code block."""
+    return ''.join(line.strip() for line in html_str.split('\n'))
+
+
+# ═══════════════════════════════════════════════════════════════════
 inc_us = True
 inc_fx = True
 inc_comm = True
@@ -2684,7 +2694,7 @@ if page == "🏠 Dashboard":
         <div>🌊 <b>{advancing_pct:.0f}%</b> saham naik</div>
       </div>
     </div>"""
-    st.markdown(tb_style, unsafe_allow_html=True)
+    st.markdown(_html(tb_style), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════
     # SECTION 1: REGIME HARI INI — Quarterly + Monthly split (Hedgeye-style)
@@ -2707,19 +2717,19 @@ if page == "🏠 Dashboard":
     st.markdown("### 🎯 Regime Hari Ini")
     rg1, rg2 = st.columns(2)
     with rg1:
-        st.markdown(
+        st.markdown(_html(
             f"<div style='background:{struc_color}11; border-left:4px solid {struc_color}; padding:14px 16px; border-radius:8px;'>"
             f"<div style='font-size:11px; color:#aaa; letter-spacing:1px; font-weight:600;'>QUARTERLY (STRUCTURAL)</div>"
             f"<div style='font-size:24px; font-weight:800; color:{struc_color}; margin-top:4px;'>{struc_label}</div>"
             f"<div style='font-size:12px; color:#bbb;'>{struc_desc} · {structural_conf:.0%}</div>"
-            f"</div>", unsafe_allow_html=True)
+            f"</div>"), unsafe_allow_html=True)
     with rg2:
-        st.markdown(
+        st.markdown(_html(
             f"<div style='background:{mo_color}11; border-left:4px solid {mo_color}; padding:14px 16px; border-radius:8px;'>"
             f"<div style='font-size:11px; color:#aaa; letter-spacing:1px; font-weight:600;'>MONTHLY (NOWCAST)</div>"
             f"<div style='font-size:24px; font-weight:800; color:{mo_color}; margin-top:4px;'>{mo_label}</div>"
             f"<div style='font-size:12px; color:#bbb;'>{mo_desc} · {monthly_conf:.0%}</div>"
-            f"</div>", unsafe_allow_html=True)
+            f"</div>"), unsafe_allow_html=True)
 
     # Show divergence warning if Quarterly ≠ Monthly
     if structural_quad != monthly_quad:
@@ -2800,7 +2810,7 @@ if page == "🏠 Dashboard":
           <div style='font-size:10px; opacity:0.6; margin-top:4px; font-style:italic;'>⚡ {opt_play}</div>
         </div>"""
     cards_html += '</div>'
-    st.markdown(cards_html, unsafe_allow_html=True)
+    st.markdown(_html(cards_html), unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -2902,7 +2912,7 @@ if page == "🏠 Dashboard":
         except Exception:
             hm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
     hm_html += '</div>'
-    st.markdown(hm_html, unsafe_allow_html=True)
+    st.markdown(_html(hm_html), unsafe_allow_html=True)
 
     st.markdown("---")
 
@@ -2950,7 +2960,7 @@ if page == "🏠 Dashboard":
         <div style='font-size:12px; margin-top:4px; line-height:1.6;'>{in_str or '—'}</div>
       </div>
     </div>"""
-    st.markdown(rotasi_html, unsafe_allow_html=True)
+    st.markdown(_html(rotasi_html), unsafe_allow_html=True)
     if rotation_spread.get("interpretation"):
         st.caption(f"🔄 COATUE: {rotation_spread['interpretation']}")
 
