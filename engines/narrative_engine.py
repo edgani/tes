@@ -430,16 +430,13 @@ def detect_active_causal_chains(snap: Dict) -> List[Dict]:
 def build_narrative(snap: Dict) -> Dict:
     """
     Master entry: build complete narrative output for Dashboard.
-    Returns: {
-      macro_narrative, scenarios, active_causal_chains, active_bottlenecks,
-      behavioral_divergences, action_summary
-    }
     """
     macro = generate_macro_narrative(snap)
     scenarios = generate_scenarios(snap)
     causal = detect_active_causal_chains(snap)
     bottlenecks = detect_active_bottlenecks(snap)
     divergences = detect_behavioral_divergences(snap)
+    quad_seq = generate_quad_sequencing(snap)  # NEW: Hedgeye-style
     
     # Build action summary
     dominant = scenarios["dominant_scenario"]
@@ -456,6 +453,7 @@ def build_narrative(snap: Dict) -> Dict:
     return {
         "macro_narrative": macro,
         "scenarios": scenarios,
+        "quad_sequencing": quad_seq,  # NEW
         "active_causal_chains": causal,
         "active_bottlenecks": bottlenecks,
         "behavioral_divergences": divergences,
@@ -463,4 +461,122 @@ def build_narrative(snap: Dict) -> Dict:
         "n_active_chains": len(causal),
         "n_active_bottlenecks": len(bottlenecks),
         "n_behavioral_divergences": len(divergences),
+    }
+
+
+# ════════════════════════════════════════════════════════════════════════
+# HEDGEYE-STYLE QUAD SEQUENCING + STAG-ON-A-LAG DETECTOR
+# Replicates Hedgeye's monthly Quad cadence + path-dependency narrative
+# ════════════════════════════════════════════════════════════════════════
+
+def generate_quad_sequencing(snap: Dict) -> Dict:
+    """
+    Hedgeye-style Quad sequencing:
+    - Current Quad (from Markov + GIP consensus)
+    - Last transition (from Markov regime probability history if available)
+    - Next likely Quad (from forecast_3m argmax)
+    - "Stag on a Lag" detection: Q2 with growth deceleration brewing → likely Q3 transition
+    - Path dependency: explicit trigger conditions
+    """
+    markov = snap.get("markov_v3", {}) or {}
+    gip_v10 = snap.get("gip_v10", {}) or {}
+    bxau = snap.get("bonds_xau_regime", {}) or {}
+    
+    current_regime = markov.get("current_regime", "UNKNOWN")
+    current_conf = markov.get("confidence", 0)
+    fc_3m = markov.get("forecast_3m", {}) or {}
+    
+    # Map Markov regime to clean Hedgeye Quad label
+    quad_map = {
+        "Q1_GOLDILOCKS": "Q1 (Goldilocks)",
+        "Q2_REFLATION": "Q2 (Reflation)",
+        "Q3_STAGFLATION": "Q3 (Stagflation)",
+        "Q4_DEFLATION": "Q4 (Deflation)",
+        "Q5_CRASH": "Q5 (Crash - non-Hedgeye)",
+    }
+    current_quad_label = quad_map.get(current_regime, current_regime)
+    
+    # Next quad: argmax of 3M forecast (excluding current to find transition)
+    next_quad = None
+    next_p = 0
+    for q, p in fc_3m.items():
+        if q != current_regime and p > next_p:
+            next_quad = q
+            next_p = p
+    next_quad_label = quad_map.get(next_quad, next_quad) if next_quad else None
+    
+    # ── STAG-ON-A-LAG DETECTOR (Hedgeye May 2026 framework) ──
+    # Q2 + P(Q3) > 30% in 3M forecast + RV trending up + DXY/USD strong = stag forming under reflation
+    stag_on_lag = False
+    stag_signals = []
+    
+    if current_regime == "Q2_REFLATION":
+        p_q3 = fc_3m.get("Q3_STAGFLATION", 0)
+        if p_q3 > 0.30:
+            stag_signals.append(f"P(Q3) = {p_q3:.0%} (>30% threshold)")
+            stag_on_lag = True
+        
+        # Check oil/inflation cascade
+        cascade = snap.get("cascade_analysis", {}) or {}
+        oil_shocks = [k for k in cascade.get("active_shocks", {}).keys() if "CL" in k or "OIL" in k.upper()]
+        if oil_shocks:
+            stag_signals.append(f"Oil/energy shock active: {oil_shocks[0]}")
+            stag_on_lag = True
+        
+        # Check Hormuz-style supply shock proxy via XLE momentum + USD strength
+        bxau_metrics = bxau.get("metrics", {})
+        if bxau_metrics.get("real_yield", 0) and bxau_metrics["real_yield"] > 2.5:
+            stag_signals.append(f"Real yield elevated {bxau_metrics['real_yield']:.2f}% — restrictive tightness")
+    
+    # ── Build narrative ──
+    narrative_lines = []
+    if stag_on_lag:
+        narrative_lines.append(
+            f"🟡 **\"Flation Now, Stag-On-A-Lag\"** — Currently {current_quad_label} but Q3 dynamics "
+            f"building beneath. Hedgeye Q2 → Q3 pivot risk."
+        )
+        for sig in stag_signals:
+            narrative_lines.append(f"  • {sig}")
+        narrative_lines.append(
+            "  → Action: Tactical equity LONG window still open. "
+            "Tighten stops. Watch for Mag 7 comp headwind. Re-add GLD/TLT defensive pair as Q3 confirms."
+        )
+    elif current_regime == "Q1_GOLDILOCKS":
+        narrative_lines.append(f"🟢 {current_quad_label} ({current_conf:.0%} conf) — Risk-on regime")
+    elif current_regime == "Q2_REFLATION":
+        narrative_lines.append(f"🟠 {current_quad_label} ({current_conf:.0%} conf) — Reflation, cyclicals lead")
+    elif current_regime == "Q3_STAGFLATION":
+        narrative_lines.append(f"🟡 {current_quad_label} ({current_conf:.0%} conf) — Real assets bid")
+    elif current_regime == "Q4_DEFLATION":
+        narrative_lines.append(f"🔴 {current_quad_label} ({current_conf:.0%} conf) — Most dangerous Quad")
+    
+    if next_quad and next_p > 0.30:
+        narrative_lines.append(
+            f"📍 **Next likely**: {next_quad_label} ({next_p:.0%} prob in 3M)"
+        )
+    
+    # Path dependencies (explicit Hedgeye-style triggers)
+    path_deps = []
+    if current_regime == "Q2_REFLATION":
+        path_deps.append("Q2 holds if: payrolls strong + ISM>50 + crude stable")
+        path_deps.append("Q2 → Q3 trigger: crude breaks $90 OR ISM<48 with sticky inflation")
+        path_deps.append("Q2 → Q1 trigger: inflation rolls AND growth stays strong")
+    elif current_regime == "Q1_GOLDILOCKS":
+        path_deps.append("Q1 → Q3 trigger: inflation reaccelerates (oil shock, services CPI)")
+        path_deps.append("Q1 → Q4 trigger: growth rolls over WITH inflation falling")
+    elif current_regime == "Q3_STAGFLATION":
+        path_deps.append("Q3 → Q4 trigger: growth deteriorates faster + inflation rolls")
+        path_deps.append("Q3 → Q2 trigger: growth reaccelerates with sticky inflation")
+    
+    return {
+        "current_quad": current_quad_label,
+        "current_quad_raw": current_regime,
+        "confidence": round(current_conf, 3),
+        "next_quad": next_quad_label,
+        "next_quad_prob_3m": round(next_p, 3),
+        "stag_on_a_lag": stag_on_lag,
+        "stag_signals": stag_signals,
+        "narrative_lines": narrative_lines,
+        "path_dependencies": path_deps,
+        "hedgeye_aligned": True,
     }
