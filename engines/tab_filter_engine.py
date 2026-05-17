@@ -36,15 +36,18 @@ def filter_us_stocks(
     ticker: str,
     composite_signal: Dict,
     thought_process: Dict,
-    smart_money: Dict,
+    smart_money: Dict,  # kept for backwards compat but NOT scored
     risk_range: Dict,
     quad: str,
 ) -> Dict:
-    """US Stock filter — combines:
-      - Composite direction (mean rev + trend + cot + oi + greeks + gamma + news + quad align)
-      - Thought process score (Leopold + COATUE + Citrini + Hedgeye + Druckenmiller + Soros)
-      - Smart money endorsement (13F consensus)
-      - Quad regime fit
+    """US Stock filter (v2.6 — Sprint 11 refactor):
+      - Composite signal direction (35 pts) — direction + confidence
+      - Methodology cumulative (40 pts) — Leopold/COATUE/Karsan/Yves/Soros/Druckenmiller/Tier1Alpha/profplum99/Citrini/Hedgeye/Schadner = 11 frameworks
+      - Risk Range quality (15 pts)
+      - Behavioral bonus (10 pts) — Yves narrative divergence + Soros stage alignment
+    
+    Smart Money endorsement REMOVED per Edward (don't care WHO holds it,
+    care if it matches the METHODOLOGY).
     """
     out = {
         "ticker": ticker,
@@ -56,14 +59,14 @@ def filter_us_stocks(
     
     score = 0
     
-    # 1. Composite signal direction (40 pts)
+    # 1. Composite signal direction (35 pts — slightly reduced from 40)
     direction = composite_signal.get("direction", "NEUTRAL")
     conf = composite_signal.get("confidence", 0)
     if direction in ("NEUTRAL", "AVOID"):
         out["filter_rationale"].append(f"❌ Composite: {direction}")
         return out
     
-    composite_pts = min(40, conf * 50)
+    composite_pts = min(35, conf * 45)
     score += composite_pts
     out["direction"] = direction
     out["confidence"] = conf
@@ -72,30 +75,46 @@ def filter_us_stocks(
     if composite_signal.get("flipped_from_composite"):
         out["filter_rationale"].append("⚠️ Direction FLIPPED by multi-signal contradiction")
     
-    # 2. Thought Process score (30 pts)
-    thesis_score = thought_process.get("thesis_score", 0)
-    if thesis_score > 0:
-        thesis_pts = min(30, thesis_score * 0.35)
-        score += thesis_pts
-        out["filter_rationale"].append(f"✓ Thesis {thesis_score:.0f}/100 ({thought_process.get('primary_role', '?')}, +{thesis_pts:.0f}pts)")
+    # 2. Methodology cumulative score (40 pts — NEW weight)
+    # thought_process now contains 11-framework breakdown
+    methodology_score = thought_process.get("thesis_score", 0)
+    n_matches = thought_process.get("n_matches", 0)
+    
+    if methodology_score > 0:
+        # Scale: thesis_score 80+ = full 40pts, 60-79 = scaled
+        meth_pts = min(40, methodology_score * 0.45)
+        score += meth_pts
+        out["filter_rationale"].append(
+            f"✓ Methodology {methodology_score:.0f}/100 (matched {n_matches} frameworks: "
+            f"{', '.join(thought_process.get('matched_frameworks', [])[:4])}) +{meth_pts:.0f}pts"
+        )
         out["tab_specific_signals"]["thesis_frameworks"] = thought_process.get("matched_frameworks", [])
         out["tab_specific_signals"]["primary_role"] = thought_process.get("primary_role")
+        out["tab_specific_signals"]["n_methodology_matches"] = n_matches
     
-    # 3. Smart Money endorsement (15 pts)
-    sm = smart_money.get("per_ticker", {}).get(ticker, {})
-    if sm.get("smart_money_held"):
-        n_holders = sm.get("n_holders", 0)
-        sm_pts = min(15, n_holders * 4)
-        score += sm_pts
-        out["filter_rationale"].append(f"✓ Smart Money: {n_holders} funds hold ({sm.get('top_holder', '?')}, +{sm_pts:.0f}pts)")
-        out["tab_specific_signals"]["smart_money_label"] = sm.get("consensus_label")
-        out["tab_specific_signals"]["smart_money_action"] = sm.get("recent_action")
-    
-    # 4. Risk Range quality (15 pts)
+    # 3. Risk Range quality (15 pts)
     rr_quality = risk_range.get("quality", "C") if risk_range else "C"
     quality_pts = {"A+": 15, "A": 12, "B": 7, "C": 3}.get(rr_quality, 0)
     score += quality_pts
     out["filter_rationale"].append(f"✓ Risk Range quality: {rr_quality} (+{quality_pts}pts)")
+    
+    # 4. Behavioral bonus (10 pts) — Yves divergence + Soros alignment
+    fb = thought_process.get("framework_breakdown", {})
+    behavioral_pts = 0
+    yves = fb.get("yves", {})
+    if yves.get("narrative_divergence"):
+        behavioral_pts += 6
+        out["filter_rationale"].append(f"✓ Yves narrative divergence detected (+6pts)")
+    soros = fb.get("soros", {})
+    if soros.get("matched"):
+        # Bonus if Soros stage favorable (Inception/Acceleration for LONGS)
+        if direction == "LONG" and soros.get("stage") in ("INCEPTION", "ACCELERATION"):
+            behavioral_pts += 4
+            out["filter_rationale"].append(f"✓ Soros {soros.get('stage')} supports LONG (+4pts)")
+        elif direction == "SHORT" and soros.get("stage") in ("TWILIGHT", "REVERSAL"):
+            behavioral_pts += 4
+            out["filter_rationale"].append(f"✓ Soros {soros.get('stage')} supports SHORT (+4pts)")
+    score += behavioral_pts
     
     out["filter_score"] = round(score, 1)
     out["passes_filter"] = score >= 35  # threshold
@@ -568,11 +587,15 @@ def filter_alpha_center(
     ticker: str,
     composite_signal: Dict,
     thought_process: Dict,
-    smart_money: Dict,
+    smart_money: Dict,  # kept for compat, not scored
     risk_range: Dict,
     market: str,
 ) -> Dict:
-    """Alpha Center filter — only TOP TIER across all markets."""
+    """Alpha Center filter (Sprint 11 refactor) — cross-market TOP TIER.
+    
+    Replaces smart money endorsement bonus with methodology depth bonus.
+    Smart money holdings = stale 13F lag. Methodology depth = forward-looking.
+    """
     out = {
         "ticker": ticker,
         "passes_filter": False,
@@ -608,10 +631,13 @@ def filter_alpha_center(
         return out
     score += {"A+": 20, "A": 15}.get(rr_quality, 0)
     
-    # 4. Smart money bonus
-    sm = smart_money.get("per_ticker", {}).get(ticker, {})
-    if sm.get("smart_money_held"):
+    # 4. Methodology depth bonus (replaces smart money 15pts)
+    n_matches = thought_process.get("n_matches", 0)
+    if n_matches >= 4:
         score += 15
+        out["filter_rationale"].append(f"✓ Deep methodology consensus ({n_matches} frameworks)")
+    elif n_matches >= 3:
+        score += 10
     
     out["filter_score"] = round(score, 1)
     out["passes_filter"] = score >= 70  # Alpha Center high bar
@@ -619,7 +645,7 @@ def filter_alpha_center(
     out["confidence"] = conf
     out["thesis_score"] = thesis_score
     out["primary_role"] = thought_process.get("primary_role")
-    out["smart_money_held"] = sm.get("smart_money_held", False)
+    out["n_methodology_matches"] = n_matches
     
     return out
 

@@ -1577,6 +1577,7 @@ with st.sidebar:
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard",
+    "🚀 Macro Command Center",
         "⚡ Alpha Center",
         "🇺🇸 US Stocks",
         "💱 Forex",
@@ -2293,10 +2294,11 @@ def render_market_header(market_label: str, snap_in, tickers_in_tab=None):
 
 if page == "🏠 Dashboard":
     st.markdown("## 🏠 MacroRegime Dashboard")
-    st.caption("30-second read · Forward-looking before headline")
+    st.caption("30-second read · The Machine front-running")
 
     # ═══════════════════════════════════════════════════════════════════
-    # SPRINT 10: AUTONOMOUS NARRATIVE CARD (top of dashboard)
+    # SPRINT 11: SIMPLIFIED Narrative Card
+    # Headline + 3 scenarios + 1-line action (no nested tabs)
     # ═══════════════════════════════════════════════════════════════════
     narrative = snap.get("narrative", {}) or {}
     if narrative:
@@ -2304,89 +2306,35 @@ if page == "🏠 Dashboard":
         scenarios = narrative.get("scenarios", {})
         action = narrative.get("action_summary", {})
 
-        # The Headline Card
-        st.markdown(f"### {macro_nar.get('headline', '⚪ Loading narrative…')}")
-        st.markdown(f"_{macro_nar.get('narrative', '')}_")
+        # Single headline
+        st.markdown(f"### {macro_nar.get('headline', '⚪ Loading…')}")
+        st.markdown(f"_{macro_nar.get('narrative', '')[:300]}_")
 
-        # 3 Scenarios in columns
+        # 3 Scenarios row — COMPACT (no captions tertumpuk)
+        dom = scenarios.get("dominant_scenario", "base")
         sc1, sc2, sc3 = st.columns(3)
         for col, scen_name, emoji in [(sc1, "bull", "🟢"), (sc2, "base", "🟡"), (sc3, "bear", "🔴")]:
             scen = scenarios.get(scen_name, {})
             with col:
                 p = scen.get("probability", 0)
-                dom = scenarios.get("dominant_scenario") == scen_name
-                badge = "⭐ DOMINANT" if dom else ""
-                st.markdown(f"**{emoji} {scen_name.upper()} · {p:.0%} {badge}**")
-                st.caption(scen.get("narrative", ""))
-                st.caption(f"📈 Longs: {', '.join(scen.get('long_picks', [])[:4])}")
-                st.caption(f"📉 Shorts: {', '.join(scen.get('short_picks', [])[:4])}")
-                st.caption(f"⚡ {scen.get('options_play', '')[:100]}")
+                star = " ⭐" if dom == scen_name else ""
+                col.metric(f"{emoji} {scen_name.upper()}{star}", f"{p:.0%}",
+                           f"{', '.join(scen.get('long_picks', [])[:3])}")
 
-        # Action Summary
-        with st.expander(f"🎯 **{action.get('primary_action', '—')}** — full action plan", expanded=False):
-            ac1, ac2 = st.columns(2)
-            with ac1:
-                st.markdown("**Top LONGS:**")
-                for t in action.get("top_longs", [])[:5]:
-                    st.markdown(f"• {t}")
-            with ac2:
-                st.markdown("**Top SHORTS:**")
-                for t in action.get("top_shorts", [])[:5]:
-                    st.markdown(f"• {t}")
-            st.markdown(f"**Options Play:** {action.get('options_play', '—')}")
-            if action.get("active_themes"):
-                st.markdown(f"**Active Themes:** {', '.join(action['active_themes'])}")
-            if action.get("active_bottlenecks"):
-                st.markdown(f"**Active Bottlenecks:** {', '.join(action['active_bottlenecks'])}")
+        # 1-line action (no expandable, direct)
+        st.info(f"**🎯 {action.get('primary_action', '—')}** · "
+                f"Longs: {', '.join(action.get('top_longs', [])[:4])} · "
+                f"Shorts: {', '.join(action.get('top_shorts', [])[:3])}")
 
-        # Active Causal Chains
-        chains = narrative.get("active_causal_chains", [])
-        bottlenecks = narrative.get("active_bottlenecks", [])
-        divergences = narrative.get("behavioral_divergences", [])
-
-        nc1, nc2, nc3 = st.columns(3)
-        nc1.metric("Causal Chains Active", len(chains))
-        nc2.metric("Bottlenecks Active", len(bottlenecks))
-        nc3.metric("Behavioral Divergences", len(divergences))
-
-        narrative_tabs = st.tabs([
-            f"🔗 Causal Chains ({len(chains)})",
-            f"🚧 Bottlenecks ({len(bottlenecks)})",
-            f"🎭 Behavioral Divergences ({len(divergences)})",
-        ])
-
-        with narrative_tabs[0]:
-            if not chains:
-                st.info("No active causal chains. Markets in transition or neutral state.")
-            for c in chains[:6]:
-                with st.expander(f"**{c['name'].replace('_',' ').title()}** · {c['duration_months']}mo duration"):
-                    for step in c["chain"]:
-                        st.markdown(f"  {step}")
-                    cc1, cc2 = st.columns(2)
-                    with cc1:
-                        st.markdown(f"**📈 Long exposure:** {', '.join(c['long_exposure'][:8])}")
-                    with cc2:
-                        st.markdown(f"**📉 Short exposure:** {', '.join(c['short_exposure'][:6]) if c['short_exposure'] else '—'}")
-
-        with narrative_tabs[1]:
-            if not bottlenecks:
-                st.info("No active bottlenecks detected.")
-            for b in bottlenecks[:7]:
-                with st.expander(f"**{b['name'].replace('_',' ').title()}** · {b['confidence']} confidence · {b['duration_yr']}yr"):
-                    st.markdown(f"**Demand:** {b['demand']}")
-                    st.markdown(f"**Supply constraint:** {b['supply_constraint']}")
-                    st.markdown(f"**Beneficiaries:** {', '.join(b['beneficiaries'])}")
-
-        with narrative_tabs[2]:
-            if not divergences:
-                st.info("No behavioral divergences (crowd vs flow) detected.")
-            for d in divergences[:10]:
-                st.markdown(f"• **{d['ticker']}** ({d.get('score', 0):.0f}/100) — _{d.get('thesis', '')[:160]}_")
-
+        # Chains/Bottlenecks/Divergences — REMOVED from dashboard, moved to Macro Command Center
+        st.caption(f"🔗 {narrative.get('n_active_chains', 0)} chains aktif · "
+                   f"🚧 {narrative.get('n_active_bottlenecks', 0)} bottlenecks · "
+                   f"🎭 {narrative.get('n_behavioral_divergences', 0)} divergences "
+                   f"→ Detail di **🚀 Macro Command Center**")
         st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
-    # TOP BAR — 6 KPIs in 1 row (compact)
+    # TOP BAR — 4 KPIs ONLY (was 6+4=10, now 4 essential)
     # ═══════════════════════════════════════════════════════════════════
     vix_val = health.get("vix_bucket", {}).get("vix_last", 18) if health else 18
     vb = (health.get("vix_bucket",{}) if health else {}).get("bucket","-")
@@ -2925,11 +2873,22 @@ if page == "🏠 Dashboard":
                 if a.get("next_bias"):
                     st.caption(f"📊 {a['next_bias']}")
 
+
     # ═══════════════════════════════════════════════════════════════════
-    # V2.3 MACRO COMMAND CENTER (Sprint 1-7) — DASHBOARD = MACRO ONLY
+    # FOOTER
     # ═══════════════════════════════════════════════════════════════════
-    st.markdown("---")
-    st.markdown("## 🚀 V2.3 Macro Command Center")
+    n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
+    flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
+    cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.6-Sprint11")
+
+
+
+elif page == "🚀 Macro Command Center":
+    st.markdown("## 🚀 Macro Command Center")
+    st.caption("All macro engines consolidated — Regime / Behavioral / Fiscal / Flow / Investor Lens")
+    v2_summary = snap.get("summary", {})
+
     st.caption("Macro signals only. Ticker tables → ⚡ Alpha Center · Specific markets → US/Forex/Commodity/Crypto/IHSG tabs")
 
     v2_summary = snap.get("summary", {})
@@ -3319,16 +3278,6 @@ if page == "🏠 Dashboard":
                 if pp.get("matched") and count_pp < 5:
                     st.markdown(f"• **{tk}** profplum99: {pp.get('score', 0):.0f} — {pp.get('flow_interpretation', '—')}")
                     count_pp += 1
-
-    # ═══════════════════════════════════════════════════════════════════
-    # FOOTER
-    # ═══════════════════════════════════════════════════════════════════
-    n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
-    flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
-    cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.5-Sprint10")
-
-
 elif page == "⚡ Alpha Center":
     st.markdown("## ⚡ Alpha Center")
     st.caption("Cross-market top tier — HIGH BAR (≥70/100 filter score). Composite + Thesis + Smart Money + Risk Range A+/A.")
