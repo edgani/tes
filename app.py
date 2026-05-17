@@ -2483,6 +2483,153 @@ def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=T
         rr_rating = "SANGAT BAGUS ⭐⭐⭐" if rr >= 2.5 else "BAGUS ⭐⭐" if rr >= 1.8 else "CUKUP ⭐" if rr >= 1.3 else "TIDAK BAGUS ❌"
         m5.metric("R:R", f"{rr:.1f}x" if rr else "—", rr_rating if rr else "—")
 
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 18: 5 OPTIONS+GREEKS SECTIONS (Edward screenshot)
+        # Only renders if ticker has options/greeks data
+        # ═══════════════════════════════════════════════════════════════
+        has_options_data = bool(row.get("max_pain") or row.get("call_wall") or
+                                 row.get("put_wall") or row.get("gamma_flip"))
+        has_risk_range_3tier = bool(row.get("rr_trade_low") or row.get("rr_trend_low") or
+                                     (row.get("risk_range") or {}).get("trade"))
+
+        # ── 1. RISK RANGE BAR (3-TIER: Trade / Trend / Tail) ──
+        if has_risk_range_3tier:
+            rr = row.get("risk_range") or {}
+            trade_rr = rr.get("trade") or {}
+            trend_rr = rr.get("trend") or {}
+            tail_rr = rr.get("tail") or {}
+
+            t_lo = trade_rr.get("lrr") or row.get("rr_trade_low")
+            t_hi = trade_rr.get("trr") or row.get("rr_trade_high")
+            tr_lo = trend_rr.get("lrr") or row.get("rr_trend_low")
+            tr_hi = trend_rr.get("trr") or row.get("rr_trend_high")
+            tl_lo = tail_rr.get("lrr") or row.get("rr_tail_low")
+            tl_hi = tail_rr.get("trr") or row.get("rr_tail_high")
+
+            if t_lo and t_hi and px > 0:
+                pos_trade = max(0, min(100, (px - t_lo) / max(t_hi - t_lo, 0.001) * 100))
+                bar_color = "#22c55e" if pos_trade < 30 else "#eab308" if pos_trade < 70 else "#ef4444"
+
+                rr_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+                rr_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>RISK RANGE BAR (3-TIER)</div>"
+
+                # 3-tier visual bars
+                for label, lo, hi, color in [
+                    ("Trade", t_lo, t_hi, "#22c55e"),
+                    ("Trend", tr_lo, tr_hi, "#eab308"),
+                    ("Tail", tl_lo, tl_hi, "#a78bfa"),
+                ]:
+                    if lo and hi and hi > lo:
+                        pos = max(0, min(100, (px - lo) / (hi - lo) * 100))
+                        rr_html += f"<div style='display:flex; align-items:center; gap:8px; margin-top:5px;'>"
+                        rr_html += f"<span style='font-size:10px; width:40px; opacity:0.65;'>{label}</span>"
+                        rr_html += f"<span style='font-size:10px; width:55px; opacity:0.8; text-align:right;'>{lo:.2f}</span>"
+                        rr_html += f"<div style='flex:1; height:8px; background:rgba(255,255,255,0.08); border-radius:4px; position:relative;'>"
+                        rr_html += f"<div style='position:absolute; left:{pos}%; top:-3px; width:3px; height:14px; background:{color}; border-radius:1px;'></div>"
+                        rr_html += f"</div>"
+                        rr_html += f"<span style='font-size:10px; width:55px; opacity:0.8;'>{hi:.2f}</span>"
+                        rr_html += f"<span style='font-size:10px; font-weight:600; color:{color}; width:35px; text-align:right;'>{pos:.0f}%</span>"
+                        rr_html += f"</div>"
+                rr_html += "</div>"
+                st.markdown(_html(rr_html), unsafe_allow_html=True)
+
+        # ── 2. MARKET STRUCTURE (Options / Greeks / Max Pain / Gamma Flip / Walls) ──
+        if has_options_data:
+            max_pain = row.get("max_pain")
+            call_wall = row.get("call_wall")
+            put_wall = row.get("put_wall")
+            gamma_flip = row.get("gamma_flip")
+            gamma_regime = row.get("gamma_regime", "")
+
+            ms_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+            ms_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>MARKET STRUCTURE (Options + Greeks)</div>"
+            ms_html += "<div style='display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
+            if max_pain:
+                ms_html += f"<div><span style='opacity:0.6;'>Max Pain:</span> <b>{max_pain:.2f}</b></div>"
+            if call_wall:
+                ms_html += f"<div><span style='opacity:0.6;'>Call Wall:</span> <b style='color:#ef4444;'>{call_wall:.2f}</b></div>"
+            if put_wall:
+                ms_html += f"<div><span style='opacity:0.6;'>Put Wall:</span> <b style='color:#22c55e;'>{put_wall:.2f}</b></div>"
+            if gamma_flip:
+                ms_html += f"<div><span style='opacity:0.6;'>Gamma Flip:</span> <b style='color:#eab308;'>{gamma_flip:.2f}</b></div>"
+            if gamma_regime:
+                color_gr = "#22c55e" if "POSITIVE" in str(gamma_regime).upper() else "#ef4444" if "NEGATIVE" in str(gamma_regime).upper() else "#eab308"
+                ms_html += f"<div><span style='opacity:0.6;'>GEX:</span> <b style='color:{color_gr};'>{gamma_regime}</b></div>"
+            if row.get("delta_aggregate"):
+                ms_html += f"<div><span style='opacity:0.6;'>Δ:</span> <b>{row['delta_aggregate']}</b></div>"
+            ms_html += "</div></div>"
+            st.markdown(_html(ms_html), unsafe_allow_html=True)
+
+        # ── 3. CEM KARSAN STRUCTURE (0DTE Pin / Vanna / Charm) ──
+        karsan_setup = row.get("karsan_setup") or row.get("vol_setup")
+        odte_pin = row.get("odte_pin_risk")
+        vanna_score = row.get("vanna_score")
+        charm_score = row.get("charm_score")
+        if karsan_setup or odte_pin is not None or vanna_score is not None:
+            ck_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+            ck_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>CEM KARSAN STRUCTURE</div>"
+            ck_html += "<div style='display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
+            if karsan_setup:
+                setup_color = "#22c55e" if "SQUEEZE" in str(karsan_setup) else "#eab308" if "BUY" in str(karsan_setup) else "#9ca3af"
+                ck_html += f"<div><span style='opacity:0.6;'>Setup:</span> <b style='color:{setup_color};'>{str(karsan_setup)[:50]}</b></div>"
+            if odte_pin is not None:
+                pin_color = "#ef4444" if odte_pin > 0.5 else "#eab308" if odte_pin > 0.25 else "#22c55e"
+                ck_html += f"<div><span style='opacity:0.6;'>0DTE Pin Risk:</span> <b style='color:{pin_color};'>{odte_pin:.2f}</b></div>"
+            if vanna_score is not None:
+                ck_html += f"<div><span style='opacity:0.6;'>Vanna:</span> <b>{vanna_score:+.2f}</b></div>"
+            if charm_score is not None:
+                ck_html += f"<div><span style='opacity:0.6;'>Charm:</span> <b>{charm_score:+.2f}</b></div>"
+            if row.get("vrp"):
+                ck_html += f"<div><span style='opacity:0.6;'>VRP (IV-RV):</span> <b>{row['vrp']:+.1f}pp</b></div>"
+            ck_html += "</div></div>"
+            st.markdown(_html(ck_html), unsafe_allow_html=True)
+
+        # ── 4. SKEW TERM (30D / 60D IV skew) ──
+        skew_30d = row.get("iv_skew_30d") or row.get("skew_30d")
+        skew_60d = row.get("iv_skew_60d") or row.get("skew_60d")
+        iv_rank = row.get("iv_rank")
+        iv_now = row.get("iv_now") or row.get("implied_vol")
+        rv_now = row.get("rv_now") or row.get("realized_vol")
+        if skew_30d is not None or iv_rank is not None or iv_now is not None:
+            sk_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+            sk_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>SKEW TERM (30D / 60D)</div>"
+            sk_html += "<div style='display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
+            if skew_30d is not None:
+                sk_color = "#ef4444" if skew_30d > 5 else "#eab308" if skew_30d > 2 else "#22c55e"
+                sk_html += f"<div><span style='opacity:0.6;'>30D Skew:</span> <b style='color:{sk_color};'>{skew_30d:+.2f}</b></div>"
+            if skew_60d is not None:
+                sk_html += f"<div><span style='opacity:0.6;'>60D Skew:</span> <b>{skew_60d:+.2f}</b></div>"
+            if iv_now is not None:
+                sk_html += f"<div><span style='opacity:0.6;'>IV:</span> <b>{iv_now*100 if iv_now < 5 else iv_now:.1f}%</b></div>"
+            if rv_now is not None:
+                sk_html += f"<div><span style='opacity:0.6;'>RV:</span> <b>{rv_now*100 if rv_now < 5 else rv_now:.1f}%</b></div>"
+            if iv_rank is not None:
+                ir_color = "#ef4444" if iv_rank > 70 else "#eab308" if iv_rank > 40 else "#22c55e"
+                sk_html += f"<div><span style='opacity:0.6;'>IV Rank:</span> <b style='color:{ir_color};'>{iv_rank:.0f}/100</b></div>"
+            sk_html += "</div></div>"
+            st.markdown(_html(sk_html), unsafe_allow_html=True)
+
+        # ── 5. FORWARD OUTLOOK (Path 1M/3M/6M + Time + Breakout) ──
+        fwd_data = row.get("forward_returns") or {}
+        path_1m = row.get("path_1m") or fwd_data.get("path_1m")
+        path_3m = row.get("path_3m") or fwd_data.get("path_3m")
+        path_6m = row.get("path_6m") or fwd_data.get("path_6m")
+        next_bias = row.get("next_bias") or fwd_data.get("next_bias")
+        if any([path_1m, path_3m, path_6m, next_bias]):
+            fw_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+            fw_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>FORWARD OUTLOOK (Path · Time · Breakout)</div>"
+            fw_html += "<div style='display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
+            if path_1m:
+                fw_html += f"<div><span style='opacity:0.6;'>1M:</span> <b>{path_1m}</b></div>"
+            if path_3m:
+                fw_html += f"<div><span style='opacity:0.6;'>3M:</span> <b>{path_3m}</b></div>"
+            if path_6m:
+                fw_html += f"<div><span style='opacity:0.6;'>6M:</span> <b>{path_6m}</b></div>"
+            if next_bias:
+                fw_html += f"<div style='width:100%; margin-top:4px; opacity:0.8;'>📊 {next_bias}</div>"
+            fw_html += "</div></div>"
+            st.markdown(_html(fw_html), unsafe_allow_html=True)
+
         # ── ROW 2: Badges (thesis + smart money + filter) ──
         badges = []
         if show_thesis:
