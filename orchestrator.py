@@ -476,6 +476,47 @@ except Exception as e:
     _V7_TAB_FILTER = False
     def apply_tab_filter(*a, **k): return {"passes_filter": True, "filter_score": 50}
 
+# ═══════════════════════════════════════════════════════════════════════
+# SPRINT 9 NEW ENGINES — methodology-driven scanners
+# Replace portfolio-matching with actual methodology evaluation
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from engines.karsan_vol_scanner import scan_karsan
+    _V9_KARSAN = True
+except Exception as e:
+    logger.error(f"Failed to import karsan_vol_scanner: {e}")
+    _V9_KARSAN = False
+    def scan_karsan(*a, **k): return {"ok": False, "per_ticker": {}, "squeeze_setups": [], "sell_premium": [], "buy_convexity": []}
+
+try:
+    from engines.spotgamma_gex_engine import run_spotgamma_scanner
+    _V9_SPOTGAMMA = True
+except Exception as e:
+    logger.error(f"Failed to import spotgamma_gex_engine: {e}")
+    _V9_SPOTGAMMA = False
+    def run_spotgamma_scanner(*a, **k): return {"ok": False, "per_ticker_proxy_gex": {}, "compass": {}}
+
+try:
+    from engines.leopold_methodology import run_leopold_scan
+    _V9_LEOPOLD = True
+except Exception as e:
+    logger.error(f"Failed to import leopold_methodology: {e}")
+    _V9_LEOPOLD = False
+    def run_leopold_scan(*a, **k): return {"ok": False, "per_ticker": {}, "top_picks_by_layer": {}, "asymmetry_setups": [], "written_off_recovering": []}
+
+try:
+    from engines.coatue_methodology import run_coatue_scan
+    _V9_COATUE = True
+except Exception as e:
+    logger.error(f"Failed to import coatue_methodology: {e}")
+    _V9_COATUE = False
+    def run_coatue_scan(*a, **k): return {"ok": False, "per_ticker": {}, "sellers_top": [], "buyers_top": [], "decay_alerts": [], "agentic_plays": []}
+
+logger.info(
+    f"V9 (Sprint 9) methodology engines: karsan={_V9_KARSAN} spotgamma={_V9_SPOTGAMMA} "
+    f"leopold={_V9_LEOPOLD} coatue={_V9_COATUE}"
+)
+
 logger.info(
     "V2 engines loaded: "
     f"cascade={_V2_CASCADE} yves={_V2_YVES} sizing={_V2_SIZING} "
@@ -2557,6 +2598,71 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             except Exception as e:
                 logger.warning(f"Squeeze scanner failed: {e}")
 
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 9: Methodology-driven scanners
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            all_tickers = list(prices.keys())
+        except Exception:
+            all_tickers = []
+
+        if _V9_KARSAN:
+            _safe_progress(progress_cb, "Karsan vol scanner...", 0.996)
+            try:
+                result["karsan_scanner"] = scan_karsan(all_tickers, prices, vix=vix_last)
+                logger.info(f"Karsan: {len(result['karsan_scanner'].get('squeeze_setups', []))} squeeze, "
+                          f"{len(result['karsan_scanner'].get('sell_premium', []))} sell-prem, "
+                          f"{len(result['karsan_scanner'].get('buy_convexity', []))} buy-conv")
+            except Exception as e:
+                logger.warning(f"Karsan scanner failed: {e}")
+
+        if _V9_SPOTGAMMA:
+            _safe_progress(progress_cb, "SpotGamma proxy scanner...", 0.997)
+            try:
+                result["spotgamma_scanner"] = run_spotgamma_scanner(prices, vix=vix_last)
+                logger.info("SpotGamma proxy scanner: ok")
+            except Exception as e:
+                logger.warning(f"SpotGamma scanner failed: {e}")
+
+        if _V9_LEOPOLD:
+            _safe_progress(progress_cb, "Leopold methodology scan...", 0.998)
+            try:
+                result["leopold_scan"] = run_leopold_scan(all_tickers, prices)
+                logger.info(f"Leopold: {len(result['leopold_scan'].get('per_ticker', {}))} tickers matched, "
+                          f"{len(result['leopold_scan'].get('asymmetry_setups', []))} asymmetry setups, "
+                          f"{len(result['leopold_scan'].get('written_off_recovering', []))} written-off recovering")
+            except Exception as e:
+                logger.warning(f"Leopold scan failed: {e}")
+
+        if _V9_COATUE:
+            _safe_progress(progress_cb, "COATUE methodology scan...", 0.999)
+            try:
+                result["coatue_scan"] = run_coatue_scan(all_tickers, prices)
+                spread_data = result["coatue_scan"].get("capital_rotation_spread", {})
+                logger.info(f"COATUE: spread {spread_data.get('spread_3m_pp', 0)}pp, "
+                          f"{len(result['coatue_scan'].get('decay_alerts', []))} decay alerts")
+            except Exception as e:
+                logger.warning(f"COATUE scan failed: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 10: Autonomous Narrative Engine
+        # Synthesizes ALL engines into headline narrative + scenarios + bottlenecks
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            from engines.narrative_engine import build_narrative
+            _safe_progress(progress_cb, "Building autonomous narrative...", 0.9995)
+            result["narrative"] = build_narrative(result)
+            nar = result["narrative"]
+            logger.info(
+                f"Narrative: '{nar['macro_narrative']['headline'][:80]}' | "
+                f"Scenario: {nar['scenarios']['dominant_scenario']} "
+                f"({nar['scenarios'][nar['scenarios']['dominant_scenario']]['probability']:.0%}) | "
+                f"Chains: {nar['n_active_chains']} | Bottlenecks: {nar['n_active_bottlenecks']}"
+            )
+        except Exception as e:
+            logger.warning(f"Narrative engine failed: {e}")
+            result["narrative"] = {}
+
         # ---- Summary ----
         result["summary"] = {
             "regime": getattr(gip, "operating_regime", "Unknown"),
@@ -2593,6 +2699,21 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             "v7_top_theses_count": len(result.get("top_theses", [])),
             "v7_vrp_sell_count": len(result.get("vrp_scanner", {}).get("high_vrp_sell_premium", [])),
             "v7_squeeze_imminent": len(result.get("squeeze_scanner", {}).get("imminent_squeezes", [])),
+            # Sprint 9 + 10 additions
+            "v9_karsan_squeeze_setups": len(result.get("karsan_scanner", {}).get("squeeze_setups", [])),
+            "v9_karsan_sell_premium": len(result.get("karsan_scanner", {}).get("sell_premium", [])),
+            "v9_leopold_matched": len(result.get("leopold_scan", {}).get("per_ticker", {})),
+            "v9_leopold_asymmetry": len(result.get("leopold_scan", {}).get("asymmetry_setups", [])),
+            "v9_leopold_writtenoff": len(result.get("leopold_scan", {}).get("written_off_recovering", [])),
+            "v9_coatue_sellers": len(result.get("coatue_scan", {}).get("sellers_top", [])),
+            "v9_coatue_buyers": len(result.get("coatue_scan", {}).get("buyers_top", [])),
+            "v9_coatue_decay_alerts": len(result.get("coatue_scan", {}).get("decay_alerts", [])),
+            "v9_coatue_rotation_spread_pp": result.get("coatue_scan", {}).get("capital_rotation_spread", {}).get("spread_3m_pp"),
+            "v10_narrative_headline": result.get("narrative", {}).get("macro_narrative", {}).get("headline", "—"),
+            "v10_dominant_scenario": result.get("narrative", {}).get("scenarios", {}).get("dominant_scenario", "—"),
+            "v10_active_chains": result.get("narrative", {}).get("n_active_chains", 0),
+            "v10_active_bottlenecks": result.get("narrative", {}).get("n_active_bottlenecks", 0),
+            "v10_behavioral_divergences": result.get("narrative", {}).get("n_behavioral_divergences", 0),
         }
 
         result["ok"] = True

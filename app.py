@@ -2296,6 +2296,96 @@ if page == "🏠 Dashboard":
     st.caption("30-second read · Forward-looking before headline")
 
     # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 10: AUTONOMOUS NARRATIVE CARD (top of dashboard)
+    # ═══════════════════════════════════════════════════════════════════
+    narrative = snap.get("narrative", {}) or {}
+    if narrative:
+        macro_nar = narrative.get("macro_narrative", {})
+        scenarios = narrative.get("scenarios", {})
+        action = narrative.get("action_summary", {})
+
+        # The Headline Card
+        st.markdown(f"### {macro_nar.get('headline', '⚪ Loading narrative…')}")
+        st.markdown(f"_{macro_nar.get('narrative', '')}_")
+
+        # 3 Scenarios in columns
+        sc1, sc2, sc3 = st.columns(3)
+        for col, scen_name, emoji in [(sc1, "bull", "🟢"), (sc2, "base", "🟡"), (sc3, "bear", "🔴")]:
+            scen = scenarios.get(scen_name, {})
+            with col:
+                p = scen.get("probability", 0)
+                dom = scenarios.get("dominant_scenario") == scen_name
+                badge = "⭐ DOMINANT" if dom else ""
+                st.markdown(f"**{emoji} {scen_name.upper()} · {p:.0%} {badge}**")
+                st.caption(scen.get("narrative", ""))
+                st.caption(f"📈 Longs: {', '.join(scen.get('long_picks', [])[:4])}")
+                st.caption(f"📉 Shorts: {', '.join(scen.get('short_picks', [])[:4])}")
+                st.caption(f"⚡ {scen.get('options_play', '')[:100]}")
+
+        # Action Summary
+        with st.expander(f"🎯 **{action.get('primary_action', '—')}** — full action plan", expanded=False):
+            ac1, ac2 = st.columns(2)
+            with ac1:
+                st.markdown("**Top LONGS:**")
+                for t in action.get("top_longs", [])[:5]:
+                    st.markdown(f"• {t}")
+            with ac2:
+                st.markdown("**Top SHORTS:**")
+                for t in action.get("top_shorts", [])[:5]:
+                    st.markdown(f"• {t}")
+            st.markdown(f"**Options Play:** {action.get('options_play', '—')}")
+            if action.get("active_themes"):
+                st.markdown(f"**Active Themes:** {', '.join(action['active_themes'])}")
+            if action.get("active_bottlenecks"):
+                st.markdown(f"**Active Bottlenecks:** {', '.join(action['active_bottlenecks'])}")
+
+        # Active Causal Chains
+        chains = narrative.get("active_causal_chains", [])
+        bottlenecks = narrative.get("active_bottlenecks", [])
+        divergences = narrative.get("behavioral_divergences", [])
+
+        nc1, nc2, nc3 = st.columns(3)
+        nc1.metric("Causal Chains Active", len(chains))
+        nc2.metric("Bottlenecks Active", len(bottlenecks))
+        nc3.metric("Behavioral Divergences", len(divergences))
+
+        narrative_tabs = st.tabs([
+            f"🔗 Causal Chains ({len(chains)})",
+            f"🚧 Bottlenecks ({len(bottlenecks)})",
+            f"🎭 Behavioral Divergences ({len(divergences)})",
+        ])
+
+        with narrative_tabs[0]:
+            if not chains:
+                st.info("No active causal chains. Markets in transition or neutral state.")
+            for c in chains[:6]:
+                with st.expander(f"**{c['name'].replace('_',' ').title()}** · {c['duration_months']}mo duration"):
+                    for step in c["chain"]:
+                        st.markdown(f"  {step}")
+                    cc1, cc2 = st.columns(2)
+                    with cc1:
+                        st.markdown(f"**📈 Long exposure:** {', '.join(c['long_exposure'][:8])}")
+                    with cc2:
+                        st.markdown(f"**📉 Short exposure:** {', '.join(c['short_exposure'][:6]) if c['short_exposure'] else '—'}")
+
+        with narrative_tabs[1]:
+            if not bottlenecks:
+                st.info("No active bottlenecks detected.")
+            for b in bottlenecks[:7]:
+                with st.expander(f"**{b['name'].replace('_',' ').title()}** · {b['confidence']} confidence · {b['duration_yr']}yr"):
+                    st.markdown(f"**Demand:** {b['demand']}")
+                    st.markdown(f"**Supply constraint:** {b['supply_constraint']}")
+                    st.markdown(f"**Beneficiaries:** {', '.join(b['beneficiaries'])}")
+
+        with narrative_tabs[2]:
+            if not divergences:
+                st.info("No behavioral divergences (crowd vs flow) detected.")
+            for d in divergences[:10]:
+                st.markdown(f"• **{d['ticker']}** ({d.get('score', 0):.0f}/100) — _{d.get('thesis', '')[:160]}_")
+
+        st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
     # TOP BAR — 6 KPIs in 1 row (compact)
     # ═══════════════════════════════════════════════════════════════════
     vix_val = health.get("vix_bucket", {}).get("vix_last", 18) if health else 18
@@ -2884,121 +2974,125 @@ if page == "🏠 Dashboard":
         st.metric("Capital Rotation", rot.split(" ")[0] if rot != "—" else "—")
 
     # ═══════════════════════════════════════════════════════════════════
-    # TABS: 7 macro views — clean grouping
+    # TABS v2.5: CONSOLIDATED — correlated engines grouped
+    # Removed: Smart Money 13F (holdings - per Edward's instruction)
+    # Merged: Bonds-XAU + UST = Fiscal Dominance
+    #         Yves + Soros + behavioral = Behavioral & Boom-Bust
+    #         Cascade + Capital Rotation = Flow & Network
+    #         GIP + Markov + Discovery = Regime Detection
+    # New:    Investor Lens (all 11 methodology evaluators stacked)
     # ═══════════════════════════════════════════════════════════════════
-    v2_tab1, v2_tab2, v2_tab3, v2_tab4, v2_tab5, v2_tab6, v2_tab7 = st.tabs([
-        "🧠 Yves Behavioral",
-        "🎯 Markov Regime V3",
-        "💼 Smart Money 13F",
-        "🪙 Bonds-XAU + Fiscal",
-        "⚡ Cascade + Capital Rotation",
-        "🔍 Top Theses (Investor Lens)",
-        "📊 GIP v10 + Discovery",
+    v2_tab1, v2_tab2, v2_tab3, v2_tab4, v2_tab5 = st.tabs([
+        "🎯 Regime Detection",
+        "🧠 Behavioral & Boom-Bust",
+        "🪙 Fiscal Dominance",
+        "⚡ Flow & Network",
+        "🔬 Investor Lens (11 frameworks)",
     ])
 
-    # ── TAB 1: Yves Behavioral ──
+    # ── TAB 1: Regime Detection (Markov V3 + GIP v10 + Discovery) ──
     with v2_tab1:
+        markov = snap.get("markov_v3", {}) or {}
+        gip_v10_data = snap.get("gip_v10", {}) or {}
+        discovery_v2 = snap.get("discovery_brain", {}) or {}
+
+        rd1, rd2, rd3, rd4 = st.columns(4)
+        rd1.metric("Markov Regime", markov.get("current_regime", "—").replace("_", " "),
+                   f"{markov.get('confidence', 0):.0%} conf")
+        rd2.metric("GIP Quad", gip_v10_data.get("structural_quad", "—"),
+                   f"{gip_v10_data.get('structural_confidence', 0):.0%} conf")
+        cp_p = markov.get("change_point_probability", 0)
+        rd3.metric("Change-Point Prob", f"{cp_p:.0%}",
+                   "🚨 ALERT" if markov.get("change_point_alert") else "stable")
+        kelly = markov.get("kelly_fraction", 0.25)
+        rd4.metric("Kelly Fraction", f"{kelly:.0%}")
+
+        st.markdown("---")
+        st.markdown("**🎯 Markov V3 — Regime Probabilities NOW**")
+        rp = markov.get("regime_probabilities", {})
+        if rp:
+            rp_cols = st.columns(5)
+            for i, (regime, prob) in enumerate(rp.items()):
+                rp_cols[i % 5].metric(regime.replace("_", " ").title()[:15], f"{prob:.0%}")
+
+        st.markdown("**Forward Forecasts (Transition Matrix Projection)**")
+        for label, key in [("1 Month", "forecast_1m"), ("3 Months", "forecast_3m"), ("6 Months", "forecast_6m")]:
+            f = markov.get(key, {})
+            if f:
+                cols = st.columns(5)
+                cols[0].markdown(f"**{label}:**")
+                sorted_f = sorted(f.items(), key=lambda x: x[1], reverse=True)
+                for i, (regime, prob) in enumerate(sorted_f[:4]):
+                    cols[i+1].caption(f"{regime.split('_')[0]}: {prob:.0%}")
+
+        st.markdown("---")
+        gv1, gv2 = st.columns(2)
+        with gv1:
+            st.markdown("**📊 GIP v10 (Bayesian)**")
+            if gip_v10_data:
+                st.caption(f"Monthly: {gip_v10_data.get('monthly_quad', '—')} ({gip_v10_data.get('monthly_confidence', 0):.0%})")
+                probs = gip_v10_data.get("quad_probabilities", {})
+                if probs:
+                    for q, p in probs.items():
+                        st.caption(f"P({q}) = {p:.0%}")
+        with gv2:
+            st.markdown("**🔍 Discovery Brain**")
+            dsumm = discovery_v2.get("summary", {})
+            st.caption(f"Total: {discovery_v2.get('total', 0)} | Adaptive: {dsumm.get('adaptive', 0)} | Reactive: {dsumm.get('reactive', 0)} | Proactive: {dsumm.get('proactive', 0)}")
+            for item in discovery_v2.get("top_10", [])[:5]:
+                st.markdown(f"• **{item.get('name', '—').replace('_', ' ')}** ({item.get('confidence', 0):.0%})")
+
+    # ── TAB 2: Behavioral & Boom-Bust (Yves + Soros + Reflexivity) ──
+    with v2_tab2:
         yves_v2 = snap.get("yves_v2", {}) or {}
+        boom_bust = snap.get("boom_bust", {}) or {}
+        narrative_v10 = snap.get("narrative", {}) or {}
+        divergences = narrative_v10.get("behavioral_divergences", [])
+
+        bb1, bb2, bb3 = st.columns(3)
+        bb1.metric("Yves Alerts", len(yves_v2.get("alerts", [])),
+                   yves_v2.get("alerts", [{}])[0].get("level", "—") if yves_v2.get("alerts") else "—")
+        bb2.metric("Soros Stage", boom_bust.get("stage", "—"))
+        bb3.metric("Behavioral Divergences", len(divergences))
+
+        st.markdown("**🧠 Yves Behavioral Alerts**")
         alerts = yves_v2.get("alerts", [])
         if not alerts:
-            st.info("✓ Tidak ada alert aktif — kondisi behavioral balanced.")
-        else:
-            top_alert = alerts[0]
+            st.info("✓ Balanced — no behavioral alerts active.")
+        for alert in alerts:
+            level_emoji = {"CRITICAL": "🔴", "OPPORTUNITY": "🟢", "WARNING": "🟡",
+                          "CAUTION": "🟠", "NEUTRAL": "⚪"}.get(alert.get("level", ""), "⚪")
+            with st.expander(f"{level_emoji} **{alert.get('title','-')}**",
+                            expanded=(alert.get("level") == "CRITICAL")):
+                st.markdown(f"**Specifics:** {alert.get('specifics', '—')}")
+                cA, cB = st.columns([3, 2])
+                with cA:
+                    st.markdown("**Action items:**")
+                    for action in alert.get("action", []):
+                        st.markdown(f"• {action}")
+                with cB:
+                    st.caption(f"**Invalidation:**\n{alert.get('invalidation', '—')}")
+                    st.caption(f"**Horizon:** {alert.get('time_horizon', '—')}")
+
+        st.markdown("---")
+        st.markdown("**🌀 Soros Reflexivity — Boom-Bust Cycle**")
+        if boom_bust:
             sc1, sc2, sc3 = st.columns(3)
-            sc1.metric("Top Alert Level", top_alert.get("level", "—"))
-            sc2.metric("Category", top_alert.get("category", "—").replace("_", " ").title()[:18])
-            sc3.metric("Confidence", f"{top_alert.get('confidence', 0):.0%}")
-            for alert in alerts:
-                level_emoji = {"CRITICAL": "🔴", "OPPORTUNITY": "🟢", "WARNING": "🟡",
-                              "CAUTION": "🟠", "NEUTRAL": "⚪"}.get(alert.get("level", ""), "⚪")
-                with st.expander(f"{level_emoji} **{alert.get('title','-')}**",
-                                expanded=(alert.get("level") == "CRITICAL")):
-                    st.markdown(f"**Specifics:** {alert.get('specifics', '—')}")
-                    cA, cB = st.columns([3, 2])
-                    with cA:
-                        st.markdown("**Action items:**")
-                        for action in alert.get("action", []):
-                            st.markdown(f"• {action}")
-                    with cB:
-                        st.caption(f"**Invalidation:**\n{alert.get('invalidation', '—')}")
-                        st.caption(f"**Horizon:** {alert.get('time_horizon', '—')}")
+            sc1.metric("Stage", boom_bust.get("stage", "—"))
+            sc2.metric("Score", f"{boom_bust.get('score', 0):.0f}/100")
+            sc3.metric("Direction", boom_bust.get("direction", "—"))
+            if boom_bust.get("description"):
+                st.caption(boom_bust["description"])
 
-    # ── TAB 2: Markov Regime V3 (HSMM + BOCPD) ──
-    with v2_tab2:
-        markov = snap.get("markov_v3", {}) or {}
-        if not markov:
-            st.info("Markov V3 unavailable")
-        else:
-            mc1, mc2, mc3 = st.columns(3)
-            with mc1:
-                st.metric("Current Regime", markov.get("current_regime", "—").replace("_", " "),
-                         f"{markov.get('confidence', 0):.0%} confidence")
-            with mc2:
-                cp_p = markov.get("change_point_probability", 0)
-                st.metric("Change-Point Prob", f"{cp_p:.0%}",
-                         "🚨 ALERT" if markov.get("change_point_alert") else "stable")
-            with mc3:
-                dur = markov.get("expected_duration_days", 30)
-                st.metric("Expected Duration", f"{dur:.0f} days",
-                         "regime persistence")
+        st.markdown("---")
+        st.markdown("**🎭 Behavioral Divergences (Crowd vs Flow)**")
+        if not divergences:
+            st.info("No divergences detected.")
+        for d in divergences[:8]:
+            st.markdown(f"• **{d['ticker']}** ({d.get('score', 0):.0f}/100) — _{d.get('thesis', '')[:200]}_")
 
-            st.markdown("**Regime Probabilities Right Now**")
-            rp = markov.get("regime_probabilities", {})
-            if rp:
-                rp_cols = st.columns(5)
-                for i, (regime, prob) in enumerate(rp.items()):
-                    rp_cols[i % 5].metric(regime.replace("_", " ").title()[:15], f"{prob:.0%}")
-
-            st.markdown("**Forward Forecasts (Transition Matrix Projection)**")
-            for label, key in [("1 Month", "forecast_1m"), ("3 Months", "forecast_3m"), ("6 Months", "forecast_6m")]:
-                f = markov.get(key, {})
-                if f:
-                    cols = st.columns(5)
-                    cols[0].markdown(f"**{label}:**")
-                    sorted_f = sorted(f.items(), key=lambda x: x[1], reverse=True)
-                    for i, (regime, prob) in enumerate(sorted_f[:4]):
-                        cols[i+1].caption(f"{regime.split('_')[0]}: {prob:.0%}")
-
-            kelly = markov.get("kelly_fraction", 0.25)
-            st.markdown(f"**Regime-Conditional Kelly:** {kelly:.0%}")
-            if markov.get("notes"):
-                for n in markov["notes"]:
-                    st.caption(n)
-
-    # ── TAB 3: Smart Money 13F ──
+    # ── TAB 3: Fiscal Dominance (Bonds-XAU + UST Auction merged) ──
     with v2_tab3:
-        sm = snap.get("smart_money", {}) or {}
-        if not sm.get("ok"):
-            st.info("Smart money data unavailable")
-        else:
-            sm1, sm2, sm3 = st.columns(3)
-            sm1.metric("Funds Tracked", sm.get("n_funds_tracked", 0))
-            sm2.metric("Consensus Picks", len(sm.get("consensus_picks", [])))
-            sm3.metric("Top Conviction Names", len(sm.get("top_conviction", [])))
-
-            st.markdown("**🎯 Cross-Fund Consensus Picks (held by 3+ smart money funds)**")
-            consensus = sm.get("consensus_picks", [])[:15]
-            if consensus:
-                df_rows = []
-                for c in consensus:
-                    df_rows.append({
-                        "Ticker": c.get("ticker"),
-                        "# Holders": c.get("n_holders"),
-                        "Funds": ", ".join(c.get("holders", [])[:3]),
-                        "Avg %": f"{c.get('avg_pct', 0):.1%}",
-                        "Weighted $B": f"${c.get('weighted_pct_bn', 0):.1f}",
-                    })
-                st.dataframe(pd.DataFrame(df_rows), width="stretch", hide_index=True)
-
-            st.markdown("**📊 Funds Overview**")
-            for fund in sm.get("fund_overview", []):
-                with st.expander(f"**{fund.get('name', '?')}** · ${fund.get('aum_bn', 0):.1f}B AUM · {fund.get('n_holdings', 0)} holdings"):
-                    st.caption(f"_Philosophy:_ {fund.get('philosophy', '—')}")
-                    if fund.get("ytd_return_2026"):
-                        st.markdown(f"**YTD 2026 return:** +{fund['ytd_return_2026']:.0%}")
-
-    # ── TAB 4: Bonds-XAU + Fiscal ──
-    with v2_tab4:
         bxau = snap.get("bonds_xau_regime", {}) or {}
         ust = snap.get("ust_auction", {}) or {}
 
@@ -3011,9 +3105,8 @@ if page == "🏠 Dashboard":
                         "Tight Fed Gold Headwind": "🟠", "Re Acceleration": "🟢"}.get(regime, "⚪")
                 st.markdown(f"### {emoji} {regime}")
                 m = bxau.get("metrics", {})
-                ry, yc = m.get("real_yield"), m.get("yield_curve_2s10s")
-                gs = m.get("gold_silver_ratio")
-                st.caption(f"Real Yield: {ry:.2f}% | Curve 2s10s: {yc:+.2f} | Gold/Silver: {gs:.1f}" if (ry and yc and gs) else "Metrics loading...")
+                ry, yc, gs = m.get("real_yield"), m.get("yield_curve_2s10s"), m.get("gold_silver_ratio")
+                st.caption(f"Real Yield: {ry:.2f}% | Curve 2s10s: {yc:+.2f} | Gold/Silver: {gs:.1f}" if all([ry, yc, gs]) else "Metrics loading...")
                 biases = bxau.get("position_biases", {})
                 if biases:
                     bc1, bc2 = st.columns(2)
@@ -3043,10 +3136,11 @@ if page == "🏠 Dashboard":
                     ac4.metric("Primary Dealer", f"{a.get('primary_dealer_pct', 0):.2f}%")
                     st.caption(a.get("interpretation", ""))
 
-    # ── TAB 5: Cascade + Capital Rotation ──
-    with v2_tab5:
+    # ── TAB 4: Flow & Network (Cascade + Capital Rotation + Supply) ──
+    with v2_tab4:
         cascade_v2 = snap.get("cascade_analysis", {}) or {}
         cap_rot = snap.get("capital_rotation", {}) or {}
+        coatue = snap.get("coatue_scan", {}) or {}
 
         st.markdown("**⚡ Cascade Analysis**")
         if cascade_v2.get("cascades"):
@@ -3059,7 +3153,7 @@ if page == "🏠 Dashboard":
             st.info("No active shocks detected")
 
         st.markdown("---")
-        st.markdown("**💱 Capital Rotation (COATUE Thesis)**")
+        st.markdown("**💱 COATUE Capital Rotation**")
         if cap_rot.get("ok"):
             cr1, cr2, cr3 = st.columns(3)
             cr1.metric("Hyperscaler 3M", f"{(cap_rot.get('hyperscaler_avg_3m') or 0)*100:.1f}%")
@@ -3068,51 +3162,163 @@ if page == "🏠 Dashboard":
             spread = cap_rot.get("rotation_spread_3m_pp", 0)
             st.markdown(f"**Spread:** {spread:+.1f}pp · {cap_rot.get('regime_label', '')}")
             st.caption(cap_rot.get("shortage_premium_status", ""))
-            fm = cap_rot.get("funding_math", {})
+
+        st.markdown("**🚦 COATUE Sellers vs Buyers of Shortage**")
+        if coatue.get("ok"):
+            sb1, sb2 = st.columns(2)
+            with sb1:
+                st.markdown("**Sellers of Shortage (TOP)**")
+                for s in coatue.get("sellers_top", [])[:6]:
+                    st.markdown(f"• **{s['ticker']}** ({s['score']:.0f}) — {s['role']}")
+            with sb2:
+                st.markdown("**Buyers of Shortage (mispriced opposite)**")
+                for b in coatue.get("buyers_top", [])[:6]:
+                    st.markdown(f"• **{b['ticker']}** ({b['score']:.0f}) — {b['role']}")
+            decay_alerts = coatue.get("decay_alerts", [])
+            if decay_alerts:
+                st.markdown("**⚠️ Shortage Premium Decay Alerts**")
+                for d in decay_alerts[:5]:
+                    st.markdown(f"• **{d['ticker']}** — {d['alert']} (deceleration {d['deceleration']:+.1f}%pp)")
+
+    # ── TAB 5: Investor Lens (11 frameworks) ──
+    with v2_tab5:
+        st.markdown("### 🔬 11 Investor Methodologies — Top Picks Per Framework")
+        st.caption("Each evaluator answers: 'If I were [Investor], would I buy this?'")
+        thought_process = snap.get("thought_process", {}) or {}
+        leopold_scan = snap.get("leopold_scan", {}) or {}
+        karsan_scan = snap.get("karsan_scanner", {}) or {}
+        coatue_scan = snap.get("coatue_scan", {}) or {}
+
+        # Investor framework summary
+        framework_tabs = st.tabs([
+            "🏗️ Leopold",
+            "💱 COATUE",
+            "📊 Karsan",
+            "🧠 Yves",
+            "🌀 Soros",
+            "⚡ Schadner",
+            "💧 Druckenmiller",
+            "🎯 Tier1Alpha + profplum99",
+        ])
+
+        with framework_tabs[0]:
+            st.markdown("**🏗️ Leopold Methodology — Bottleneck Layers + Asymmetry**")
+            oom = leopold_scan.get("oom_trajectory", {})
+            if oom:
+                lo1, lo2, lo3 = st.columns(3)
+                lo1.metric("Annual OOMs", f"{oom.get('annual_ooms', 1):.1f}")
+                lo2.metric("Annual Multiplier", f"{oom.get('annual_multiplier', 10):.0f}x")
+                lo3.metric("4-Yr Cumulative", f"{oom.get('4yr_cumulative_multiplier', 100000):,.0f}x")
+                st.caption(oom.get("thesis", ""))
+            top_picks_by_layer = leopold_scan.get("top_picks_by_layer", {})
+            for layer, picks in top_picks_by_layer.items():
+                if picks:
+                    st.markdown(f"**{layer.replace('_', ' ').title()}**")
+                    for p in picks[:5]:
+                        st.markdown(f"  • **{p['ticker']}** ({p['score']:.0f}) — {p['role']}")
+            asym = leopold_scan.get("asymmetry_setups", [])
+            if asym:
+                st.markdown("**🎯 Asymmetry Setups (CALLS recommended)**")
+                for a in asym[:5]:
+                    st.markdown(f"• **{a['ticker']}** ({a['score']:.0f}) — {a['setup']}")
+            wo = leopold_scan.get("written_off_recovering", [])
+            if wo:
+                st.markdown("**💎 Written-Off Recovering (Intel-style setup)**")
+                for w in wo[:5]:
+                    st.markdown(f"• **{w['ticker']}** — drawdown {w['drawdown_pct']:.0f}%, score {w['score']:.0f}")
+
+        with framework_tabs[1]:
+            st.markdown("**💱 COATUE Shortage Economy**")
+            crs = coatue_scan.get("capital_rotation_spread", {})
+            st.markdown(crs.get("interpretation", "—"))
+            if crs.get("spread_3m_pp"):
+                st.caption(f"Spread: {crs['spread_3m_pp']:+.1f}pp · Sellers {crs.get('sellers_avg_3m_pct', 0):.1f}% · Buyers {crs.get('buyers_avg_3m_pct', 0):.1f}%")
+            agentic = coatue_scan.get("agentic_plays", [])
+            if agentic:
+                st.markdown("**🚀 Agentic Big Bang Plays (CPU Rotation + HBM)**")
+                for a in agentic[:5]:
+                    st.markdown(f"• **{a['ticker']}** ({a['score']:.0f}) — {a['thesis']}")
+            fm = coatue_scan.get("funding_math", {})
             if fm:
-                st.caption(f"💰 {fm.get('interpretation', '')}")
+                st.markdown("**💰 $12T Funding Math**")
+                st.caption(fm.get("thesis", ""))
 
-    # ── TAB 6: Top Theses (Investor Lens) ──
-    with v2_tab6:
-        top_theses = snap.get("top_theses", [])
-        if not top_theses:
-            st.info("No top theses yet")
-        else:
-            st.markdown(f"**Top {len(top_theses)} highest-thesis-score tickers (Leopold + COATUE + Citrini + Hedgeye + Druckenmiller + Soros)**")
-            for i, t in enumerate(top_theses[:15]):
-                with st.expander(f"#{i+1} **{t.get('ticker')}** · Score {t.get('thesis_score', 0):.0f}/100 · {t.get('primary_role', '—')}"):
-                    st.markdown(f"_{t.get('primary_thesis', '')[:300]}_")
-                    if t.get("thesis_rationale"):
-                        st.markdown(t["thesis_rationale"])
-                    fr = t.get("matched_frameworks", [])
-                    if fr:
-                        st.caption(f"**Frameworks matched:** {', '.join([x.title() for x in fr])}")
-                    if t.get("conflicts"):
-                        for c in t["conflicts"]:
-                            st.warning(f"⚠️ {c}")
+        with framework_tabs[2]:
+            st.markdown("**📊 Karsan Vol Surface Scanner**")
+            squeeze = karsan_scan.get("squeeze_setups", [])
+            sell_prem = karsan_scan.get("sell_premium", [])
+            buy_conv = karsan_scan.get("buy_convexity", [])
+            kc1, kc2, kc3 = st.columns(3)
+            kc1.metric("Squeeze Setups", len(squeeze))
+            kc2.metric("Sell Premium", len(sell_prem))
+            kc3.metric("Buy Convexity", len(buy_conv))
+            if squeeze:
+                st.markdown("**🚀 Two-Sided Skew Squeeze Setups**")
+                for s in squeeze[:5]:
+                    st.markdown(f"• **{s['ticker']}** — asym {s.get('asym', 0):+.2f} · _{s.get('setup', '')[:100]}_")
+            if sell_prem:
+                st.markdown("**💰 SELL PREMIUM (Rich VRP)**")
+                for s in sell_prem[:5]:
+                    st.markdown(f"• **{s['ticker']}** — IV Rank {s.get('iv_rank', '—')} · _{s.get('setup', '')[:100]}_")
 
-    # ── TAB 7: GIP v10 + Discovery ──
-    with v2_tab7:
-        gip_v10_data = snap.get("gip_v10", {}) or {}
-        discovery_v2 = snap.get("discovery_brain", {}) or {}
+        with framework_tabs[3]:
+            st.markdown("**🧠 Yves — Behavioral Relabeling (from thought_process)**")
+            count = 0
+            for tk, tp in (thought_process or {}).items():
+                yv = tp.get("framework_breakdown", {}).get("yves", {})
+                if yv.get("matched") and count < 10:
+                    st.markdown(f"• **{tk}** ({yv.get('score', 0):.0f}) — {yv.get('role', '—')}")
+                    for r in yv.get("rationale", [])[:1]:
+                        st.caption(r)
+                    count += 1
+            if count == 0:
+                st.info("No Yves behavioral matches.")
 
-        gv1, gv2 = st.columns(2)
-        with gv1:
-            st.markdown("**📊 GIP v10 (Bayesian)**")
-            if gip_v10_data:
-                st.markdown(f"### {gip_v10_data.get('structural_quad', '—')} · {gip_v10_data.get('structural_confidence', 0):.0%}")
-                st.caption(f"Monthly: {gip_v10_data.get('monthly_quad', '—')} ({gip_v10_data.get('monthly_confidence', 0):.0%})")
-                probs = gip_v10_data.get("quad_probabilities", {})
-                if probs:
-                    for q, p in probs.items():
-                        st.caption(f"P({q}) = {p:.0%}")
-        with gv2:
-            st.markdown("**🔍 Discovery Brain**")
-            dsumm = discovery_v2.get("summary", {})
-            st.markdown(f"### {discovery_v2.get('total', 0)} candidates")
-            st.caption(f"Adaptive: {dsumm.get('adaptive', 0)} · Reactive: {dsumm.get('reactive', 0)} · Proactive: {dsumm.get('proactive', 0)}")
-            for item in discovery_v2.get("top_10", [])[:3]:
-                st.markdown(f"• **{item.get('name', '—').replace('_', ' ')}** ({item.get('confidence', 0):.0%})")
+        with framework_tabs[4]:
+            st.markdown("**🌀 Soros — Boom-Bust Reflexivity**")
+            boom_bust = snap.get("boom_bust", {}) or {}
+            st.markdown(f"**Current stage:** {boom_bust.get('stage', '—')}")
+            count = 0
+            for tk, tp in (thought_process or {}).items():
+                sr = tp.get("framework_breakdown", {}).get("soros", {})
+                if sr.get("matched") and count < 8:
+                    st.markdown(f"• **{tk}** ({sr.get('score', 0):.0f}) — {sr.get('role', '—')} · size {sr.get('position_size_multiplier', 1):+.1f}x")
+                    count += 1
+                    if count >= 8: break
+
+        with framework_tabs[5]:
+            st.markdown("**⚡ Schadner — Transition Risk + BS Decomposition**")
+            count = 0
+            for tk, tp in (thought_process or {}).items():
+                sch = tp.get("framework_breakdown", {}).get("schadner", {})
+                if sch.get("matched") and count < 8:
+                    bs = sch.get("bs_decomposition", {})
+                    st.markdown(f"• **{tk}** ({sch.get('score', 0):.0f}) — {sch.get('role', '—')}")
+                    if bs:
+                        st.caption(f"  Diffusive {bs.get('diffusive_baseline_pct', 0):.1f}% | Jump premium {bs.get('jump_premium_pct', 0):.1f}% | Structure: {bs.get('recommended_structure', '—')}")
+                    count += 1
+
+        with framework_tabs[6]:
+            st.markdown("**💧 Druckenmiller — Liquidity-First**")
+            count = 0
+            for tk, tp in (thought_process or {}).items():
+                dk = tp.get("framework_breakdown", {}).get("druckenmiller", {})
+                if dk.get("matched") and count < 10:
+                    st.markdown(f"• **{tk}** ({dk.get('score', 0):.0f}) — {dk.get('role', '—')} · regime {dk.get('liquidity_regime', '—')}")
+                    count += 1
+
+        with framework_tabs[7]:
+            st.markdown("**🎯 Tier1Alpha (Dealer Gamma) + profplum99 (UOA Flow)**")
+            count_t1 = count_pp = 0
+            for tk, tp in (thought_process or {}).items():
+                t1 = tp.get("framework_breakdown", {}).get("tier1alpha", {})
+                pp = tp.get("framework_breakdown", {}).get("profplum99", {})
+                if t1.get("matched") and count_t1 < 5:
+                    st.markdown(f"• **{tk}** Tier1: {t1.get('score', 0):.0f} — {t1.get('mechanical_regime', '—')}")
+                    count_t1 += 1
+                if pp.get("matched") and count_pp < 5:
+                    st.markdown(f"• **{tk}** profplum99: {pp.get('score', 0):.0f} — {pp.get('flow_interpretation', '—')}")
+                    count_pp += 1
 
     # ═══════════════════════════════════════════════════════════════════
     # FOOTER
@@ -3120,7 +3326,7 @@ if page == "🏠 Dashboard":
     n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
     flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
     cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v29-Sprint7")
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.5-Sprint10")
 
 
 elif page == "⚡ Alpha Center":
