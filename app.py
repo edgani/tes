@@ -2195,32 +2195,126 @@ def render_filter_score_badge(row):
     return f"{emoji} Filter {fs:.0f}/100 {'✓ PASS' if passes else '✗ FAIL'}"
 
 
+def _classify_recommendation(row, entry_decision=None, has_earnings_soon=False):
+    """7-type recommendation system per blueprint:
+    BELI SEKARANG / TUNGGU DI ENTRY / JANGAN CHASE / SHORT / 
+    JUAL SEBAGIAN / HINDARI / TUNGGU EVENT
+    """
+    direction = row.get("direction", "NEUTRAL")
+    conf = row.get("composite_confidence", 0) or 0
+    fs = row.get("filter_score", 0) or 0
+    px = row.get("price", 0) or 0
+    trade = row.get("risk_range", {}).get("trade", {}) if row.get("risk_range") else {}
+    lrr = trade.get("lrr")
+    trr = trade.get("trr")
+
+    # Event override
+    if has_earnings_soon:
+        return ("⏳ TUNGGU EVENT", "Earnings/data event <5 hari — jangan buka posisi baru", "#a78bfa")
+
+    # AVOID
+    if direction == "NEUTRAL" or fs < 25:
+        return ("⚪ HINDARI", "Sinyal tidak jelas / filter score rendah", "#9ca3af")
+
+    # Range position
+    range_pos = None
+    if lrr and trr and trr > lrr and px > 0:
+        range_pos = (px - lrr) / (trr - lrr)
+
+    if direction == "SHORT":
+        if range_pos is not None and range_pos < 0.30:
+            return ("⏳ TUNGGU DI ENTRY", f"Tunggu rally ke {trr:.2f} sebelum short", "#eab308")
+        return ("🔴 SHORT", f"Short setup aktif @ {px:.2f}", "#ef4444")
+
+    # LONG direction
+    if conf >= 0.70 and fs >= 60 and (range_pos is None or range_pos < 0.50):
+        return ("🟢 BELI SEKARANG", f"High conviction LONG @ {px:.2f}", "#22c55e")
+    elif conf >= 0.50 and fs >= 40:
+        if range_pos is not None and range_pos >= 0.70:
+            return ("🟠 JANGAN CHASE", f"Saham di Trade High {range_pos:.0%} — tunggu pullback ke {lrr:.2f}", "#f97316")
+        elif range_pos is not None and range_pos > 0.50:
+            return ("🟡 JUAL SEBAGIAN", f"Sudah di range tengah-atas, trim 20-30%", "#eab308")
+        else:
+            return ("🟢 BELI SEKARANG", f"LONG setup @ {px:.2f}", "#22c55e")
+    elif conf >= 0.30:
+        entry_at = lrr if lrr else (px * 0.97)
+        return ("⏳ TUNGGU DI ENTRY", f"Tunggu pullback ke {entry_at:.2f} ({(entry_at/px-1)*100:+.1f}%)", "#eab308")
+    return ("⚪ HINDARI", f"Conviction terlalu rendah ({conf:.0%})", "#9ca3af")
+
+
+def _get_upcoming_events(ticker):
+    """Mock upcoming events. In production: pull from earnings calendar API."""
+    # Hardcoded May 2026 events: FOMC May 28, CPI May 21, OPEX May 22
+    from datetime import datetime, date
+    today = date.today()
+    events = []
+    # Universal events
+    fomc_date = date(2026, 5, 28)
+    cpi_date = date(2026, 5, 21)
+    opex_date = date(2026, 5, 22)
+    if (fomc_date - today).days <= 7 and (fomc_date - today).days >= 0:
+        events.append({"event": "FOMC", "days": (fomc_date - today).days})
+    if (cpi_date - today).days <= 5 and (cpi_date - today).days >= 0:
+        events.append({"event": "CPI", "days": (cpi_date - today).days})
+    if (opex_date - today).days <= 5 and (opex_date - today).days >= 0:
+        events.append({"event": "OPEX", "days": (opex_date - today).days})
+    # Ticker-specific (mock NVDA earnings May 28)
+    earnings_map = {
+        "NVDA": date(2026, 5, 28),
+        "AVGO": date(2026, 6, 4),
+    }
+    if ticker in earnings_map:
+        e_date = earnings_map[ticker]
+        if (e_date - today).days <= 7 and (e_date - today).days >= 0:
+            events.append({"event": f"{ticker} EARNINGS", "days": (e_date - today).days, "is_earnings": True})
+    return events
+
+
 def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=True):
-    """Universal ticker card — replaces the inline blocks in each tab."""
+    """Universal ticker card v3 — blueprint 7 rec types + entry decision + event overlay."""
     ticker = row.get("ticker", "?")
     direction = row.get("direction", "NEUTRAL")
     px = row.get("price", 0)
     conf = row.get("composite_confidence", 0) or 0
     flipped = row.get("composite_flipped", False)
 
-    # Header
-    dir_emoji = "🟢" if direction == "LONG" else "🔴" if direction == "SHORT" else "⚪"
-    flip_marker = " ⚠️FLIP" if flipped else ""
-    header = f"{dir_emoji} **{ticker}** @ {px:.2f} · {direction}{flip_marker} · conf {conf:.0%}"
+    # Event Risk
+    upcoming_events = _get_upcoming_events(ticker)
+    has_earnings_soon = any(e.get("is_earnings") for e in upcoming_events)
 
-    # Filter score in label
+    # 7-type recommendation
+    rec_label, rec_reason, rec_color = _classify_recommendation(row, has_earnings_soon=has_earnings_soon)
+
+    # Header
     fs = row.get("filter_score", 0) or 0
-    if fs > 0:
-        header += f" · 🎯 {fs:.0f}/100"
+    flip_marker = " ⚠️FLIP" if flipped else ""
+    header = f"{rec_label.split(' ',1)[0]} **{ticker}** @ {px:.2f} · {rec_label.split(' ',1)[1] if ' ' in rec_label else direction} · conf {conf:.0%} · 🎯 {fs:.0f}/100{flip_marker}"
 
     with st.expander(header, expanded=expanded):
+        # ── Recommendation Banner ──
+        st.markdown(
+            f"<div style='background:{rec_color}22; border-left:4px solid {rec_color}; padding:10px 14px; border-radius:6px; margin-bottom:10px;'>"
+            f"<div style='font-size:12px; color:#aaa; letter-spacing:0.5px;'>REKOMENDASI</div>"
+            f"<div style='font-size:18px; font-weight:700; color:{rec_color};'>{rec_label}</div>"
+            f"<div style='font-size:13px; color:#ccc; margin-top:4px;'>{rec_reason}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+        # ── Event Risk Overlay (if events upcoming) ──
+        if upcoming_events:
+            event_text = " · ".join([f"📅 {e['event']} ({e['days']}d)" for e in upcoming_events])
+            st.warning(f"**Event Risk:** {event_text}")
+            if has_earnings_soon:
+                st.caption("⚠️ Earnings <5 hari → AVOID new entry, atau reduce size 50%")
+
         # ── ROW 1: Entry/Target/Stop/RR ──
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Entry", f"{row.get('entry') or 0:.2f}" if row.get('entry') else "—")
         m2.metric("Target 1", f"{row.get('target_1') or 0:.2f}" if row.get('target_1') else "—")
         m3.metric("Target 2", f"{row.get('target_2') or 0:.2f}" if row.get('target_2') else "—")
         m4.metric("Stop", f"{row.get('stop') or 0:.2f}" if row.get('stop') else "—")
-        m5.metric("R:R", f"{row.get('rr') or 0:.1f}x" if row.get('rr') else "—")
+        rr = row.get('rr') or 0
+        rr_rating = "SANGAT BAGUS ⭐⭐⭐" if rr >= 2.5 else "BAGUS ⭐⭐" if rr >= 1.8 else "CUKUP ⭐" if rr >= 1.3 else "TIDAK BAGUS ❌"
+        m5.metric("R:R", f"{rr:.1f}x" if rr else "—", rr_rating if rr else "—")
 
         # ── ROW 2: Badges (thesis + smart money + filter) ──
         badges = []
@@ -2378,17 +2472,41 @@ if page == "🏠 Dashboard":
     # TOP BAR (Persistent context strip)
     # ═══════════════════════════════════════════════════════════════════
     yves_alerts = yves_v2.get("alerts", []) or []
-    casino_mode = any(a.get("category", "").lower() == "casino_mode" for a in yves_alerts)
+    # CASINO MODE: actual check (Yves engine may not emit category flag)
+    aaii = snap.get("aaii", {}) or {}
+    aaii_bull_pct = aaii.get("bullish_pct", aaii.get("bull_pct", 0)) or 0
+    pc_ratio = (snap.get("greeks_data", {}) or {}).get("put_call_ratio") or \
+               (snap.get("market_health", {}) or {}).get("put_call_ratio") or 1.0
+    casino_mode = (vix_now < 18 and aaii_bull_pct > 50 and pc_ratio < 0.95) or \
+                  any(a.get("category", "").lower() == "casino_mode" for a in yves_alerts)
+
     fiscal_score = ust.get("fiscal_dominance", {}).get("score", 0) or 0
     market_health_score = health_snap.get("score", health_snap.get("composite_score", 60))
 
+    # BREADTH: with fallback from prices if engine empty
     advancing_pct = 0
     try:
         adv = breadth.get("advancing_pct") or breadth.get("a_d_ratio")
-        if adv is not None:
+        if adv is not None and adv > 0:
             advancing_pct = float(adv) * 100 if abs(adv) <= 1 else float(adv)
     except Exception:
         pass
+    if advancing_pct <= 0:
+        # FALLBACK: compute from sector ETF momentum
+        sectors_check = ["XLK", "XLF", "XLE", "XLI", "XLP", "XLU", "XLV", "XLY", "XLB", "XLC", "SPY", "IWM"]
+        up_count = 0; total = 0
+        for sk in sectors_check:
+            s = prices.get(sk)
+            if s is not None:
+                try:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) >= 2:
+                        if float(ser.iloc[-1]) > float(ser.iloc[-2]):
+                            up_count += 1
+                        total += 1
+                except Exception:
+                    pass
+        advancing_pct = (up_count / total * 100) if total > 0 else 50
 
     confidence = markov.get("confidence", 0)
     fc_3m = markov.get("forecast_3m", {}) or {}
@@ -2410,26 +2528,86 @@ if page == "🏠 Dashboard":
     st.markdown(tb_style, unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════
-    # SECTION 1: REGIME HARI INI (single big card)
+    # SECTION 1: REGIME HARI INI — Quarterly + Monthly split (Hedgeye-style)
     # ═══════════════════════════════════════════════════════════════════
+    gip_v10 = snap.get("gip_v10", {}) or {}
+    structural_quad = gip_v10.get("structural_quad", quad_raw_us if 'quad_raw_us' in dir() else "Q3")
+    monthly_quad = gip_v10.get("monthly_quad", structural_quad)
+    structural_conf = gip_v10.get("structural_confidence", 0) or markov.get("confidence", 0)
+    monthly_conf = gip_v10.get("monthly_confidence", 0) or markov.get("confidence", 0)
+
+    quad_map_short = {
+        "Q1": ("🟢 GOLDILOCKS", "Pertumbuhan ↑ Inflasi ↓", "#22c55e"),
+        "Q2": ("🟠 REFLASI",    "Pertumbuhan ↑ Inflasi ↑", "#f97316"),
+        "Q3": ("🟡 STAGFLASI",  "Pertumbuhan ↓ Inflasi ↑", "#eab308"),
+        "Q4": ("🔴 DEFLASI",    "Pertumbuhan ↓ Inflasi ↓", "#ef4444"),
+    }
+    struc_label, struc_desc, struc_color = quad_map_short.get(structural_quad, quad_label_id)
+    mo_label, mo_desc, mo_color = quad_map_short.get(monthly_quad, quad_label_id)
+
     st.markdown("### 🎯 Regime Hari Ini")
-    rg_col1, rg_col2 = st.columns([2, 3])
-    with rg_col1:
-        st.markdown(f"## {quad_label_id[0]}")
-        st.caption(quad_label_id[1])
-        if quad_seq.get("stag_on_a_lag"):
-            st.warning('"Inflasi Sekarang, Stagflasi Nanti" — Tighten stop loss')
-        elif macro_nar.get("headline"):
-            st.markdown(f"_{macro_nar['headline']}_")
-    with rg_col2:
-        if macro_nar.get("narrative"):
-            st.markdown(f"**Cerita:** {macro_nar['narrative'][:400]}")
-        if quad_seq.get("path_dependencies"):
-            st.caption("**🛤️ Path Dependencies:**")
-            for p in quad_seq["path_dependencies"][:3]:
-                st.caption(f"  • {p}")
+    rg1, rg2 = st.columns(2)
+    with rg1:
+        st.markdown(
+            f"<div style='background:{struc_color}11; border-left:4px solid {struc_color}; padding:14px 16px; border-radius:8px;'>"
+            f"<div style='font-size:11px; color:#aaa; letter-spacing:1px; font-weight:600;'>QUARTERLY (STRUCTURAL)</div>"
+            f"<div style='font-size:24px; font-weight:800; color:{struc_color}; margin-top:4px;'>{struc_label}</div>"
+            f"<div style='font-size:12px; color:#bbb;'>{struc_desc} · {structural_conf:.0%}</div>"
+            f"</div>", unsafe_allow_html=True)
+    with rg2:
+        st.markdown(
+            f"<div style='background:{mo_color}11; border-left:4px solid {mo_color}; padding:14px 16px; border-radius:8px;'>"
+            f"<div style='font-size:11px; color:#aaa; letter-spacing:1px; font-weight:600;'>MONTHLY (NOWCAST)</div>"
+            f"<div style='font-size:24px; font-weight:800; color:{mo_color}; margin-top:4px;'>{mo_label}</div>"
+            f"<div style='font-size:12px; color:#bbb;'>{mo_desc} · {monthly_conf:.0%}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # Show divergence warning if Quarterly ≠ Monthly
+    if structural_quad != monthly_quad:
+        st.warning(
+            f"⚠️ **DIVERGENCE:** Quarterly = **{structural_quad}**, Monthly = **{monthly_quad}**. "
+            f"Hedgeye-style: monthly leads quarterly. Watch for transition trigger."
+        )
+
+    # Narrative as BULLETS (not dense paragraph)
+    st.markdown("**📰 Cerita Hari Ini:**")
+    if macro_nar.get("narrative"):
+        narrative_text = macro_nar["narrative"]
+        # Split into sentences/bullets
+        import re as _re
+        sentences = _re.split(r'(?<=[.!?])\s+', narrative_text)
+        for s in sentences[:5]:
+            if s.strip():
+                st.markdown(f"  • {s.strip()}")
+
+    # Path Dependencies as bullets
+    if quad_seq.get("path_dependencies"):
+        st.markdown("**🛤️ Path Dependencies (Trigger Transisi):**")
+        for p in quad_seq["path_dependencies"][:4]:
+            st.markdown(f"  • {p}")
+
+    # Stag-on-a-Lag warning (separate, prominent)
+    if quad_seq.get("stag_on_a_lag"):
+        st.warning(
+            '⚠️ **"Inflasi Sekarang, Stagflasi Nanti"** — Hedgeye Q2 → Q3 transition risk. '
+            'Tighten stop loss. Reduce aggressive exposure.'
+        )
 
     st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # FISCAL DOMINANCE ALERT (separate box, prominent)
+    # ═══════════════════════════════════════════════════════════════════
+    fd_data = ust.get("fiscal_dominance", {})
+    if fd_data.get("score", 0) >= 50:
+        fd_regime = fd_data.get("regime", "🟠 ELEVATED")
+        fd_score = fd_data.get("score", 0)
+        fd_bias = fd_data.get("position_bias", "GLD/BTC long, TLT short")
+        st.error(
+            f"💀 **{fd_regime} — Score {fd_score:.0f}/100** · "
+            f"Position bias: {fd_bias}"
+        )
+        st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════
     # SECTION 2: 3 KEMUNGKINAN (Bull/Base/Bear scenarios — compact)
@@ -2543,20 +2721,20 @@ if page == "🏠 Dashboard":
                         m_21d = float(ser.iloc[-1] / ser.iloc[-22] - 1)
                         if m_21d > 0.03:
                             emoji, color = "🟢", "#22c55e"
-                            health = "KUAT"
+                            hm_status = "KUAT"
                         elif m_21d > 0:
                             emoji, color = "🟡", "#eab308"
-                            health = "CUKUP"
+                            hm_status = "CUKUP"
                         elif m_21d > -0.03:
                             emoji, color = "🟠", "#f97316"
-                            health = "LEMAH"
+                            hm_status = "LEMAH"
                         else:
                             emoji, color = "🔴", "#ef4444"
-                            health = "SAKIT"
+                            hm_status = "SAKIT"
                         st.markdown(
                             f"<div style='background:{color}22; border:1px solid {color}; border-radius:6px; padding:6px; text-align:center; min-height:60px;'>"
                             f"<div style='font-size:11px;'>{label.split(' ',1)[1] if ' ' in label else label}</div>"
-                            f"<div style='font-size:14px; font-weight:700; color:{color};'>{emoji} {health}</div>"
+                            f"<div style='font-size:14px; font-weight:700; color:{color};'>{emoji} {hm_status}</div>"
                             f"<div style='font-size:10px; color:#888;'>{m_21d*100:+.1f}% 21d</div>"
                             f"</div>", unsafe_allow_html=True)
                     else:
@@ -2617,8 +2795,8 @@ if page == "🏠 Dashboard":
     st.markdown("---")
     # TOP BAR — 4 KPIs ONLY (was 6+4=10, now 4 essential)
     # ═══════════════════════════════════════════════════════════════════
-    vix_val = health.get("vix_bucket", {}).get("vix_last", 18) if health else 18
-    vb = (health.get("vix_bucket",{}) if health else {}).get("bucket","-")
+    vix_val = (health.get("vix_bucket", {}).get("vix_last", 18) if isinstance(health, dict) else 18)
+    vb = (health.get("vix_bucket",{}) if isinstance(health, dict) else {}).get("bucket","-")
     dxy_val = None
     if prices.get("DX-Y.NYB") is not None:
         try:
@@ -3161,7 +3339,7 @@ if page == "🏠 Dashboard":
     n_flipped = snap.get("summary", {}).get("v2_composite_flipped_count", 0)
     flip_note = f" · ⚠️ {n_flipped} dir flipped" if n_flipped else ""
     cp_note = " · 🚨 Markov CP alert" if snap.get("summary", {}).get("v7_markov_cp_alert") else ""
-    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.8-Sprint14")
+    st.caption(f"Built {snap.get('build_time_s',0):.0f}s ago · {snap.get('prices_loaded',0)} assets · {snap.get('fred_coverage',0)} indicators · {news_narratives.get('analyzed_count',0)} headlines{flip_note}{cp_note} · v2.7-Sprint12")
 
 
 
@@ -4439,6 +4617,66 @@ elif page == "🇺🇸 US Stocks":
 # ═══════════════════════════════════════════════════════════════════
 elif page == "💱 Forex":
     st.markdown("## 💱 Forex")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 15: Blueprint sections (Indonesian)
+    # ═══════════════════════════════════════════════════════════════════
+    markov_fx = snap.get("markov_v3", {}) or {}
+    quad_fx = markov_fx.get("current_regime", "Q3").split("_")[0]
+    narrative_fx = snap.get("narrative", {}) or {}
+    bottlenecks_fx = narrative_fx.get("active_bottlenecks", []) or []
+    bxau_fx = snap.get("bonds_xau_regime", {}) or {}
+
+    dxy_now = 100
+    try:
+        dxy_s = pd.to_numeric(prices.get("DX-Y.NYB"), errors="coerce").dropna()
+        if len(dxy_s) >= 22:
+            dxy_now = float(dxy_s.iloc[-1])
+            dxy_21d = float(dxy_s.iloc[-1] / dxy_s.iloc[-22] - 1) * 100
+        else:
+            dxy_21d = 0
+    except Exception:
+        dxy_21d = 0
+
+    fx_health_score = 50 + (15 if abs(dxy_21d) > 2 else 0) + (-10 if vix_now > 22 else 5)
+    fx_emoji = "🟢" if fx_health_score >= 65 else "🟡" if fx_health_score >= 50 else "🔴"
+    fx_label = "KUAT" if fx_health_score >= 65 else "CUKUP" if fx_health_score >= 50 else "LEMAH"
+
+    st.markdown(f"### 🩺 Kesehatan Forex — {fx_emoji} {fx_label} ({fx_health_score:.0f}/100)")
+    fh1, fh2, fh3 = st.columns(3)
+    fh1.metric("DXY", f"{dxy_now:.2f}", f"{dxy_21d:+.1f}% 21d")
+    real_yield = bxau_fx.get("metrics", {}).get("real_yield", 0)
+    fh2.metric("Real Yield", f"{real_yield:.2f}%" if real_yield else "—",
+               "USD bullish" if real_yield > 1.5 else "USD bearish")
+    fh3.metric("VIX", f"{vix_now:.1f}", "FX vol expand" if vix_now > 20 else "FX tenang")
+
+    # Forex Playbook per Quad
+    fx_playbook = {
+        "Q1": {"beli": ["EURUSD (risk-on)", "AUDUSD", "EM FX (basket)"], "short": ["DXY/UUP"], "gaya": "Risk-on, EM bid, USD weak"},
+        "Q2": {"beli": ["GBPUSD (carry)", "CADUSD (oil)"], "short": ["JPY (BoJ lag)"], "gaya": "Reflation FX, commodity FX bid"},
+        "Q3": {"beli": ["UUP (defensive)", "CHF safe haven"], "short": ["EURUSD", "GBPUSD", "EM FX"], "gaya": "USD strong, EM stress"},
+        "Q4": {"beli": ["JPY (safe haven)", "CHF"], "short": ["AUDUSD", "EM FX"], "gaya": "Risk-off, defensive FX"},
+    }
+    pb_fx = fx_playbook.get(quad_fx, fx_playbook["Q3"])
+    st.markdown(f"### 📋 Playbook FX {quad_fx}")
+    fpb1, fpb2 = st.columns(2)
+    fpb1.success(f"✅ **BELI:** {', '.join(pb_fx['beli'])}")
+    fpb2.error(f"❌ **SHORT:** {', '.join(pb_fx['short'])}")
+    st.caption(f"💡 Gaya: {pb_fx['gaya']}")
+
+    if bottlenecks_fx:
+        fx_bottlenecks_str = []
+        for b in bottlenecks_fx[:3]:
+            if "fiscal" in b['name'].lower():
+                fx_bottlenecks_str.append(f"🏦 **Fiskal** → DXY naik → semua pair vs USD tertekan")
+            elif "oil" in b['name'].lower() or "power" in b['name'].lower():
+                fx_bottlenecks_str.append(f"🛢️ **{b['name'].title()}** → CAD/NOK support")
+        if fx_bottlenecks_str:
+            st.markdown("### 🚧 Bottleneck FX")
+            for s in fx_bottlenecks_str:
+                st.markdown(s)
+
+    st.markdown("---")
     st.caption("Filter: Composite 30 + Carry diff 25 + DXY/Real Yield 15 + Range tightness 15 + RR 15 · Min: 30/100")
 
     # ── HEADER: FX-specific KPIs ──
@@ -4498,6 +4736,59 @@ elif page == "💱 Forex":
 # ═══════════════════════════════════════════════════════════════════
 elif page == "🛢️ Commodities":
     st.markdown("## 🛢️ Commodities")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 15: Blueprint Commodities sections
+    # ═══════════════════════════════════════════════════════════════════
+    markov_cm = snap.get("markov_v3", {}) or {}
+    quad_cm = markov_cm.get("current_regime", "Q3").split("_")[0]
+    bxau_cm = snap.get("bonds_xau_regime", {}) or {}
+    bottlenecks_cm = (snap.get("narrative", {}) or {}).get("active_bottlenecks", [])
+
+    # Compute commodity health via XLE momentum + GLD momentum
+    cm_score = 50
+    try:
+        xle_s = pd.to_numeric(prices.get("XLE"), errors="coerce").dropna()
+        gld_s = pd.to_numeric(prices.get("GLD"), errors="coerce").dropna()
+        if len(xle_s) >= 22 and len(gld_s) >= 22:
+            xle_mom = float(xle_s.iloc[-1] / xle_s.iloc[-22] - 1)
+            gld_mom = float(gld_s.iloc[-1] / gld_s.iloc[-22] - 1)
+            if xle_mom > 0.03: cm_score += 10
+            if gld_mom > 0.03: cm_score += 10
+            if xle_mom > 0 and gld_mom > 0: cm_score += 5
+    except Exception:
+        pass
+
+    cm_emoji = "🟢" if cm_score >= 65 else "🟡" if cm_score >= 50 else "🔴"
+    cm_label = "KUAT" if cm_score >= 65 else "CUKUP" if cm_score >= 50 else "LEMAH"
+
+    st.markdown(f"### 🩺 Kesehatan Komoditas — {cm_emoji} {cm_label} ({cm_score:.0f}/100)")
+    bxau_regime_cm = bxau_cm.get("regime", "UNKNOWN").replace("_", " ").title()
+    st.caption(f"Regime Bonds-XAU: **{bxau_regime_cm}** · Real Yield {bxau_cm.get('metrics',{}).get('real_yield',0):.2f}%")
+
+    # Commodity Playbook per Quad
+    cm_playbook = {
+        "Q1": {"beli": ["Copper (HG=F)", "Industrial Metals"], "short": ["Gold (counter-trend)"], "gaya": "Industrial bid, growth metals"},
+        "Q2": {"beli": ["CL=F", "USO", "XLE", "Energy"], "short": [], "gaya": "Reflation energy bid"},
+        "Q3": {"beli": ["GLD", "SLV", "CL=F", "CCJ", "URA"], "short": [], "gaya": "Real assets, precious metals, energy"},
+        "Q4": {"beli": ["GLD (safe haven)", "TLT"], "short": ["CL=F", "Industrial metals"], "gaya": "Gold-only, growth-sensitive avoid"},
+    }
+    pb_cm = cm_playbook.get(quad_cm, cm_playbook["Q3"])
+    st.markdown(f"### 📋 Playbook Komoditas {quad_cm}")
+    cmb1, cmb2 = st.columns(2)
+    cmb1.success(f"✅ **BELI:** {', '.join(pb_cm['beli'])}")
+    cmb2.error(f"❌ **SHORT:** {', '.join(pb_cm['short']) if pb_cm['short'] else 'Tidak ada short di komoditas'}")
+    st.caption(f"💡 Gaya: {pb_cm['gaya']}")
+
+    if bottlenecks_cm:
+        st.markdown("### 🚧 Bottleneck Komoditas")
+        for b in bottlenecks_cm[:5]:
+            if any(t in b['name'].lower() for t in ["oil", "metal", "silver", "uranium", "power"]):
+                beneficiaries_cm = ", ".join(b.get("beneficiaries", [])[:5])
+                emoji_cm = "🛢️" if "oil" in b['name'].lower() else "💎" if "silver" in b['name'].lower() else "⚡"
+                st.markdown(f"{emoji_cm} **{b['name'].replace('_',' ').title()}** → BELI: {beneficiaries_cm}")
+
+    st.markdown("---")
     st.caption("Filter: COT bias 30 + Composite 25 + USD inverse 15 + Bonds-XAU 15 + Cascade 15 · Min: 35/100")
 
     # ── HEADER: Commodity-specific KPIs ──
@@ -4555,6 +4846,65 @@ elif page == "🛢️ Commodities":
 # PAGE: CRYPTO
 # ═══════════════════════════════════════════════════════════════════
 elif page == "₿ Crypto":
+    st.markdown("## ₿ Crypto")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 16: Blueprint Crypto sections
+    # ═══════════════════════════════════════════════════════════════════
+    markov_cr = snap.get("markov_v3", {}) or {}
+    quad_cr = markov_cr.get("current_regime", "Q3").split("_")[0]
+    bottlenecks_cr = (snap.get("narrative", {}) or {}).get("active_bottlenecks", [])
+
+    # BTC dominance + stablecoin proxy
+    btc_health = 50
+    try:
+        btc_s = pd.to_numeric(prices.get("BTC-USD"), errors="coerce").dropna()
+        qqq_s = pd.to_numeric(prices.get("QQQ"), errors="coerce").dropna()
+        if len(btc_s) >= 22 and len(qqq_s) >= 22:
+            btc_mom = float(btc_s.iloc[-1] / btc_s.iloc[-22] - 1)
+            qqq_mom = float(qqq_s.iloc[-1] / qqq_s.iloc[-22] - 1)
+            if btc_mom > qqq_mom + 0.02: btc_health += 15  # BTC outperforming = bullish
+            if btc_mom > 0.05: btc_health += 10
+    except Exception:
+        pass
+
+    cr_emoji = "🟢" if btc_health >= 70 else "🟡" if btc_health >= 50 else "🔴"
+    cr_label = "KUAT" if btc_health >= 70 else "CUKUP" if btc_health >= 50 else "LEMAH"
+
+    st.markdown(f"### 🩺 Kesehatan Crypto — {cr_emoji} {cr_label} ({btc_health:.0f}/100)")
+    st.caption("BTC paling aman | Alts high risk | Size 50% di Q3/Q4")
+
+    # Crypto Playbook per Quad
+    cr_playbook = {
+        "Q1": {"beli": ["BTC", "ETH", "SOL", "alts"], "short": [], "gaya": "Full risk-on, alts season"},
+        "Q2": {"beli": ["BTC", "MSTR", "CORZ", "IREN"], "short": [], "gaya": "BTC + miners + treasury plays"},
+        "Q3": {"beli": ["BTC", "MSTR", "IBIT"], "short": ["alts (ETH/SOL relative)"], "gaya": "BTC > alts, defensive crypto"},
+        "Q4": {"beli": ["BTC (debasement hedge ONLY)"], "short": ["alts", "ETH", "memecoin"], "gaya": "Cash-heavy, BTC small core"},
+    }
+    pb_cr = cr_playbook.get(quad_cr, cr_playbook["Q3"])
+    st.markdown(f"### 📋 Playbook Crypto {quad_cr}")
+    crb1, crb2 = st.columns(2)
+    crb1.success(f"✅ **BELI:** {', '.join(pb_cr['beli'])}")
+    crb2.error(f"❌ **SHORT:** {', '.join(pb_cr['short']) if pb_cr['short'] else '—'}")
+    st.caption(f"💡 Gaya: {pb_cr['gaya']}")
+
+    if bottlenecks_cr:
+        crypto_relevant_bn = []
+        for b in bottlenecks_cr:
+            if any(t in b['name'].lower() for t in ["fiscal", "power", "ai"]):
+                crypto_relevant_bn.append(b)
+        if crypto_relevant_bn:
+            st.markdown("### 🚧 Bottleneck Crypto")
+            for b in crypto_relevant_bn[:3]:
+                beneficiaries_cr = ", ".join([t for t in b.get("beneficiaries", []) if t in ("BTC","BTC-USD","MSTR","IBIT","CORZ","IREN","COIN")][:5])
+                if "fiscal" in b['name'].lower():
+                    st.markdown(f"🏦 **Fiskal Dominasi** → BTC sebagai digital gold debasement hedge")
+                elif "power" in b['name'].lower() or "ai" in b['name'].lower():
+                    st.markdown(f"⚡ **Daya AI** → CORZ, IREN (stranded power miners)")
+
+    st.markdown("---")
+    st.caption("Filter: Momentum 30 + Composite 25 + QQQ corr 15 + Markov 15 + RR 15 · Min: 35/100")
+
     st.markdown("## ₿ On-Chain Alpha Center")
     st.caption("Capital flows · Market structure · Narrative · Whale watch · Tokenomics · Risk filter")
 
@@ -4867,6 +5217,31 @@ elif page == "₿ Crypto":
 
 elif page == "🌍 Global & EM":
     st.markdown("## 🌍 Global & EM")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 16: EM Health quick view at top
+    # ═══════════════════════════════════════════════════════════════════
+    em_health = 50
+    try:
+        eem_s = pd.to_numeric(prices.get("EEM"), errors="coerce").dropna()
+        dxy_s = pd.to_numeric(prices.get("DX-Y.NYB"), errors="coerce").dropna()
+        if len(eem_s) >= 22:
+            eem_mom = float(eem_s.iloc[-1] / eem_s.iloc[-22] - 1)
+            if eem_mom > 0.03: em_health += 15
+            elif eem_mom < -0.03: em_health -= 15
+        if len(dxy_s) >= 22:
+            dxy_mom = float(dxy_s.iloc[-1] / dxy_s.iloc[-22] - 1)
+            if dxy_mom > 0.02: em_health -= 10  # DXY strong = EM pressure
+    except Exception:
+        pass
+
+    em_emoji = "🟢" if em_health >= 65 else "🟡" if em_health >= 50 else "🔴"
+    em_label = "KUAT" if em_health >= 65 else "CUKUP" if em_health >= 50 else "LEMAH"
+
+    st.markdown(f"### 🩺 Kesehatan EM — {em_emoji} {em_label} ({em_health:.0f}/100)")
+    st.caption("DXY naik = tekanan EM | LatAm (EWZ, EWW) memimpin | China (FXI) lemah")
+    st.markdown("---")
+
     st.caption("60-country regime map + Indonesia IHSG Report")
 
     global_tab, ihsg_tab = st.tabs(["🌍 Global Quad", "🇮🇩 IHSG Report"])
@@ -4946,6 +5321,68 @@ elif page == "🌍 Global & EM":
                     st.caption(f"{q} · {qn(q)}: No countries")
 
     with ihsg_tab:
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 16: IHSG Blueprint sections
+        # ═══════════════════════════════════════════════════════════════
+        ihsg_health = 50
+        try:
+            eido_s = pd.to_numeric(prices.get("EIDO"), errors="coerce").dropna()
+            if len(eido_s) >= 22:
+                eido_mom = float(eido_s.iloc[-1] / eido_s.iloc[-22] - 1)
+                if eido_mom > 0.03: ihsg_health += 10
+                elif eido_mom < -0.03: ihsg_health -= 10
+        except Exception:
+            pass
+
+        # USDIDR pressure (proxy via DXY)
+        try:
+            dxy_s = pd.to_numeric(prices.get("DX-Y.NYB"), errors="coerce").dropna()
+            if len(dxy_s) >= 22:
+                dxy_mom = float(dxy_s.iloc[-1] / dxy_s.iloc[-22] - 1)
+                if dxy_mom > 0.02: ihsg_health -= 10  # Rupiah weakening
+        except Exception:
+            pass
+
+        ih_emoji = "🟢" if ihsg_health >= 65 else "🟡" if ihsg_health >= 50 else "🟠" if ihsg_health >= 35 else "🔴"
+        ih_label = "KUAT" if ihsg_health >= 65 else "CUKUP" if ihsg_health >= 50 else "LEMAH" if ihsg_health >= 35 else "SAKIT"
+
+        st.markdown(f"### 🩺 Kesehatan IHSG — {ih_emoji} {ih_label} ({ihsg_health:.0f}/100)")
+        st.caption("DXY pressure | Asing flow | Komoditas tailwind | Domestik consumer headwind")
+
+        # Playbook IHSG per Quad (NO SHORT, NO OPTIONS)
+        quad_ihsg = (snap.get("markov_v3", {}) or {}).get("current_regime", "Q3").split("_")[0]
+        ihsg_playbook = {
+            "Q1": {"beli": ["BBCA.JK", "BBRI.JK", "TLKM.JK", "GOTO.JK"], "tunggu": [], "hindari": [], "gaya": "Bank, Tech, Konsumer Discretionary"},
+            "Q2": {"beli": ["ADRO.JK", "PGAS.JK", "NCKL.JK", "ANTM.JK"], "tunggu": ["BBCA.JK"], "hindari": [], "gaya": "Komoditas + reflation"},
+            "Q3": {"beli": ["ADRO.JK", "ITMG.JK", "NCKL.JK", "PGEO.JK", "PGAS.JK"], "tunggu": ["BBRI.JK"], "hindari": ["UNVR.JK", "ICBP.JK", "BMRI.JK", "TLKM.JK"], "gaya": "Energi/komoditas only, hindari konsumer"},
+            "Q4": {"beli": ["BBCA.JK (kualitas)", "TLKM.JK"], "tunggu": [], "hindari": ["ADRO.JK", "GOTO.JK", "small caps"], "gaya": "Quality only, defensive"},
+        }
+        pb_ihsg = ihsg_playbook.get(quad_ihsg, ihsg_playbook["Q3"])
+        st.markdown(f"### 📋 Playbook IHSG {quad_ihsg}")
+        st.caption("⚠️ TIDAK ADA SHORT — Cuma BELI / TUNGGU / HINDARI")
+        ip1, ip2, ip3 = st.columns(3)
+        ip1.success(f"✅ **BELI:** {', '.join(pb_ihsg['beli'])}")
+        ip2.info(f"⏱️ **TUNGGU:** {', '.join(pb_ihsg['tunggu']) if pb_ihsg['tunggu'] else '—'}")
+        ip3.error(f"❌ **HINDARI:** {', '.join(pb_ihsg['hindari']) if pb_ihsg['hindari'] else '—'}")
+        st.caption(f"💡 Gaya: {pb_ihsg['gaya']}")
+
+        # Bottleneck IHSG
+        bottlenecks_ihsg = (snap.get("narrative", {}) or {}).get("active_bottlenecks", [])
+        ihsg_relevant_bn = []
+        for b in bottlenecks_ihsg:
+            if any(t in b['name'].lower() for t in ["power", "ai", "oil", "fiscal"]):
+                ihsg_relevant_bn.append(b)
+        if ihsg_relevant_bn:
+            st.markdown("### 🚧 Bottleneck IHSG")
+            for b in ihsg_relevant_bn[:3]:
+                if "power" in b['name'].lower() or "ai" in b['name'].lower():
+                    st.markdown(f"⚡ **Daya AI** → PGEO.JK, PGAS.JK (Indonesia geothermal advantage)")
+                elif "oil" in b['name'].lower():
+                    st.markdown(f"🛢️ **Minyak/Batu Bara** → ADRO.JK, ITMG.JK, NCKL.JK")
+                elif "fiscal" in b['name'].lower():
+                    st.markdown(f"🏦 **DXY pressure** → BBRI, BMRI, TLKM tertekan (asing keluar)")
+
+        st.markdown("---")
         st.markdown("### 🇮🇩 IHSG Macro Report")
         st.caption("Indonesia equity - Narrative report format")
 
