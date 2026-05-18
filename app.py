@@ -2595,17 +2595,39 @@ def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=T
             sk_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>SKEW TERM (30D / 60D)</div>"
             sk_html += "<div style='display:flex; gap:14px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
             if skew_30d is not None:
-                sk_color = "#ef4444" if skew_30d > 5 else "#eab308" if skew_30d > 2 else "#22c55e"
-                sk_html += f"<div><span style='opacity:0.6;'>30D Skew:</span> <b style='color:{sk_color};'>{skew_30d:+.2f}</b></div>"
+                try:
+                    _sk30 = float(skew_30d)
+                    sk_color = "#ef4444" if _sk30 > 5 else "#eab308" if _sk30 > 2 else "#22c55e"
+                    sk_html += f"<div><span style='opacity:0.6;'>30D Skew:</span> <b style='color:{sk_color};'>{_sk30:+.2f}</b></div>"
+                except (ValueError, TypeError):
+                    pass
             if skew_60d is not None:
-                sk_html += f"<div><span style='opacity:0.6;'>60D Skew:</span> <b>{skew_60d:+.2f}</b></div>"
+                try:
+                    _sk60 = float(skew_60d)
+                    sk_html += f"<div><span style='opacity:0.6;'>60D Skew:</span> <b>{_sk60:+.2f}</b></div>"
+                except (ValueError, TypeError):
+                    pass
             if iv_now is not None:
-                sk_html += f"<div><span style='opacity:0.6;'>IV:</span> <b>{iv_now*100 if iv_now < 5 else iv_now:.1f}%</b></div>"
+                try:
+                    _iv_val = float(iv_now)
+                    _iv_pct = _iv_val * 100 if _iv_val < 5 else _iv_val
+                    sk_html += f"<div><span style='opacity:0.6;'>IV:</span> <b>{_iv_pct:.1f}%</b></div>"
+                except (ValueError, TypeError):
+                    pass
             if rv_now is not None:
-                sk_html += f"<div><span style='opacity:0.6;'>RV:</span> <b>{rv_now*100 if rv_now < 5 else rv_now:.1f}%</b></div>"
+                try:
+                    _rv_val = float(rv_now)
+                    _rv_pct = _rv_val * 100 if _rv_val < 5 else _rv_val
+                    sk_html += f"<div><span style='opacity:0.6;'>RV:</span> <b>{_rv_pct:.1f}%</b></div>"
+                except (ValueError, TypeError):
+                    pass
             if iv_rank is not None:
-                ir_color = "#ef4444" if iv_rank > 70 else "#eab308" if iv_rank > 40 else "#22c55e"
-                sk_html += f"<div><span style='opacity:0.6;'>IV Rank:</span> <b style='color:{ir_color};'>{iv_rank:.0f}/100</b></div>"
+                try:
+                    _ir = float(iv_rank)
+                    ir_color = "#ef4444" if _ir > 70 else "#eab308" if _ir > 40 else "#22c55e"
+                    sk_html += f"<div><span style='opacity:0.6;'>IV Rank:</span> <b style='color:{ir_color};'>{_ir:.0f}/100</b></div>"
+                except (ValueError, TypeError):
+                    pass
             sk_html += "</div></div>"
             st.markdown(_html(sk_html), unsafe_allow_html=True)
 
@@ -2648,6 +2670,19 @@ def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=T
             ath_dist = row.get("ath_distance") or row.get("dist_from_ath")
             vol_ratio = row.get("volume_ratio_avg") or row.get("volume_spike")
             pos_in_range = row.get("position_in_range")
+
+            # Coerce to float (avoid ValueError on string/None comparisons)
+            def _safe_float(v):
+                if v is None: return None
+                try: return float(v)
+                except (ValueError, TypeError): return None
+            ret_1m = _safe_float(ret_1m)
+            ret_3m = _safe_float(ret_3m)
+            ret_12m = _safe_float(ret_12m)
+            rsi_14 = _safe_float(rsi_14)
+            ath_dist = _safe_float(ath_dist)
+            vol_ratio = _safe_float(vol_ratio)
+            pos_in_range = _safe_float(pos_in_range)
 
             # Get from risk_range if available
             if pos_in_range is None and t_lo and t_hi and px > 0:
@@ -2939,6 +2974,8 @@ if page == "🏠 Dashboard":
     # Priority: GIP structural_quad > Markov current_regime (fallback)
     # ═══════════════════════════════════════════════════════════════════
     gip_snap = snap.get("gip", {}) or {}
+    if not isinstance(gip_snap, dict):
+        gip_snap = {}
     # Normalize quad string to "Q1_GOLDILOCKS" format
     _struc_raw = gip_snap.get("structural_quad") or gip_snap.get("quad") or ""
     _struc_norm = ""
@@ -4205,7 +4242,8 @@ elif page == "⚡ Alpha Center":
     st.caption("Cross-market top tier — HIGH BAR (≥70/100). Composite ≥40% + Thesis ≥60 + RR A+/A + Methodology depth ≥3 frameworks")
 
     # ── HEADER: Alpha-specific KPIs ──
-    render_market_header("alpha", snap)
+    with st.expander("📊 Detail Teknis Alpha (Markov, Smart $, Rally Function)", expanded=False):
+        render_market_header("alpha", snap)
 
     # ── TOP-LEVEL ALPHA CANDIDATES (cross-market) ──
     st.markdown("---")
@@ -4239,10 +4277,7 @@ elif page == "⚡ Alpha Center":
     alpha_candidates.sort(key=lambda x: x["alpha_score"], reverse=True)
     top_alpha = [c for c in alpha_candidates if c["alpha_score"] >= 70][:20]
 
-    ac1, ac2, ac3 = st.columns(3)
-    ac1.metric("Total Alpha Candidates", len(alpha_candidates))
-    ac2.metric("Pass High Bar (≥70)", len(top_alpha))
-    ac3.metric("With Smart Money", sum(1 for c in top_alpha if c.get("smart_money")))
+    st.markdown(f"📊 **{len(top_alpha)} kandidat** lulus high bar (≥70/100) dari **{len(alpha_candidates)} total** · 💼 {sum(1 for c in top_alpha if c.get('smart_money'))} dengan smart money confirmation")
 
     if not top_alpha:
         st.info("No cross-market candidates meet Alpha Center high bar. Lower filter thresholds in market-specific tabs to see more candidates.")
@@ -4987,10 +5022,11 @@ elif page == "🇺🇸 US Stocks":
                        f"({b['confidence']}) → BELI: {', '.join(b.get('beneficiaries', [])[:6])}")
 
     st.markdown("---")
-    st.caption("Filter v2.7: Composite 35 + Methodology 40 + Risk Range 15 + Behavioral 10 · Min: 35/100")
+    st.caption("🎯 Filter aktif: cuma kasih liat ticker dengan sinyal kuat (kombinasi 4 faktor)")
 
     # ── HEADER: Market-specific KPIs ──
-    render_market_header("us_stocks", snap)
+    with st.expander("📊 Detail Teknis Pasar (Smart $, Cap Rotation, Top Theses)", expanded=False):
+        render_market_header("us_stocks", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
@@ -5014,11 +5050,8 @@ elif page == "🇺🇸 US Stocks":
     shorts = [r for r in us_passing if r.get("direction") == "SHORT"]
 
     st.markdown("---")
-    f1, f2, f3, f4 = st.columns(4)
-    f1.metric("Universe", len(us_rows))
-    f2.metric("Passes Filter", len(us_passing))
-    f3.metric("🟢 LONG", len(longs))
-    f4.metric("🔴 SHORT", len(shorts))
+    # Simple summary line (awam-friendly, no empty zero metric cards)
+    st.markdown(f"📊 **{len(us_passing)} ticker** lulus filter dari **{len(us_rows)} universe** · 🟢 {len(longs)} long · 🔴 {len(shorts)} short")
 
     if not us_passing:
         st.info("No tickers pass filter threshold (35/100). Check Markov regime + thought_process matches.")
@@ -5135,10 +5168,11 @@ elif page == "💱 Forex":
                 st.markdown(s)
 
     st.markdown("---")
-    st.caption("Filter: Composite 30 + Carry diff 25 + DXY/Real Yield 15 + Range tightness 15 + RR 15 · Min: 30/100")
+    st.caption("🎯 Filter aktif: pair Forex dengan momentum + carry yield + USD regime alignment")
 
     # ── HEADER: FX-specific KPIs ──
-    render_market_header("forex", snap)
+    with st.expander("📊 Detail Teknis Forex (Real Yield, DXY corr, Curve, Fiscal)", expanded=False):
+        render_market_header("forex", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
@@ -5157,11 +5191,7 @@ elif page == "💱 Forex":
     shorts = [r for r in fx_passing if r.get("direction") == "SHORT"]
 
     st.markdown("---")
-    f1, f2, f3, f4 = st.columns(4)
-    f1.metric("Pairs Universe", len(fx_rows))
-    f2.metric("Passes Filter", len(fx_passing))
-    f3.metric("🟢 LONG", len(longs))
-    f4.metric("🔴 SHORT", len(shorts))
+    st.markdown(f"📊 **{len(fx_passing)} pair** lulus filter dari **{len(fx_rows)} pasangan** · 🟢 {len(longs)} long · 🔴 {len(shorts)} short")
 
     if not fx_passing:
         st.info("No FX pairs pass filter (30/100 minimum).")
@@ -5247,10 +5277,11 @@ elif page == "🛢️ Commodities":
                 st.markdown(f"{emoji_cm} **{b['name'].replace('_',' ').title()}** → BELI: {beneficiaries_cm}")
 
     st.markdown("---")
-    st.caption("Filter: COT bias 30 + Composite 25 + USD inverse 15 + Bonds-XAU 15 + Cascade 15 · Min: 35/100")
+    st.caption("🎯 Filter aktif: komoditas dengan smart money flow + USD trend + supply chain pressure")
 
     # ── HEADER: Commodity-specific KPIs ──
-    render_market_header("commodities", snap)
+    with st.expander("📊 Detail Teknis Komoditas (Shocks, Gold/Silver bias, BXau regime)", expanded=False):
+        render_market_header("commodities", snap)
 
     gamma_data = snap.get("gamma_data", {}) or {}
     greeks_data = snap.get("greeks_data", {}) or {}
@@ -5274,12 +5305,9 @@ elif page == "🛢️ Commodities":
         by_cat[cat].append(r)
 
     st.markdown("---")
-    f1, f2, f3, f4, f5 = st.columns(5)
-    f1.metric("Universe", len(comm_rows))
-    f2.metric("⚡ Energy", len(by_cat["Energy"]))
-    f3.metric("🥇 Metals", len(by_cat["Metals"]))
-    f4.metric("🌾 Ag", len(by_cat["Agricultural"]))
-    f5.metric("🍫 Softs", len(by_cat["Softs"]))
+    st.markdown(f"📊 **{len(comm_passing)} komoditas** lulus filter dari **{len(comm_rows)} universe** · "
+                f"⚡ {len(by_cat['Energy'])} energy · 🥇 {len(by_cat['Metals'])} metals · "
+                f"🌾 {len(by_cat['Agricultural'])} agri · 🍫 {len(by_cat['Softs'])} softs")
 
     if not comm_passing:
         st.info("No commodity tickers pass filter (35/100 minimum).")
@@ -5361,7 +5389,7 @@ elif page == "₿ Crypto":
                     st.markdown(f"⚡ **Daya AI** → CORZ, IREN (stranded power miners)")
 
     st.markdown("---")
-    st.caption("Filter: Momentum 30 + Composite 25 + QQQ corr 15 + Markov 15 + RR 15 · Min: 35/100")
+    st.caption("🎯 Filter aktif: crypto dengan momentum kuat + tech sector alignment + regime support")
 
     st.markdown("## ₿ On-Chain Alpha Center")
     st.caption("Capital flows · Market structure · Narrative · Whale watch · Tokenomics · Risk filter")
@@ -5642,11 +5670,7 @@ elif page == "₿ Crypto":
 
     st.markdown("---")
     st.markdown("### 🎯 Filter Results (Crypto-Specific: Momentum 30 + Markov 15 + QQQ corr 15)")
-    fc1, fc2, fc3, fc4 = st.columns(4)
-    fc1.metric("Universe", len(crypto_rows))
-    fc2.metric("Passes Filter", len(crypto_passing))
-    fc3.metric("🟢 LONG", len(longs))
-    fc4.metric("🔴 SHORT", len(shorts))
+    st.markdown(f"📊 **{len(crypto_passing)} coin** lulus filter dari **{len(crypto_rows)} universe** · 🟢 {len(longs)} long · 🔴 {len(shorts)} short")
 
     if not crypto_passing:
         st.info("No crypto tickers pass filter. Check Markov regime + momentum.")
@@ -6005,12 +6029,10 @@ elif page == "🌍 Global & EM":
             by_sector.setdefault(sect, []).append(r)
 
         st.markdown("---")
-        st.markdown("### 🎯 IHSG Filter (Sprint 8: Composite 30 + USDIDR 20 + Commodity proxy 15 + RR 15)")
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        fc1.metric("Universe", len(ihsg_rows))
-        fc2.metric("Passes Filter", len(ihsg_passing))
-        fc3.metric("🥇 Coal/Nickel", len(by_sector.get("Coal", [])) + len(by_sector.get("Nickel", [])))
-        fc4.metric("🏦 Banks", len(by_sector.get("Banks", [])))
+        st.markdown("### 🎯 IHSG Filter — saham Indonesia dengan momentum + USDIDR support")
+        _coalnickel = len(by_sector.get("Coal", [])) + len(by_sector.get("Nickel", []))
+        _banks = len(by_sector.get("Banks", []))
+        st.markdown(f"📊 **{len(ihsg_passing)} saham** lulus filter dari **{len(ihsg_rows)} universe** · 🪨 {_coalnickel} coal/nickel · 🏦 {_banks} bank")
 
         if not ihsg_passing:
             st.info("No IHSG tickers pass filter (35/100).")
