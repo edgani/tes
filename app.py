@@ -527,6 +527,10 @@ def split_long_short(rows):
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD
 # ═══════════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+# PAGE: DASHBOARD (NO TICKERS - Macro overview only)
+# ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Dashboard")
     render_regime_banner()
@@ -557,8 +561,9 @@ def page_dashboard():
             unsafe_allow_html=True
         )
     with k4:
-        n_longs = len([r for r in (snap.get("daily_signals", []) or []) if "LONG" in str(r.get("direction", ""))])
-        n_shorts = len([r for r in (snap.get("daily_signals", []) or []) if "SHORT" in str(r.get("direction", ""))])
+        daily = snap.get("daily_signals", []) or []
+        n_longs = len([r for r in daily if "LONG" in str(r.get("direction", ""))])
+        n_shorts = len([r for r in daily if "SHORT" in str(r.get("direction", ""))])
         st.markdown(
             _kpi_card("Setups", f"{n_longs}L / {n_shorts}S", "Alpha signals", "#58A6FF"),
             unsafe_allow_html=True
@@ -566,69 +571,22 @@ def page_dashboard():
 
     st.divider()
 
-    # ── MAIN CONTENT: 2 COLUMNS ──
+    # ── MAIN: 2 COLUMNS ──
     left, right = st.columns([1.2, 1])
 
     with left:
-        st.markdown("### 🎯 Top Alpha")
-        alpha_items = (snap.get("alpha_center", {}) or {}).get("all", []) or []
-        top_alpha = sorted(alpha_items, key=lambda x: x.get("priority_score", 0), reverse=True)[:8]
-        if top_alpha:
-            for item in top_alpha:
-                dir_color = "#3FB950" if item.get("direction") == "LONG" else "#F85149" if item.get("direction") == "SHORT" else "#8B949E"
-                grade = item.get("grade", "C")
-                st.markdown(
-                    f"<div style='display:flex; align-items:center; gap:8px; padding:6px 10px; background:#161B22; border:1px solid #30363D; "
-                    f"border-radius:6px; margin:3px 0; font-size:0.82rem;'>"
-                    f"<span style='font-weight:700; min-width:50px;'>{item.get('ticker', '—')}</span>"
-                    f"<span style='color:{dir_color}; font-weight:600; min-width:50px;'>{item.get('direction', '—')}</span>"
-                    f"<span style='background:{"#3FB95022" if grade=="A" else "#D2992222" if grade=="B" else "#8B949E22"}; "
-                    f"color:{"#3FB950" if grade=="A" else "#D29922" if grade=="B" else "#8B949E"}; "
-                    f"padding:1px 6px; border-radius:4px; font-size:0.7rem; font-weight:600; border:1px solid {"#3FB950" if grade=="A" else "#D29922" if grade=="B" else "#8B949E"};'>{grade}</span>"
-                    f"<span style='color:#8B949E; flex:1; text-align:right;'>{item.get('thesis', '')[:60]}</span></div>",
-                    unsafe_allow_html=True
-                )
-        else:
-            st.info("No alpha signals generated yet.")
-
-        # Playbook mini
-        st.markdown("### 📋 Playbook")
-        pb = snap.get("playbook", {}) or {}
-        best = pb.get("best_assets", [])[:5]
-        worst = pb.get("worst_assets", [])[:5]
-        if best or worst:
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("<div style='font-size:0.7rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Overweight</div>", unsafe_allow_html=True)
-                for b in best:
-                    st.markdown(f"<div style='font-size:0.8rem; color:#E6EDF3;'>• {b}</div>", unsafe_allow_html=True)
-            with c2:
-                st.markdown("<div style='font-size:0.7rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Underweight</div>", unsafe_allow_html=True)
-                for w in worst:
-                    st.markdown(f"<div style='font-size:0.8rem; color:#E6EDF3;'>• {w}</div>", unsafe_allow_html=True)
-
-    with right:
-        st.markdown("### 📰 Macro Pulse")
-
-        # Market health
-        health_score = health.get("composite_score", 50) if health else 50
-        health_color = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
-        st.markdown(
-            f"<div style='background:#161B22; border:1px solid #30363D; border-radius:8px; padding:10px 12px; margin-bottom:8px;'>"
-            f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
-            f"<span style='font-size:0.7rem; color:#8B949E; text-transform:uppercase; font-weight:600;'>Market Health</span>"
-            f"<span style='font-size:1.1rem; font-weight:700; color:{health_color};'>{health_score:.0f}</span></div></div>",
-            unsafe_allow_html=True
-        )
-
-        # Narrative
+        # Macro Narrative (no tickers!)
+        st.markdown("### 🎯 Macro Narrative")
         macro_nar = (narrative.get("macro_narrative") or {}) if narrative else {}
         if macro_nar.get("narrative"):
-            st.markdown(f"<div style='font-size:0.8rem; color:#E6EDF3; line-height:1.5;'>📰 {macro_nar['narrative'][:200]}...</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='font-size:0.85rem; color:#E6EDF3; line-height:1.6;'>{macro_nar['narrative'][:400]}...</div>", unsafe_allow_html=True)
+        else:
+            st.caption("No active macro narrative.")
 
         # Scenarios
         scenarios = (narrative.get("scenarios") or {}) if narrative else {}
         if scenarios:
+            st.markdown("### 🎲 Scenarios")
             dom = scenarios.get("dominant_scenario", "base")
             for scen_name in ["bull", "base", "bear"]:
                 scen = scenarios.get(scen_name, {})
@@ -636,31 +594,80 @@ def page_dashboard():
                 color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
                 is_dom = " ★" if dom == scen_name else ""
                 st.markdown(
-                    f"<div style='display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #21262D;'>"
-                    f"<span style='font-size:0.8rem; color:#E6EDF3;'>{scen_name.title()}{is_dom}</span>"
-                    f"<span style='font-size:0.85rem; font-weight:700; color:{color};'>{p:.0%}</span></div>",
+                    f"<div style='display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid #21262D;'>"
+                    f"<span style='font-size:0.85rem; color:#E6EDF3;'>{scen_name.title()}{is_dom}</span>"
+                    f"<span style='font-size:0.9rem; font-weight:700; color:{color};'>{p:.0%}</span></div>",
                     unsafe_allow_html=True
                 )
 
-        # Front-run
+        # Bottleneck alerts
+        bottlenecks = (narrative.get("active_bottlenecks") or []) if narrative else []
+        if bottlenecks:
+            st.markdown("### 🚧 Bottlenecks")
+            for b in bottlenecks[:5]:
+                ben = ", ".join(b.get("beneficiaries", [])[:5])
+                st.markdown(
+                    f"<div style='background:#161B22; border-left:3px solid #F85149; border-radius:6px; padding:8px 12px; margin:4px 0;'>"
+                    f"<div style='font-size:0.85rem; font-weight:700; color:#E6EDF3;'>{b['name'].replace('_', ' ').title()}</div>"
+                    f"<div style='font-size:0.75rem; color:#8B949E; margin-top:3px;'>Beneficiaries: {ben}</div></div>",
+                    unsafe_allow_html=True
+                )
+
+    with right:
+        # Market Health
+        st.markdown("### 🫀 Market Health")
+        health_score = health.get("composite_score", 50) if health else 50
+        h_color = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
+        st.markdown(
+            f"<div style='background:#161B22; border:1px solid #30363D; border-radius:8px; padding:10px 12px; margin-bottom:8px;'>"
+            f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
+            f"<span style='font-size:0.7rem; color:#8B949E; text-transform:uppercase; font-weight:600;'>Composite Score</span>"
+            f"<span style='font-size:1.3rem; font-weight:800; color:{h_color};'>{health_score:.0f}</span></div></div>",
+            unsafe_allow_html=True
+        )
+
+        # Front-run / Rumor watch
         rumor = snap.get("rumor_watch", []) or []
         if rumor:
-            st.markdown("### 🔮 Front-Run")
-            for r in rumor[:3]:
+            st.markdown("### 🔮 Front-Run Signals")
+            for r in rumor[:5]:
                 sig = r.get("signal", "")
                 color = "#3FB950" if "BULLISH" in sig else "#F85149" if "BEARISH" in sig else "#D29922"
                 st.markdown(
-                    f"<div style='display:flex; justify-content:space-between; align-items:center; padding:4px 0;'>"
+                    f"<div style='display:flex; justify-content:space-between; align-items:center; padding:4px 0; border-bottom:1px solid #21262D;'>"
                     f"<span style='font-size:0.8rem; color:#E6EDF3;'>{r.get('ticker', '—')}</span>"
-                    f"<span style='font-size:0.75rem; color:{color}; font-weight:600;'>{sig[:20]}</span></div>",
+                    f"<span style='font-size:0.75rem; color:{color}; font-weight:600;'>{sig[:25]}</span></div>",
                     unsafe_allow_html=True
                 )
 
+        # Asset class heatmap
+        st.markdown("### 🌡️ Asset Class Pulse")
+        assets = {
+            "Saham": "SPY", "Bonds": "TLT", "Komoditas": "DBC", 
+            "Crypto": "BTC-USD", "USD": "DX-Y.NYB", "EM": "EEM", "Emas": "GLD"
+        }
+        for label, ticker in assets.items():
+            try:
+                s = prices.get(ticker)
+                if s is not None:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) >= 22:
+                        mom = float(ser.iloc[-1] / ser.iloc[-22] - 1)
+                        emoji = "🟢" if mom > 0.03 else "🟡" if mom > 0 else "🟠" if mom > -0.03 else "🔴"
+                        color = "#3FB950" if mom > 0.03 else "#D29922" if mom > 0 else "#F85149"
+                        st.markdown(
+                            f"<div style='display:flex; justify-content:space-between; align-items:center; padding:3px 0;'>"
+                            f"<span style='font-size:0.8rem; color:#E6EDF3;'>{label}</span>"
+                            f"<span style='font-size:0.8rem; font-weight:700; color:{color};'>{emoji} {mom*100:+.1f}%</span></div>",
+                            unsafe_allow_html=True
+                        )
+            except:
+                pass
+
     st.divider()
 
-    # ── BOTTOM: EXPANDER FOR DEEP TECHNICAL ──
+    # ── DEEP TECHNICAL EXPANDER ──
     with st.expander("🔬 Deep Technical (Regime Chart, Engines, Methodologies)", expanded=False):
-        # Regime probabilities chart
         if gip and hasattr(gip, 'structural_probs'):
             fig = make_subplots(rows=1, cols=3, subplot_titles=("Quarterly", "Monthly", "Forward 3M"),
                                 column_widths=[0.33, 0.33, 0.34], horizontal_spacing=0.08)
@@ -686,9 +693,8 @@ def page_dashboard():
                               font=dict(color="#E6EDF3", size=10), yaxis=dict(range=[0,1.1], tickformat=".0%", showgrid=True, gridcolor="#21262D"),
                               yaxis2=dict(range=[0,1.1], tickformat=".0%", showgrid=True, gridcolor="#21262D"),
                               yaxis3=dict(range=[0,1.1], tickformat=".0%", showgrid=True, gridcolor="#21262D"), bargap=0.4)
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="dash_regime")
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="dash_regime_v2")
 
-        # Engine status
         st.markdown("**Engine Status**")
         engines = [
             ("GIP v10", snap.get("gip_v10") is not None),
@@ -706,9 +712,7 @@ def page_dashboard():
             cols[i % 4].markdown(f"<span style='color:{color}; font-size:0.8rem;'>● {name}</span>", unsafe_allow_html=True)
 
 
-# ═══════════════════════════════════════════════════════════════════
-# PAGE: ALPHA CENTER
-# ═══════════════════════════════════════════════════════════════════
+
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
     render_regime_banner()
