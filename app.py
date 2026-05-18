@@ -113,12 +113,13 @@ if not locals().get("IHSG_SECTOR_MAP"):
 # GIP proxy - handles both object and dict gip
 class _GipProxy:
     def __init__(self, data):
-        if isinstance(data, dict):
+        self._is_dict = isinstance(data, dict)
+        if self._is_dict:
             self._d = data
         else:
             self._obj = data
     def __getattr__(self, name):
-        if hasattr(self, "_d"):
+        if self._is_dict:
             return self._d.get(name)
         return getattr(self._obj, name, None)
 
