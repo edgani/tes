@@ -1,9 +1,10 @@
-"""app.py — MacroRegime Pro v30.0 VISUAL
+"""app.py — MacroRegime Pro v30.1 VISUAL
 Visual-first rewrite:
 - Sparkline + risk range bar + dot + badge ticker cards
 - 3-panel regime bar chart (top dashboard)
 - Gauge bars, heatmap grids, timeline, stacked bars
 - Ticker fallback so every market tab always shows tickers
+- FIX: IHSG_SECTOR_MAP syntax error (compact single-line fallback)
 """
 import streamlit as st
 import pandas as pd
@@ -14,7 +15,6 @@ import math
 import json, os, base64
 from datetime import datetime
 from io import BytesIO
-import matplotlib.pyplot as plt
 
 logger = __import__('logging').getLogger(__name__)
 
@@ -136,21 +136,16 @@ except ImportError:
     FOREX_PAIRS = {}; COMMODITIES = {}; CRYPTO = {}; IHSG_UNIVERSE = {}; TICKER_SECTOR = {}; US_SECTORS = {}; US_BUCKETS = {}; FX_BUCKETS = {}; COMMODITY_BUCKETS = {}; CRYPTO_BUCKETS = {}
 
 # Fallback tickers so UI never empty
-FALLBACK_US = ["SPY","QQQ","IWM","NVDA","AAPL","MSFT","GOOGL","META","TSLA","AMD","NFLX","AMZN","CRM","AVGO","XOM","JPM","V","MA","UNH","JNJ",
-               "XLK","XLF","XLE","XLU","XLP","XLI","XLB","XLRE","XLY","ARKK","TLT","GLD","SLV","GDX","VIXY","SQQQ","TQQQ","UPRO","SPXU"]
+FALLBACK_US = ["SPY","QQQ","IWM","NVDA","AAPL","MSFT","GOOGL","META","TSLA","AMD","NFLX","AMZN","CRM","AVGO","XOM","JPM","V","MA","UNH","JNJ","XLK","XLF","XLE","XLU","XLP","XLI","XLB","XLRE","XLY","ARKK","TLT","GLD","SLV","GDX","VIXY","SQQQ","TQQQ","UPRO","SPXU"]
 FALLBACK_FX  = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","USDCNY=X","USDIDR=X","DX-Y.NYB","UUP"]
 FALLBACK_COMM = ["GC=F","SI=F","CL=F","NG=F","HG=F","PL=F","PA=F","ZW=F","ZC=F","ZS=F","KC=F","CC=F","CT=F"]
 FALLBACK_CRYPTO = ["BTC-USD","ETH-USD","SOL-USD","XRP-USD","DOGE-USD","ADA-USD","AVAX-USD","DOT-USD","MATIC-USD","LINK-USD","UNI-USD","LTC-USD"]
-FALLBACK_IHSG = ["BBRI.JK","BMRI.JK","BBCA.JK","BBNI.JK","BRIS.JK","TLKM.JK","EXCL.JK","ADRO.JK","ITMG.JK","PTBA.JK","NCKL.JK","ANTM.JK","INCO.JK",
-                 "AALI.JK","LSIP.JK","SMAR.JK","UNTR.JK","BYAN.JK","ICBP.JK","INDF.JK","KLBF.JK","PGEO.JK","WINS.JK","EIDO","^JKSE"]
+FALLBACK_IHSG = ["BBRI.JK","BMRI.JK","BBCA.JK","BBNI.JK","BRIS.JK","TLKM.JK","EXCL.JK","ADRO.JK","ITMG.JK","PTBA.JK","NCKL.JK","ANTM.JK","INCO.JK","AALI.JK","LSIP.JK","SMAR.JK","UNTR.JK","BYAN.JK","ICBP.JK","INDF.JK","KLBF.JK","PGEO.JK","WINS.JK","EIDO","^JKSE"]
 
-IHSG_SECTOR_MAP = IHSG_SECTOR_MAP or {
-    "ADRO.JK":"Coal","ITMG.JK":"Coal","PTBA.JK":"Coal","NCKL.JK":"Nickel","ANTM.JK":"Nickel","INCO.JK":"Nickel",
-    "AALI.JK":"CPO","LSIP.JK":"CPO","SMAR.JK":"CPO","BBRI.JK":"Banking","BMRI.JK":"Banking","BBCA.JK":"Banking",
-    "BBNI.JK":"Banking","BRIS.JK":"Banking","TLKM.JK":"Telco","EXCL.JK":"Telco","UNTR.JK":"Mining Contractor",
-    "BYAN.JK":"Mining","ICBP.JK":"Consumer","INDF.JK":"Consumer","KLBF.JK":"Pharma","PGEO.JK":"Geothermal",
-    "WINS.JK":"Shipping","EIDO":"ETF","^JKSE":"Index",
-}
+# FIX: compact single-line fallback to avoid syntax errors
+_IHSG_FALLBACK = {"ADRO.JK":"Coal","ITMG.JK":"Coal","PTBA.JK":"Coal","NCKL.JK":"Nickel","ANTM.JK":"Nickel","INCO.JK":"Nickel","AALI.JK":"CPO","LSIP.JK":"CPO","SMAR.JK":"CPO","BBRI.JK":"Banking","BMRI.JK":"Banking","BBCA.JK":"Banking","BBNI.JK":"Banking","BRIS.JK":"Banking","TLKM.JK":"Telco","EXCL.JK":"Telco","UNTR.JK":"Mining Contractor","BYAN.JK":"Mining","ICBP.JK":"Consumer","INDF.JK":"Consumer","KLBF.JK":"Pharma","PGEO.JK":"Geothermal","WINS.JK":"Shipping","EIDO":"ETF","^JKSE":"Index"}
+if not IHSG_SECTOR_MAP:
+    IHSG_SECTOR_MAP = _IHSG_FALLBACK
 
 # ═══════════════════════════════════════════════════════════════════
 # UTILITIES
@@ -194,37 +189,35 @@ def _ret_color(r):
     return "#DA3633"
 
 def _sparkline_html(series, width=90, height=28, bars=20):
-    """CSS-only sparkline from numeric series."""
     if series is None or len(series) < 2:
-        return f'<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>'
+        return f''<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>''
     s = pd.to_numeric(series, errors="coerce").dropna().tail(bars)
     if len(s) < 2:
-        return f'<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>'
+        return f''<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>''
     mn, mx = float(s.min()), float(s.max())
     rng = mx - mn if mx != mn else 1
-    h_pct = max(15, int(100 / len(s)))
     bars_html = ""
     for i, v in enumerate(s):
         pct = max(2, min(100, int((float(v) - mn) / rng * 100)))
         color = "#3FB950" if (i > 0 and float(v) >= float(s.iloc[i-1])) else "#F85149"
-        bars_html += f'<div class="sp-bar" style="height:{pct}%;background:{color};"></div>'
-    return f'<div class="tc-spark" style="width:{width}px;height:{height}px;">{bars_html}</div>'
+        bars_html += f''<div class="sp-bar" style="height:{pct}%;background:{color};"></div>''
+    return f''<div class="tc-spark" style="width:{width}px;height:{height}px;">{bars_html}</div>''
 
 def _risk_range_html(px, lrr, trr, width_pct=100):
     if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
-        return '<div class="rr-track" style="height:18px;background:#21262D;border-radius:4px;"></div><div class="rr-labels"><span>—</span><span>—</span></div>'
+        return ''<div class="rr-track" style="height:18px;background:#21262D;border-radius:4px;"></div><div class="rr-labels"><span>—</span><span>—</span></div>''
     px, lrr, trr = float(px), float(lrr), float(trr)
     spread = trr - lrr
     pos = max(0, min(1, (px - lrr) / spread)) if spread > 0 else 0.5
     left_pct = pos * 100
     color = "#3FB950" if pos <= 0.35 else "#F85149" if pos >= 0.65 else "#8B949E"
     return (
-        f'<div class="rr-track" style="width:{width_pct}%;">'
-        f'<div class="rr-zone" style="left:0%;width:100%;background:#21262D;"></div>'
-        f'<div class="rr-zone" style="left:0%;width:{left_pct:.0f}%;background:{color}18;"></div>'
-        f'<div class="rr-dot" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>'
-        f'</div>'
-        f'<div class="rr-labels" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>'
+        f''<div class="rr-track" style="width:{width_pct}%;">''
+        f''<div class="rr-zone" style="left:0%;width:100%;background:#21262D;"></div>''
+        f''<div class="rr-zone" style="left:0%;width:{left_pct:.0f}%;background:{color}18;"></div>''
+        f''<div class="rr-dot" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>''
+        f''</div>''
+        f''<div class="rr-labels" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>''
     )
 
 def _gauge_html(value, max_val=100, color=None, height=14, label_left="0", label_right="100"):
@@ -233,34 +226,34 @@ def _gauge_html(value, max_val=100, color=None, height=14, label_left="0", label
     except: pct = 0
     c = color or ("#3FB950" if pct > 70 else "#D29922" if pct > 40 else "#F85149")
     return (
-        f'<div class="gauge-track" style="height:{height}px;">'
-        f'<div class="gauge-fill" style="width:{pct:.0f}%;background:{c};"></div></div>'
-        f'<div class="gauge-label"><span>{label_left}</span><span>{ff(value)}{"" if max_val==100 else ""}</span><span>{label_right}</span></div>'
+        f''<div class="gauge-track" style="height:{height}px;">''
+        f''<div class="gauge-fill" style="width:{pct:.0f}%;background:{c};"></div></div>''
+        f''<div class="gauge-label"><span>{label_left}</span><span>{ff(value)}{"" if max_val==100 else ""}</span><span>{label_right}</span></div>''
     )
 
 def _badge_html(text, kind="long"):
     cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news"}.get(kind,"badge-neut")
-    return f'<span class="badge {cls}">{text}</span>'
+    return f''<span class="badge {cls}">{text}</span>''
 
 def _regime_banner_html(quad, conf=0.0, monthly=None):
     color = _quad_color(quad)
     name = _quad_name(quad)
-    mq = f' <span style="opacity:0.6;font-size:0.7rem;">Monthly: {monthly}</span>' if monthly else ''
+    mq = f'' <span style="opacity:0.6;font-size:0.7rem;">Monthly: {monthly}</span>'' if monthly else ''''
     return (
-        f'<div style="background: linear-gradient(90deg, {color}12 0%, transparent 70%); border-left: 3px solid {color}; '
-        f'border-radius: 8px; padding: 8px 12px; margin: 6px 0; display: flex; align-items: center; gap: 10px;">'
-        f'<div style="font-size: 1.3rem; font-weight: 800; color: {color}; letter-spacing: -1px;">{quad}</div>'
-        f'<div><div style="font-size: 0.9rem; font-weight: 700; color: #E6EDF3;">{name}</div>'
-        f'<div style="font-size: 0.7rem; color: #8B949E;">Conf: {conf:.0%}{mq}</div></div></div>'
+        f''<div style="background: linear-gradient(90deg, {color}12 0%, transparent 70%); border-left: 3px solid {color}; ''
+        f''border-radius: 8px; padding: 8px 12px; margin: 6px 0; display: flex; align-items: center; gap: 10px;">''
+        f''<div style="font-size: 1.3rem; font-weight: 800; color: {color}; letter-spacing: -1px;">{quad}</div>''
+        f''<div><div style="font-size: 0.9rem; font-weight: 700; color: #E6EDF3;">{name}</div>''
+        f''<div style="font-size: 0.7rem; color: #8B949E;">Conf: {conf:.0%}{mq}</div></div></div>''
     )
 
 def _stacked_bar_html(long_pct, short_pct, cash_pct):
     return (
-        f'<div class="stack-bar">'
-        f'<div class="stack-seg" style="width:{long_pct}%;background:#3FB950;">📈 {long_pct:.0f}%</div>'
-        f'<div class="stack-seg" style="width:{short_pct}%;background:#F85149;">📉 {short_pct:.0f}%</div>'
-        f'<div class="stack-seg" style="width:{cash_pct}%;background:#8B949E;">💵 {cash_pct:.0f}%</div>'
-        f'</div>'
+        f''<div class="stack-bar">''
+        f''<div class="stack-seg" style="width:{long_pct}%;background:#3FB950;">📈 {long_pct:.0f}%</div>''
+        f''<div class="stack-seg" style="width:{short_pct}%;background:#F85149;">📉 {short_pct:.0f}%</div>''
+        f''<div class="stack-seg" style="width:{cash_pct}%;background:#8B949E;">💵 {cash_pct:.0f}%</div>''
+        f''</div>''
     )
 
 def _timeline_html(stage="INCEPTION"):
@@ -271,47 +264,46 @@ def _timeline_html(stage="INCEPTION"):
     for i, s in enumerate(stages):
         cls = "past" if i < idx else "active" if i == idx else ""
         line_cls = "active" if i < idx else ""
-        nodes += f'<div class="tl-node {cls}"></div>'
+        nodes += f''<div class="tl-node {cls}"></div>''
         if i < len(stages) - 1:
-            nodes += f'<div class="tl-line {line_cls}"></div>'
-        labels += f'<span>{s}</span>'
-    return f'<div class="timeline">{nodes}</div><div class="tl-labels">{labels}</div>'
+            nodes += f''<div class="tl-line {line_cls}"></div>''
+        labels += f''<span>{s}</span>''
+    return f''<div class="timeline">{nodes}</div><div class="tl-labels">{labels}</div>''
 
 def _skew_bars_html(d30=None, d60=None, d90=None):
     def bar(label, val):
         if val is None:
-            return f'<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:0%;background:#30363D;"></div></div><span class="skew-value">—</span></div>'
+            return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:0%;background:#30363D;"></div></div><span class="skew-value">—</span></div>''
         v = float(val)
         pct = max(5, min(100, abs(v) * 200))
         color = "#3FB950" if v > 0.05 else "#F85149" if v < -0.05 else "#D29922"
         label_text = "Rich" if v > 0.05 else "Cheap" if v < -0.05 else "Fair"
-        return f'<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:{pct:.0f}%;background:{color};"></div></div><span class="skew-value" style="color:{color};">{label_text}</span></div>'
+        return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:{pct:.0f}%;background:{color};"></div></div><span class="skew-value" style="color:{color};">{label_text}</span></div>''
     return bar("30D", d30) + bar("60D", d60) + bar("90D", d90)
 
 def _gex_bar_html(gex_val=None):
     if gex_val is None:
-        return '<div class="gex-track" style="height:20px;background:#21262D;border-radius:4px;"></div>'
+        return ''<div class="gex-track" style="height:20px;background:#21262D;border-radius:4px;"></div>''
     v = float(gex_val)
     color = "#3FB950" if v > 0 else "#F85149"
     pct = min(100, abs(v) * 100)
     side = "Pos" if v > 0 else "Neg"
     return (
-        f'<div class="gex-track" style="height:20px;">'
-        f'<div class="gex-center"></div>'
-        f'<div style="position:absolute;left:50%;width:{pct:.0f}%;{("margin-left:0;left:50%;" if v>0 else "margin-left:-"+str(pct)+"%;left:50%;")}background:{color}30;height:100%;border-radius:4px;"></div>'
-        f'<div style="position:absolute;width:100%;text-align:center;font-size:0.65rem;font-weight:700;color:{color};line-height:20px;">{side} {abs(v):.2f}</div>'
-        f'</div>'
+        f''<div class="gex-track" style="height:20px;">''
+        f''<div class="gex-center"></div>''
+        f''<div style="position:absolute;left:50%;width:{pct:.0f}%;{"margin-left:0;left:50%;" if v>0 else "margin-left:-"+str(pct)+"%;left:50%;"}background:{color}30;height:100%;border-radius:4px;"></div>''
+        f''<div style="position:absolute;width:100%;text-align:center;font-size:0.65rem;font-weight:700;color:{color};line-height:20px;">{side} {abs(v):.2f}</div>''
+        f''</div>''
     )
 
 def _heatmap_grid_html(items, key_label="name", key_quad="quad"):
-    # items: list of dicts with name and quad
-    html = '<div class="hm-grid">'
+    html = ''<div class="hm-grid">''
     for it in items:
         q = it.get(key_quad, "Q3")
         color = _quad_color(q)
         name = it.get(key_label, "—")
-        html += f'<div class="hm-cell" style="background:{color}18;border-color:{color}40;">{name}<div style="font-size:0.55rem;color:{color};margin-top:2px;">{q}</div></div>'
-    html += '</div>'
+        html += f''<div class="hm-cell" style="background:{color}18;border-color:{color}40;">{name}<div style="font-size:0.55rem;color:{color};margin-top:2px;">{q}</div></div>''
+    html += ''</div>''
     return html
 
 def _asset_pulse_box(label, ret, sub=""):
@@ -320,33 +312,29 @@ def _asset_pulse_box(label, ret, sub=""):
         txt = f"{ret:+.1%}"
     else:
         txt = "—"
-    return f'<div class="pulse-box" style="background:{c}15;border-color:{c}30;"><div>{txt}</div><div class="pulse-label">{label}</div>{f"<div style=\'font-size:0.55rem;color:#8B949E;margin-top:1px;\'>{sub}</div>" if sub else ""}</div>'
+    return f''<div class="pulse-box" style="background:{c}15;border-color:{c}30;"><div>{txt}</div><div class="pulse-label">{label}</div>{f"<div style='font-size:0.55rem;color:#8B949E;margin-top:1px;'>{sub}</div>" if sub else ""}</div>''
 
 # ═══════════════════════════════════════════════════════════════════
 # RISK RANGE ENGINE (proxy)
 # ═══════════════════════════════════════════════════════════════════
 def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None):
-    """Build ticker row with visual fields. Threshold lowered to 15 days."""
     v = ar.get(ticker, {}) if ar else {}
     s = prices.get(ticker)
     if not v and (s is None or len(s) < 15):
         return None
 
-    # Build risk range from price if no ar data
     if not v and s is not None:
         s_clean = pd.to_numeric(s, errors="coerce").dropna()
         if len(s_clean) < 15: return None
         px = float(s_clean.iloc[-1]); sma20 = float(s_clean.tail(20).mean()) if len(s_clean) >= 20 else float(s_clean.mean())
         std20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else float(s_clean.std())
         if not all(math.isfinite(v) for v in [px, sma20, std20]) or std20 == 0:
-            # fallback simple range
             lrr = round(px * 0.95, 2); trr = round(px * 1.05, 2)
             comp = "neutral"
         else:
             lrr = round(sma20 - 1.5 * std20, 4); trr = round(sma20 + 1.5 * std20, 4)
             comp = "bullish" if px < lrr else "bearish" if px > trr else "neutral"
         if comp == "neutral":
-            # Force a side based on momentum so we always show tickers
             r5 = _price_ret(ticker, prices, 5) or 0
             comp = "bullish" if r5 >= 0 else "bearish"
         v = {"px": px, "trade": {"lrr": lrr, "trr": trr}, "composite": comp, "quality": "B", "market": market_type}
@@ -369,7 +357,6 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
     grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
 
-    # Greeks proxy
     gamma = {"ok": False}
     if s is not None and len(s) >= 15:
         s_clean = pd.to_numeric(s, errors="coerce").dropna()
@@ -382,7 +369,6 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                 "gamma_flip_up": round(sma20 + std20 * 1.5, 2), "gamma_flip_down": round(sma20 - std20 * 1.5, 2),
             }
 
-    # News
     news_signal = ""; news_headline = ""; news_sentiment = 0
     if news and isinstance(news, dict) and news.get("ticker_specific"):
         tn = news["ticker_specific"].get(ticker, {})
@@ -465,28 +451,27 @@ def render_ticker_card(row, expanded=False):
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
 
     header_html = (
-        f'<div class="ticker-card">'
-        f'<div class="tc-left"><div class="tc-symbol">{ticker}</div><div class="tc-price">{ff(px)}</div><div class="tc-badges">{badges}</div></div>'
-        f'{spark}'
-        f'<div class="tc-rr">{rr_html}</div>'
-        f'<div class="tc-metrics"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
-        f'</div>'
+        f''<div class="ticker-card">''
+        f''<div class="tc-left"><div class="tc-symbol">{ticker}</div><div class="tc-price">{ff(px)}</div><div class="tc-badges">{badges}</div></div>''
+        f''{spark}''
+        f''<div class="tc-rr">{rr_html}</div>''
+        f''<div class="tc-metrics"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>''
+        f''</div>''
     )
 
     with st.expander(header_html, expanded=expanded):
-        # Detail: text only for entry, target, SL, rekomendasi
         st.markdown(
-            f"<div style='background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 14px;margin:6px 0;'>"
-            f"<div style='font-size:0.8rem;color:#E6EDF3;font-weight:600;margin-bottom:6px;'>🎯 Trade Setup</div>"
-            f"<div style='display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.78rem;color:#8B949E;'>"
-            f"<div>📍 <b>Entry:</b> {ff(entry)}</div>"
-            f"<div>🎯 <b>Target 1:</b> {ff(t1)}</div>"
-            f"<div>🎯 <b>Target 2:</b> {ff(t2)}</div>"
-            f"<div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>"
-            f"</div>"
-            f"<div style='margin-top:8px;padding-top:8px;border-top:1px solid #30363D;font-size:0.78rem;color:#E6EDF3;'>"
-            f"💡 <b>Rekomendasi:</b> {row.get('recommendation', row.get('thesis', 'Tunggu setup dekat entry level dengan RR minimal 2x.'))}"
-            f"</div></div>",
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 14px;margin:6px 0;">''
+            f''<div style="font-size:0.8rem;color:#E6EDF3;font-weight:600;margin-bottom:6px;">🎯 Trade Setup</div>''
+            f''<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.78rem;color:#8B949E;">''
+            f''<div>📍 <b>Entry:</b> {ff(entry)}</div>''
+            f''<div>🎯 <b>Target 1:</b> {ff(t1)}</div>''
+            f''<div>🎯 <b>Target 2:</b> {ff(t2)}</div>''
+            f''<div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>''
+            f''</div>''
+            f''<div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363D;font-size:0.78rem;color:#E6EDF3;">''
+            f''💡 <b>Rekomendasi:</b> {row.get('recommendation', row.get('thesis', 'Tunggu setup dekat entry level dengan RR minimal 2x.'))}''
+            f''</div></div>'',
             unsafe_allow_html=True
         )
 
@@ -509,7 +494,6 @@ def render_ticker_cards(rows, max_rows=30):
         render_ticker_card(r, expanded=(i < 2))
 
 def render_regime_bars(snap):
-    """3-panel bar chart: Quarterly / Monthly / Forward 3M — always visible at top."""
     gip = snap.get("gip")
     if not gip:
         return
@@ -556,7 +540,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v30.0 VISUAL | Visual-First Rewrite")
+    st.caption("v30.1 VISUAL | Visual-First Rewrite")
     st.divider()
 
     page = st.radio("Navigation", [
@@ -603,10 +587,10 @@ with st.sidebar:
         _mq = _g.monthly_quad if _g else "—"
         color = _quad_color(_sq)
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">'
-            f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
-            f'<div style="font-size:1.1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
-            f'<div style="font-size:0.7rem;color:#8B949E;">{_quad_name(_sq)}</div></div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">''
+            f''<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>''
+            f''<div style="font-size:0.7rem;color:#8B949E;">{_quad_name(_sq)}</div></div>'',
             unsafe_allow_html=True
         )
 
@@ -671,39 +655,39 @@ def page_dashboard():
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Markov Regime</div>'
-            f'<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","—").replace("_"," ")}</div>'
-            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Conf {markov.get("confidence",0):.0%}</div></div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
+            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Markov Regime</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","—").replace("_"," ")}</div>''
+            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Conf {markov.get("confidence",0):.0%}</div></div>'',
             unsafe_allow_html=True
         )
     with k2:
         vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">VIX</div>'
-            f'<div style="font-size:1.1rem;font-weight:700;color:{vix_color};margin-top:4px;">{vix_now:.1f}</div>'
-            f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=10, label_left="0", label_right="40")}</div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
+            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">VIX</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:{vix_color};margin-top:4px;">{vix_now:.1f}</div>''
+            f''{_gauge_html(vix_now, max_val=40, color=vix_color, height=10, label_left="0", label_right="40")}</div>'',
             unsafe_allow_html=True
         )
     with k3:
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
         alert_color = "#F85149" if n_alerts > 2 else "#D29922" if n_alerts > 0 else "#3FB950"
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Alerts</div>'
-            f'<div style="font-size:1.1rem;font-weight:700;color:{alert_color};margin-top:4px;">{n_alerts}</div>'
-            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Behavioral signals</div></div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
+            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Alerts</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:{alert_color};margin-top:4px;">{n_alerts}</div>''
+            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Behavioral signals</div></div>'',
             unsafe_allow_html=True
         )
     with k4:
         n_longs = len([r for r in (snap.get("daily_signals", []) or []) if isinstance(r, dict) and "LONG" in str(r.get("direction", ""))])
         n_shorts = len([r for r in (snap.get("daily_signals", []) or []) if isinstance(r, dict) and "SHORT" in str(r.get("direction", ""))])
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Setups</div>'
-            f'<div style="font-size:1.1rem;font-weight:700;color:#58A6FF;margin-top:4px;">{n_longs}L / {n_shorts}S</div>'
-            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Alpha signals</div></div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
+            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Setups</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:#58A6FF;margin-top:4px;">{n_longs}L / {n_shorts}S</div>''
+            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Alpha signals</div></div>'',
             unsafe_allow_html=True
         )
 
@@ -713,13 +697,13 @@ def page_dashboard():
     st.markdown("### ⚡ Asset Pulse")
     pulse_assets = [
         ("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"),
-        ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC", "Crypto")
+        ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "Crypto")
     ]
-    pulse_html = '<div class="pulse-grid">'
+    pulse_html = ''<div class="pulse-grid">''
     for t, label in pulse_assets:
         ret = _price_ret(t, prices, 21)
         pulse_html += _asset_pulse_box(label, ret, t)
-    pulse_html += '</div>'
+    pulse_html += ''</div>''
     st.markdown(pulse_html, unsafe_allow_html=True)
 
     st.divider()
@@ -739,11 +723,11 @@ def page_dashboard():
                 grade = item.get("grade", "C")
                 gc = "#3FB950" if grade in ("A","A+") else "#D29922" if grade=="B" else "#8B949E"
                 st.markdown(
-                    f'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:3px 0;font-size:0.82rem;">'
-                    f'<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","—")}</span>'
-                    f'<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","—")}</span>'
-                    f'<span style="background:{gc}22;color:{gc};padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;border:1px solid {gc};">{grade}</span>'
-                    f'<span style="color:#8B949E;flex:1;text-align:right;">{str(item.get("thesis",""))[:55]}</span></div>',
+                    f''<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:3px 0;font-size:0.82rem;">''
+                    f''<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","—")}</span>''
+                    f''<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","—")}</span>''
+                    f''<span style="background:{gc}22;color:{gc};padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;border:1px solid {gc};">{grade}</span>''
+                    f''<span style="color:#8B949E;flex:1;text-align:right;">{str(item.get("thesis",""))[:55]}</span></div>'',
                     unsafe_allow_html=True
                 )
         else:
@@ -772,11 +756,11 @@ def page_dashboard():
         health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
         health_color = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
-            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-            f'<span style="font-size:0.7rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Market Health</span>'
-            f'<span style="font-size:1.1rem;font-weight:700;color:{health_color};">{health_score:.0f}</span></div>'
-            f'{_gauge_html(health_score, max_val=100, color=health_color, height=12)}</div>',
+            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:8px;">''
+            f''<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">''
+            f''<span style="font-size:0.7rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Market Health</span>''
+            f''<span style="font-size:1.1rem;font-weight:700;color:{health_color};">{health_score:.0f}</span></div>''
+            f''{_gauge_html(health_score, max_val=100, color=health_color, height=12)}</div>'',
             unsafe_allow_html=True
         )
 
@@ -795,9 +779,9 @@ def page_dashboard():
                 color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
                 is_dom = " ★" if dom == scen_name else ""
                 st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #21262D;">'
-                    f'<span style="font-size:0.8rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>'
-                    f'<span style="font-size:0.85rem;font-weight:700;color:{color};">{p:.0%}</span></div>',
+                    f''<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #21262D;">''
+                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>''
+                    f''<span style="font-size:0.85rem;font-weight:700;color:{color};">{p:.0%}</span></div>'',
                     unsafe_allow_html=True
                 )
 
@@ -810,9 +794,9 @@ def page_dashboard():
                 sig = r.get("signal", "")
                 color = "#3FB950" if "BULLISH" in sig else "#F85149" if "BEARISH" in sig else "#D29922"
                 st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'
-                    f'<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","—")}</span>'
-                    f'<span style="font-size:0.75rem;color:{color};font-weight:600;">{str(sig)[:20]}</span></div>',
+                    f''<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">''
+                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","—")}</span>''
+                    f''<span style="font-size:0.75rem;color:{color};font-weight:600;">{str(sig)[:20]}</span></div>'',
                     unsafe_allow_html=True
                 )
 
@@ -824,10 +808,8 @@ def page_dashboard():
         st.markdown("**Skew Term Structure**")
         skew = snap.get("skew_term", {}) or {}
         skew_data = skew.get("skew_data", {}) if isinstance(skew, dict) else {}
-        # Try to extract 30/60/90 from skew_data
         d30 = d60 = d90 = None
         if isinstance(skew_data, dict):
-            # heuristic extraction
             for k, v in skew_data.items():
                 if isinstance(v, dict):
                     val = v.get("skew") or v.get("value") or v.get("90_10")
@@ -841,7 +823,6 @@ def page_dashboard():
         gex = snap.get("gex_data", {}) or {}
         gex_val = None
         if isinstance(gex, dict):
-            # Try to find a net gex value
             for k, v in gex.items():
                 if isinstance(v, dict):
                     gv = v.get("net_gex") or v.get("gex") or v.get("total_gex")
@@ -860,10 +841,10 @@ def page_dashboard():
                     if isinstance(item, dict):
                         score = item.get("vrp_pct", 0)
                         st.markdown(
-                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
-                            f'<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>'
-                            f'<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>'
-                            f'<span style="font-size:0.7rem;color:#F85149;font-weight:700;width:40px;text-align:right;">{score:.0f}%</span></div>',
+                            f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
+                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>''
+                            f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>''
+                            f''<span style="font-size:0.7rem;color:#F85149;font-weight:700;width:40px;text-align:right;">{score:.0f}%</span></div>'',
                             unsafe_allow_html=True
                         )
             else:
@@ -876,10 +857,10 @@ def page_dashboard():
                     if isinstance(item, dict):
                         score = item.get("squeeze_score", 0)
                         st.markdown(
-                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
-                            f'<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>'
-                            f'<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>'
-                            f'<span style="font-size:0.7rem;color:#D29922;font-weight:700;width:40px;text-align:right;">{score:.0f}</span></div>',
+                            f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
+                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>''
+                            f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>''
+                            f''<span style="font-size:0.7rem;color:#D29922;font-weight:700;width:40px;text-align:right;">{score:.0f}</span></div>'',
                             unsafe_allow_html=True
                         )
             else:
@@ -1272,9 +1253,9 @@ def page_themes():
             if not isinstance(b, dict): continue
             beneficiaries = ", ".join(b.get("beneficiaries", [])[:5])
             st.markdown(
-                f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:8px 12px;margin:4px 0;">'
-                f'<div style="font-size:0.85rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
-                f'<div style="font-size:0.75rem;color:#8B949E;margin-top:4px;">Beneficiaries: {beneficiaries}</div></div>',
+                f''<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:8px 12px;margin:4px 0;">''
+                f''<div style="font-size:0.85rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>''
+                f''<div style="font-size:0.75rem;color:#8B949E;margin-top:4px;">Beneficiaries: {beneficiaries}</div></div>'',
                 unsafe_allow_html=True
             )
     else:
@@ -1295,26 +1276,26 @@ def page_themes():
             v_arrow = "⬆" if "up" in str(vanna_dir).lower() or "pos" in str(vanna_dir).lower() else "⬇" if "down" in str(vanna_dir).lower() or "neg" in str(vanna_dir).lower() else "➡"
             c_arrow = "⬆" if "up" in str(charm_dir).lower() or "pos" in str(charm_dir).lower() else "⬇" if "down" in str(charm_dir).lower() or "neg" in str(charm_dir).lower() else "➡"
             st.markdown(
-                f'<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
-                f'<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>'
-                f'<div style="flex:1;">'
-                f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
-                f'{_gauge_html(pin, max_val=100, color="#D29922", height=10, label_left="0", label_right="100")}</div>'
-                f'<div style="font-size:0.8rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>'
-                f'<div style="font-size:0.8rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>',
+                f''<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">''
+                f''<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>''
+                f''<div style="flex:1;">''
+                f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>''
+                f''{_gauge_html(pin, max_val=100, color="#D29922", height=10, label_left="0", label_right="100")}</div>''
+                f''<div style="font-size:0.8rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>''
+                f''<div style="font-size:0.8rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>'',
                 unsafe_allow_html=True
             )
     else:
         st.caption("0DTE data unavailable — showing proxy")
         for t in ["SPY","QQQ","IWM"]:
             st.markdown(
-                f'<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
-                f'<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>'
-                f'<div style="flex:1;">'
-                f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
-                f'{_gauge_html(50, max_val=100, color="#30363D", height=10, label_left="0", label_right="100")}</div>'
-                f'<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Vanna ➡</div>'
-                f'<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>',
+                f''<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">''
+                f''<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>''
+                f''<div style="flex:1;">''
+                f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>''
+                f''{_gauge_html(50, max_val=100, color="#30363D", height=10, label_left="0", label_right="100")}</div>''
+                f''<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Vanna ➡</div>''
+                f''<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>'',
                 unsafe_allow_html=True
             )
 
@@ -1362,4 +1343,4 @@ elif page == "📖 Themes":
 # Footer
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v30.0 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v30.1 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
