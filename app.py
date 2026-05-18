@@ -1,10 +1,10 @@
-"""app.py - MacroRegime Pro v30.1 VISUAL
+"""app.py - MacroRegime Pro v30.2 VISUAL
 Visual-first rewrite:
 - Sparkline + risk range bar + dot + badge ticker cards
 - 3-panel regime bar chart (top dashboard)
 - Gauge bars, heatmap grids, timeline, stacked bars
 - Ticker fallback so every market tab always shows tickers
-- FIX: IHSG_SECTOR_MAP syntax error (compact single-line fallback)
+- FIX: vix_val NameError, IHSG_SECTOR_MAP syntax, triple-quote conflicts
 """
 import streamlit as st
 import pandas as pd
@@ -16,7 +16,7 @@ import json, os, base64
 from datetime import datetime
 from io import BytesIO
 
-logger = __import__('logging').getLogger(__name__)
+logger = __import__("logging").getLogger(__name__)
 
 st.set_page_config(page_title="MacroRegime Pro v30", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
@@ -25,22 +25,22 @@ st.set_page_config(page_title="MacroRegime Pro v30", page_icon="📊", layout="w
 # ═══════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+html, body, [class*="css"] { font-family: "Inter", sans-serif; }
 
-/* ── Base ── */
+/* Base */
 .block-container { padding-top: 0.6rem !important; padding-bottom: 0.6rem !important; padding-left: 1rem !important; padding-right: 1rem !important; max-width: 1440px !important; }
 h1 { font-size: 1.5rem !important; margin: 0.3rem 0 0.4rem !important; font-weight: 800 !important; letter-spacing: -0.5px; }
 h2 { font-size: 1.15rem !important; margin: 0.5rem 0 0.3rem !important; font-weight: 700 !important; letter-spacing: -0.3px; }
 h3 { font-size: 0.95rem !important; margin: 0.4rem 0 0.2rem !important; font-weight: 600 !important; }
 hr { margin: 0.5rem 0 !important; opacity: 0.1; border-color: #30363D; }
 
-/* ── Metrics ── */
+/* Metrics */
 [data-testid="stMetric"] { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; padding: 6px 10px !important; }
 [data-testid="stMetricLabel"] { font-size: 0.62rem !important; font-weight: 600 !important; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.6; }
 [data-testid="stMetricValue"] { font-size: 1.1rem !important; font-weight: 700 !important; }
 
-/* ── Ticker Card (horizontal) ── */
+/* Ticker Card horizontal */
 .ticker-card { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #161B22; border: 1px solid #30363D; border-radius: 8px; margin: 4px 0; transition: border-color 0.2s; flex-wrap: wrap; }
 .ticker-card:hover { border-color: #484F58; }
 .tc-left { min-width: 90px; }
@@ -51,18 +51,18 @@ hr { margin: 0.5rem 0 !important; opacity: 0.1; border-color: #30363D; }
 .tc-rr { flex: 1; min-width: 140px; }
 .tc-metrics { display: flex; gap: 10px; font-size: 0.72rem; color: #8B949E; font-variant-numeric: tabular-nums; min-width: 140px; }
 
-/* ── Sparkline ── */
+/* Sparkline */
 .sp-bar { width: 3px; border-radius: 1px; background: #58A6FF; opacity: 0.85; }
 .sp-bar.up { background: #3FB950; }
 .sp-bar.down { background: #F85149; }
 
-/* ── Risk Range Track ── */
+/* Risk Range Track */
 .rr-track { position: relative; height: 18px; background: #21262D; border-radius: 4px; overflow: hidden; }
 .rr-zone { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
 .rr-dot { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; border-radius: 50%; background: #E6EDF3; border: 2px solid #58A6FF; z-index: 10; box-shadow: 0 0 4px rgba(88,166,255,0.5); }
 .rr-labels { display: flex; justify-content: space-between; font-size: 0.6rem; color: #8B949E; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
-/* ── Badges ── */
+/* Badges */
 .badge { display: inline-flex; align-items: center; padding: 1px 6px; border-radius: 10px; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.3px; border: 1px solid transparent; line-height: 1.3; }
 .badge-long { background: rgba(34,197,94,0.15); color: #3FB950; border-color: rgba(34,197,94,0.35); }
 .badge-short { background: rgba(239,68,68,0.15); color: #F85149; border-color: rgba(239,68,68,0.35); }
@@ -72,21 +72,21 @@ hr { margin: 0.5rem 0 !important; opacity: 0.1; border-color: #30363D; }
 .badge-grade-c { background: rgba(139,148,158,0.18); color: #8B949E; border-color: #8B949E; }
 .badge-news { background: rgba(88,166,255,0.15); color: #58A6FF; border-color: rgba(88,166,255,0.35); }
 
-/* ── Gauge ── */
+/* Gauge */
 .gauge-track { position: relative; height: 14px; background: #21262D; border-radius: 7px; overflow: hidden; margin: 4px 0; }
 .gauge-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 7px; transition: width 0.5s ease; }
 .gauge-label { display: flex; justify-content: space-between; font-size: 0.65rem; color: #8B949E; margin-top: 1px; }
 
-/* ── Heatmap Grid ── */
+/* Heatmap Grid */
 .hm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .hm-cell { padding: 6px 4px; border-radius: 4px; text-align: center; font-size: 0.7rem; font-weight: 600; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.05); }
 
-/* ── Asset Pulse Box ── */
+/* Asset Pulse Box */
 .pulse-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
 .pulse-box { aspect-ratio: 1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); }
 .pulse-label { font-size: 0.55rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 2px; }
 
-/* ── Timeline ── */
+/* Timeline */
 .timeline { display: flex; align-items: center; gap: 0px; margin: 8px 0; }
 .tl-node { width: 14px; height: 14px; border-radius: 50%; border: 2px solid #30363D; background: #21262D; flex-shrink: 0; }
 .tl-node.active { border-color: #58A6FF; background: #58A6FF; box-shadow: 0 0 6px rgba(88,166,255,0.4); }
@@ -95,224 +95,41 @@ hr { margin: 0.5rem 0 !important; opacity: 0.1; border-color: #30363D; }
 .tl-line.active { background: #58A6FF; }
 .tl-labels { display: flex; justify-content: space-between; font-size: 0.6rem; color: #8B949E; margin-top: 4px; }
 
-/* ── Stacked Bar ── */
+/* Stacked Bar */
 .stack-bar { display: flex; height: 22px; border-radius: 4px; overflow: hidden; background: #21262D; }
 .stack-seg { display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; color: #fff; }
 
-/* ── Skew Bars ── */
+/* Skew Bars */
 .skew-row { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
 .skew-label { width: 36px; font-size: 0.7rem; color: #8B949E; font-weight: 600; }
 .skew-track { flex: 1; height: 16px; background: #21262D; border-radius: 4px; position: relative; overflow: hidden; }
 .skew-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
 .skew-value { width: 40px; font-size: 0.7rem; color: #E6EDF3; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* ── GEX Bar ── */
+/* GEX Bar */
 .gex-track { position: relative; height: 20px; background: #21262D; border-radius: 4px; overflow: hidden; display: flex; align-items: center; }
 .gex-pos { height: 100%; background: rgba(34,197,94,0.25); border-right: 1px solid rgba(34,197,94,0.5); }
 .gex-neg { height: 100%; background: rgba(239,68,68,0.25); border-left: 1px solid rgba(239,68,68,0.5); }
 .gex-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #8B949E; opacity: 0.3; }
 
-/* ── Tabs ── */
+/* Tabs */
 .stTabs [data-baseweb="tab-list"] { gap: 2px !important; margin-bottom: 6px !important; }
 .stTabs [data-baseweb="tab"] { padding: 5px 12px !important; font-size: 0.8rem !important; font-weight: 600 !important; border-radius: 6px 6px 0 0 !important; }
 
-/* ── Expander ── */
+/* Expander */
 [data-testid="stExpander"] { border: 1px solid #30363D !important; border-radius: 8px !important; margin-bottom: 6px !important; }
 [data-testid="stExpander"] > details > summary { padding: 8px 12px !important; font-size: 0.82rem !important; font-weight: 600 !important; }
 
-/* ── Sidebar ── */
+/* Sidebar */
 [data-testid="stSidebar"] .block-container { padding-top: 0.8rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ═══════════════════════════════════════════════════════════════════
-# CONFIG & FALLBACKS
-# ═══════════════════════════════════════════════════════════════════
-try:
-    from config.settings import (FOREX_PAIRS, COMMODITIES, CRYPTO, IHSG_UNIVERSE,
-                                 IHSG_SECTOR_MAP, TICKER_SECTOR, US_SECTORS, US_BUCKETS,
-                                 FX_BUCKETS, COMMODITY_BUCKETS, CRYPTO_BUCKETS)
-except ImportError:
-    FOREX_PAIRS = {}; COMMODITIES = {}; CRYPTO = {}; IHSG_UNIVERSE = {}; TICKER_SECTOR = {}; US_SECTORS = {}; US_BUCKETS = {}; FX_BUCKETS = {}; COMMODITY_BUCKETS = {}; CRYPTO_BUCKETS = {}
-
-# Fallback tickers so UI never empty
-FALLBACK_US = ["SPY","QQQ","IWM","NVDA","AAPL","MSFT","GOOGL","META","TSLA","AMD","NFLX","AMZN","CRM","AVGO","XOM","JPM","V","MA","UNH","JNJ","XLK","XLF","XLE","XLU","XLP","XLI","XLB","XLRE","XLY","ARKK","TLT","GLD","SLV","GDX","VIXY","SQQQ","TQQQ","UPRO","SPXU"]
-FALLBACK_FX  = ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","USDCNY=X","USDIDR=X","DX-Y.NYB","UUP"]
-FALLBACK_COMM = ["GC=F","SI=F","CL=F","NG=F","HG=F","PL=F","PA=F","ZW=F","ZC=F","ZS=F","KC=F","CC=F","CT=F"]
-FALLBACK_CRYPTO = ["BTC-USD","ETH-USD","SOL-USD","XRP-USD","DOGE-USD","ADA-USD","AVAX-USD","DOT-USD","MATIC-USD","LINK-USD","UNI-USD","LTC-USD"]
-FALLBACK_IHSG = ["BBRI.JK","BMRI.JK","BBCA.JK","BBNI.JK","BRIS.JK","TLKM.JK","EXCL.JK","ADRO.JK","ITMG.JK","PTBA.JK","NCKL.JK","ANTM.JK","INCO.JK","AALI.JK","LSIP.JK","SMAR.JK","UNTR.JK","BYAN.JK","ICBP.JK","INDF.JK","KLBF.JK","PGEO.JK","WINS.JK","EIDO","^JKSE"]
-
-# FIX: compact single-line fallback to avoid syntax errors
-_IHSG_FALLBACK = {"ADRO.JK":"Coal","ITMG.JK":"Coal","PTBA.JK":"Coal","NCKL.JK":"Nickel","ANTM.JK":"Nickel","INCO.JK":"Nickel","AALI.JK":"CPO","LSIP.JK":"CPO","SMAR.JK":"CPO","BBRI.JK":"Banking","BMRI.JK":"Banking","BBCA.JK":"Banking","BBNI.JK":"Banking","BRIS.JK":"Banking","TLKM.JK":"Telco","EXCL.JK":"Telco","UNTR.JK":"Mining Contractor","BYAN.JK":"Mining","ICBP.JK":"Consumer","INDF.JK":"Consumer","KLBF.JK":"Pharma","PGEO.JK":"Geothermal","WINS.JK":"Shipping","EIDO":"ETF","^JKSE":"Index"}
-if not IHSG_SECTOR_MAP:
-    IHSG_SECTOR_MAP = _IHSG_FALLBACK
-
-# ═══════════════════════════════════════════════════════════════════
-# UTILITIES
-# ═══════════════════════════════════════════════════════════════════
-def _safe_float(v):
-    if v is None: return None
-    try:
-        if isinstance(v, pd.Series): v = v.iloc[0]
-        f = float(v)
-        return f if math.isfinite(f) else None
-    except: return None
-
-def fp(v):
-    try: return f"{float(v):.1%}" if v is not None and math.isfinite(float(v)) else "-"
-    except: return "-"
-
-def ff(v, d=2):
-    try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "-"
-    except: return "-"
-
-def _price_ret(ticker, prices, days=21):
-    s = prices.get(ticker)
-    if s is None: return None
-    s = pd.to_numeric(s, errors="coerce").dropna()
-    if len(s) < days + 1: return None
-    try: return float(s.iloc[-1] / s.iloc[-(days+1)] - 1)
-    except: return None
-
-def _quad_color(q):
-    return {"Q1":"#3FB950","Q2":"#D29922","Q3":"#F85149","Q4":"#A371F7"}.get(q, "#8B949E")
-
-def _quad_name(q):
-    return {"Q1":"Goldilocks","Q2":"Reflation","Q3":"Stagflation","Q4":"Deflation"}.get(q, q)
-
-def _ret_color(r):
-    if r is None: return "#8B949E"
-    r = float(r)
-    if r > 0.03: return "#3FB950"
-    if r > 0: return "#2EA043"
-    if r > -0.03: return "#F85149"
-    return "#DA3633"
-
-def _sparkline_html(series, width=90, height=28, bars=20):
-    if series is None or len(series) < 2:
-        return f''<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>''
-    s = pd.to_numeric(series, errors="coerce").dropna().tail(bars)
-    if len(s) < 2:
-        return f''<div style="width:{width}px;height:{height}px;background:#21262D;border-radius:4px;"></div>''
-    mn, mx = float(s.min()), float(s.max())
-    rng = mx - mn if mx != mn else 1
-    bars_html = ""
-    for i, v in enumerate(s):
-        pct = max(2, min(100, int((float(v) - mn) / rng * 100)))
-        color = "#3FB950" if (i > 0 and float(v) >= float(s.iloc[i-1])) else "#F85149"
-        bars_html += f''<div class="sp-bar" style="height:{pct}%;background:{color};"></div>''
-    return f''<div class="tc-spark" style="width:{width}px;height:{height}px;">{bars_html}</div>''
-
-def _risk_range_html(px, lrr, trr, width_pct=100):
-    if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
-        return ''<div class="rr-track" style="height:18px;background:#21262D;border-radius:4px;"></div><div class="rr-labels"><span>-</span><span>-</span></div>''
-    px, lrr, trr = float(px), float(lrr), float(trr)
-    spread = trr - lrr
-    pos = max(0, min(1, (px - lrr) / spread)) if spread > 0 else 0.5
-    left_pct = pos * 100
-    color = "#3FB950" if pos <= 0.35 else "#F85149" if pos >= 0.65 else "#8B949E"
-    return (
-        f''<div class="rr-track" style="width:{width_pct}%;">''
-        f''<div class="rr-zone" style="left:0%;width:100%;background:#21262D;"></div>''
-        f''<div class="rr-zone" style="left:0%;width:{left_pct:.0f}%;background:{color}18;"></div>''
-        f''<div class="rr-dot" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>''
-        f''</div>''
-        f''<div class="rr-labels" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>''
-    )
-
-def _gauge_html(value, max_val=100, color=None, height=14, label_left="0", label_right="100"):
-    if value is None: value = 0
-    try: pct = max(0, min(100, float(value) / float(max_val) * 100))
-    except: pct = 0
-    c = color or ("#3FB950" if pct > 70 else "#D29922" if pct > 40 else "#F85149")
-    return (
-        f''<div class="gauge-track" style="height:{height}px;">''
-        f''<div class="gauge-fill" style="width:{pct:.0f}%;background:{c};"></div></div>''
-        f''<div class="gauge-label"><span>{label_left}</span><span>{ff(value)}{"" if max_val==100 else ""}</span><span>{label_right}</span></div>''
-    )
-
-def _badge_html(text, kind="long"):
-    cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news"}.get(kind,"badge-neut")
-    return f''<span class="badge {cls}">{text}</span>''
-
-def _regime_banner_html(quad, conf=0.0, monthly=None):
-    color = _quad_color(quad)
-    name = _quad_name(quad)
-    mq = f'' <span style="opacity:0.6;font-size:0.7rem;">Monthly: {monthly}</span>'' if monthly else ''''
-    return (
-        f''<div style="background: linear-gradient(90deg, {color}12 0%, transparent 70%); border-left: 3px solid {color}; ''
-        f''border-radius: 8px; padding: 8px 12px; margin: 6px 0; display: flex; align-items: center; gap: 10px;">''
-        f''<div style="font-size: 1.3rem; font-weight: 800; color: {color}; letter-spacing: -1px;">{quad}</div>''
-        f''<div><div style="font-size: 0.9rem; font-weight: 700; color: #E6EDF3;">{name}</div>''
-        f''<div style="font-size: 0.7rem; color: #8B949E;">Conf: {conf:.0%}{mq}</div></div></div>''
-    )
-
-def _stacked_bar_html(long_pct, short_pct, cash_pct):
-    return (
-        f''<div class="stack-bar">''
-        f''<div class="stack-seg" style="width:{long_pct}%;background:#3FB950;">📈 {long_pct:.0f}%</div>''
-        f''<div class="stack-seg" style="width:{short_pct}%;background:#F85149;">📉 {short_pct:.0f}%</div>''
-        f''<div class="stack-seg" style="width:{cash_pct}%;background:#8B949E;">💵 {cash_pct:.0f}%</div>''
-        f''</div>''
-    )
-
-def _timeline_html(stage="INCEPTION"):
-    stages = ["INCEPTION","ACCELERATION","EUPHORIA","CRISIS","AUCTION"]
-    idx = stages.index(stage) if stage in stages else 0
-    nodes = ""
-    labels = ""
-    for i, s in enumerate(stages):
-        cls = "past" if i < idx else "active" if i == idx else ""
-        line_cls = "active" if i < idx else ""
-        nodes += f''<div class="tl-node {cls}"></div>''
-        if i < len(stages) - 1:
-            nodes += f''<div class="tl-line {line_cls}"></div>''
-        labels += f''<span>{s}</span>''
-    return f''<div class="timeline">{nodes}</div><div class="tl-labels">{labels}</div>''
-
-def _skew_bars_html(d30=None, d60=None, d90=None):
-    def bar(label, val):
-        if val is None:
-            return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:0%;background:#30363D;"></div></div><span class="skew-value">-</span></div>''
-        v = float(val)
-        pct = max(5, min(100, abs(v) * 200))
-        color = "#3FB950" if v > 0.05 else "#F85149" if v < -0.05 else "#D29922"
-        label_text = "Rich" if v > 0.05 else "Cheap" if v < -0.05 else "Fair"
-        return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:{pct:.0f}%;background:{color};"></div></div><span class="skew-value" style="color:{color};">{label_text}</span></div>''
-    return bar("30D", d30) + bar("60D", d60) + bar("90D", d90)
-
-def _gex_bar_html(gex_val=None):
-    if gex_val is None:
-        return ''<div class="gex-track" style="height:20px;background:#21262D;border-radius:4px;"></div>''
-    v = float(gex_val)
-    color = "#3FB950" if v > 0 else "#F85149"
-    pct = min(100, abs(v) * 100)
-    side = "Pos" if v > 0 else "Neg"
-    return (
-        f''<div class="gex-track" style="height:20px;">''
-        f''<div class="gex-center"></div>''
-        f''<div style="position:absolute;left:50%;width:{pct:.0f}%;{"margin-left:0;left:50%;" if v>0 else "margin-left:-"+str(pct)+"%;left:50%;"}background:{color}30;height:100%;border-radius:4px;"></div>''
-        f''<div style="position:absolute;width:100%;text-align:center;font-size:0.65rem;font-weight:700;color:{color};line-height:20px;">{side} {abs(v):.2f}</div>''
-        f''</div>''
-    )
-
-def _heatmap_grid_html(items, key_label="name", key_quad="quad"):
-    html = ''<div class="hm-grid">''
-    for it in items:
-        q = it.get(key_quad, "Q3")
-        color = _quad_color(q)
-        name = it.get(key_label, "-")
-        html += f''<div class="hm-cell" style="background:{color}18;border-color:{color}40;">{name}<div style="font-size:0.55rem;color:{color};margin-top:2px;">{q}</div></div>''
-    html += ''</div>''
-    return html
-
 def _asset_pulse_box(label, ret, sub=""):
     c = _ret_color(ret)
-    if ret is not None:
-        txt = f"{ret:+.1%}"
-    else:
-        txt = "-"
-    return f''<div class="pulse-box" style="background:{c}15;border-color:{c}30;"><div>{txt}</div><div class="pulse-label">{label}</div>{f"<div style='font-size:0.55rem;color:#8B949E;margin-top:1px;'>{sub}</div>" if sub else ""}</div>''
+    txt = f"{ret:+.1%}" if ret is not None else "-"
+    sub_html = f'<div style="font-size:0.55rem;color:#8B949E;margin-top:1px;">{sub}</div>' if sub else ""
+    return f'<div class="pulse-box" style="background:{c}15;border-color:{c}30;"><div>{txt}</div><div class="pulse-label">{label}</div>{sub_html}</div>'
 
 # ═══════════════════════════════════════════════════════════════════
 # RISK RANGE ENGINE (proxy)
@@ -451,27 +268,27 @@ def render_ticker_card(row, expanded=False):
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
 
     header_html = (
-        f''<div class="ticker-card">''
-        f''<div class="tc-left"><div class="tc-symbol">{ticker}</div><div class="tc-price">{ff(px)}</div><div class="tc-badges">{badges}</div></div>''
-        f''{spark}''
-        f''<div class="tc-rr">{rr_html}</div>''
-        f''<div class="tc-metrics"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>''
-        f''</div>''
+        f'<div class="ticker-card">'
+        f'<div class="tc-left"><div class="tc-symbol">{ticker}</div><div class="tc-price">{ff(px)}</div><div class="tc-badges">{badges}</div></div>'
+        f'{spark}'
+        f'<div class="tc-rr">{rr_html}</div>'
+        f'<div class="tc-metrics"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
+        f'</div>'
     )
 
     with st.expander(header_html, expanded=expanded):
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 14px;margin:6px 0;">''
-            f''<div style="font-size:0.8rem;color:#E6EDF3;font-weight:600;margin-bottom:6px;">🎯 Trade Setup</div>''
-            f''<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.78rem;color:#8B949E;">''
-            f''<div>📍 <b>Entry:</b> {ff(entry)}</div>''
-            f''<div>🎯 <b>Target 1:</b> {ff(t1)}</div>''
-            f''<div>🎯 <b>Target 2:</b> {ff(t2)}</div>''
-            f''<div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>''
-            f''</div>''
-            f''<div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363D;font-size:0.78rem;color:#E6EDF3;">''
-            f''💡 <b>Rekomendasi:</b> {row.get('recommendation', row.get('thesis', 'Tunggu setup dekat entry level dengan RR minimal 2x.'))}''
-            f''</div></div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 14px;margin:6px 0;">'
+            f'<div style="font-size:0.8rem;color:#E6EDF3;font-weight:600;margin-bottom:6px;">🎯 Trade Setup</div>'
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.78rem;color:#8B949E;">'
+            f'<div>📍 <b>Entry:</b> {ff(entry)}</div>'
+            f'<div>🎯 <b>Target 1:</b> {ff(t1)}</div>'
+            f'<div>🎯 <b>Target 2:</b> {ff(t2)}</div>'
+            f'<div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>'
+            f'</div>'
+            f'<div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363D;font-size:0.78rem;color:#E6EDF3;">'
+            f'💡 <b>Rekomendasi:</b> {row.get("recommendation", row.get("thesis", "Tunggu setup dekat entry level dengan RR minimal 2x."))}'
+            f'</div></div>',
             unsafe_allow_html=True
         )
 
@@ -483,13 +300,13 @@ def render_ticker_card(row, expanded=False):
             o4.metric("Call Wall", ff(row.get("call_wall")))
 
         if row.get("news_headline"):
-            st.markdown(f"<div style='font-size:0.75rem;color:#58A6FF;margin-top:4px;'>📰 {row.get('news_headline')[:120]}</div>", unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.75rem;color:#58A6FF;margin-top:4px;">📰 {row.get("news_headline")[:120]}</div>', unsafe_allow_html=True)
 
 def render_ticker_cards(rows, max_rows=30):
     if not rows:
         st.info("No setups pass filter.")
         return
-    st.markdown(f"<div style='font-size:0.75rem;color:#8B949E;margin-bottom:6px;'>Showing {min(len(rows), max_rows)} of {len(rows)} setups</div>", unsafe_allow_html=True)
+    st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;margin-bottom:6px;">Showing {min(len(rows), max_rows)} of {len(rows)} setups</div>', unsafe_allow_html=True)
     for i, r in enumerate(rows[:max_rows]):
         render_ticker_card(r, expanded=(i < 2))
 
@@ -497,8 +314,8 @@ def render_regime_bars(snap):
     gip = snap.get("gip")
     if not gip:
         return
-    q_probs = getattr(gip, 'structural_probs', {}) or {}
-    m_probs = getattr(gip, 'monthly_probs', {}) or {}
+    q_probs = getattr(gip, "structural_probs", {}) or {}
+    m_probs = getattr(gip, "monthly_probs", {}) or {}
     rf = snap.get("regime_forecast", {})
     rf3 = rf.get("3m", {}) if isinstance(rf, dict) else {}
     fq = rf3.get("predicted_quad", "Q3") if isinstance(rf3, dict) else "Q3"
@@ -540,7 +357,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v30.1 VISUAL | Visual-First Rewrite")
+    st.caption("v30.2 VISUAL | Visual-First Rewrite")
     st.divider()
 
     page = st.radio("Navigation", [
@@ -583,14 +400,14 @@ with st.sidebar:
     _s = st.session_state.snap
     if _s and _s.get("ok"):
         _g = _s.get("gip")
-        _sq = _g.structural_quad if _g else "-"
-        _mq = _g.monthly_quad if _g else "-"
+        _sq = _g.structural_quad if _g else "—"
+        _mq = _g.monthly_quad if _g else "—"
         color = _quad_color(_sq)
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">''
-            f''<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>''
-            f''<div style="font-size:0.7rem;color:#8B949E;">{_quad_name(_sq)}</div></div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">'
+            f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
+            f'<div style="font-size:1.1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
+            f'<div style="font-size:0.7rem;color:#8B949E;">{_quad_name(_sq)}</div></div>',
             unsafe_allow_html=True
         )
 
@@ -644,10 +461,10 @@ vix_now = _safe_float(prices.get("^VIX", pd.Series()).tail(1)) if prices.get("^V
 def page_dashboard():
     st.markdown("## 🏠 Dashboard")
 
-    # ── REGIME BAR CHART (top, not hidden) ──
+    # Regime bar chart (top, not hidden)
     render_regime_bars(snap)
 
-    # ── TOP KPI ROW (4 cards) ──
+    # TOP KPI ROW (4 cards)
     markov = snap.get("markov_v3", {}) or {}
     health = snap.get("health", {}) or {}
     narrative = snap.get("narrative", {}) or {}
@@ -655,60 +472,60 @@ def page_dashboard():
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
-            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Markov Regime</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","-").replace("_"," ")}</div>''
-            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Conf {markov.get("confidence",0):.0%}</div></div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
+            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Markov Regime</div>'
+            f'<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","—").replace("_"," ")}</div>'
+            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Conf {markov.get("confidence",0):.0%}</div></div>',
             unsafe_allow_html=True
         )
     with k2:
         vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
-            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">VIX</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:{vix_color};margin-top:4px;">{vix_now:.1f}</div>''
-            f''{_gauge_html(vix_now, max_val=40, color=vix_color, height=10, label_left="0", label_right="40")}</div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
+            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">VIX</div>'
+            f'<div style="font-size:1.1rem;font-weight:700;color:{vix_color};margin-top:4px;">{vix_now:.1f}</div>'
+            f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=10, label_left="0", label_right="40")}</div>',
             unsafe_allow_html=True
         )
     with k3:
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
         alert_color = "#F85149" if n_alerts > 2 else "#D29922" if n_alerts > 0 else "#3FB950"
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
-            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Alerts</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:{alert_color};margin-top:4px;">{n_alerts}</div>''
-            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Behavioral signals</div></div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
+            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Alerts</div>'
+            f'<div style="font-size:1.1rem;font-weight:700;color:{alert_color};margin-top:4px;">{n_alerts}</div>'
+            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Behavioral signals</div></div>',
             unsafe_allow_html=True
         )
     with k4:
         n_longs = len([r for r in (snap.get("daily_signals", []) or []) if isinstance(r, dict) and "LONG" in str(r.get("direction", ""))])
         n_shorts = len([r for r in (snap.get("daily_signals", []) or []) if isinstance(r, dict) and "SHORT" in str(r.get("direction", ""))])
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
-            f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Setups</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:#58A6FF;margin-top:4px;">{n_longs}L / {n_shorts}S</div>''
-            f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Alpha signals</div></div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">'
+            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Setups</div>'
+            f'<div style="font-size:1.1rem;font-weight:700;color:#58A6FF;margin-top:4px;">{n_longs}L / {n_shorts}S</div>'
+            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Alpha signals</div></div>',
             unsafe_allow_html=True
         )
 
     st.divider()
 
-    # ── ASSET PULSE (7-box grid) ──
+    # ASSET PULSE (7-box grid)
     st.markdown("### ⚡ Asset Pulse")
     pulse_assets = [
         ("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"),
         ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "Crypto")
     ]
-    pulse_html = ''<div class="pulse-grid">''
+    pulse_html = '<div class="pulse-grid">'
     for t, label in pulse_assets:
         ret = _price_ret(t, prices, 21)
         pulse_html += _asset_pulse_box(label, ret, t)
-    pulse_html += ''</div>''
+    pulse_html += '</div>'
     st.markdown(pulse_html, unsafe_allow_html=True)
 
     st.divider()
 
-    # ── MAIN CONTENT: 2 COLUMNS ──
+    # MAIN CONTENT: 2 COLUMNS
     left, right = st.columns([1.2, 1])
 
     with left:
@@ -723,11 +540,11 @@ def page_dashboard():
                 grade = item.get("grade", "C")
                 gc = "#3FB950" if grade in ("A","A+") else "#D29922" if grade=="B" else "#8B949E"
                 st.markdown(
-                    f''<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:3px 0;font-size:0.82rem;">''
-                    f''<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","-")}</span>''
-                    f''<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","-")}</span>''
-                    f''<span style="background:{gc}22;color:{gc};padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;border:1px solid {gc};">{grade}</span>''
-                    f''<span style="color:#8B949E;flex:1;text-align:right;">{str(item.get("thesis",""))[:55]}</span></div>'',
+                    f'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:3px 0;font-size:0.82rem;">'
+                    f'<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","—")}</span>'
+                    f'<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","—")}</span>'
+                    f'<span style="background:{gc}22;color:{gc};padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;border:1px solid {gc};">{grade}</span>'
+                    f'<span style="color:#8B949E;flex:1;text-align:right;">{str(item.get("thesis",""))[:55]}</span></div>',
                     unsafe_allow_html=True
                 )
         else:
@@ -756,11 +573,11 @@ def page_dashboard():
         health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
         health_color = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
         st.markdown(
-            f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:8px;">''
-            f''<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">''
-            f''<span style="font-size:0.7rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Market Health</span>''
-            f''<span style="font-size:1.1rem;font-weight:700;color:{health_color};">{health_score:.0f}</span></div>''
-            f''{_gauge_html(health_score, max_val=100, color=health_color, height=12)}</div>'',
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin-bottom:8px;">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+            f'<span style="font-size:0.7rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Market Health</span>'
+            f'<span style="font-size:1.1rem;font-weight:700;color:{health_color};">{health_score:.0f}</span></div>'
+            f'{_gauge_html(health_score, max_val=100, color=health_color, height=12)}</div>',
             unsafe_allow_html=True
         )
 
@@ -779,9 +596,9 @@ def page_dashboard():
                 color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
                 is_dom = " ★" if dom == scen_name else ""
                 st.markdown(
-                    f''<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #21262D;">''
-                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>''
-                    f''<span style="font-size:0.85rem;font-weight:700;color:{color};">{p:.0%}</span></div>'',
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #21262D;">'
+                    f'<span style="font-size:0.8rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>'
+                    f'<span style="font-size:0.85rem;font-weight:700;color:{color};">{p:.0%}</span></div>',
                     unsafe_allow_html=True
                 )
 
@@ -794,15 +611,15 @@ def page_dashboard():
                 sig = r.get("signal", "")
                 color = "#3FB950" if "BULLISH" in sig else "#F85149" if "BEARISH" in sig else "#D29922"
                 st.markdown(
-                    f''<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">''
-                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","-")}</span>''
-                    f''<span style="font-size:0.75rem;color:{color};font-weight:600;">{str(sig)[:20]}</span></div>'',
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">'
+                    f'<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","—")}</span>'
+                    f'<span style="font-size:0.75rem;color:{color};font-weight:600;">{str(sig)[:20]}</span></div>',
                     unsafe_allow_html=True
                 )
 
     st.divider()
 
-    # ── BOTTOM: DEEP TECHNICAL VISUALS ──
+    # BOTTOM: DEEP TECHNICAL VISUALS
     with st.expander("🔬 Deep Technical", expanded=False):
         # Skew Term
         st.markdown("**Skew Term Structure**")
@@ -841,10 +658,10 @@ def page_dashboard():
                     if isinstance(item, dict):
                         score = item.get("vrp_pct", 0)
                         st.markdown(
-                            f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
-                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","-")}</span>''
-                            f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>''
-                            f''<span style="font-size:0.7rem;color:#F85149;font-weight:700;width:40px;text-align:right;">{score:.0f}%</span></div>'',
+                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+                            f'<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>'
+                            f'<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>'
+                            f'<span style="font-size:0.7rem;color:#F85149;font-weight:700;width:40px;text-align:right;">{score:.0f}%</span></div>',
                             unsafe_allow_html=True
                         )
             else:
@@ -857,10 +674,10 @@ def page_dashboard():
                     if isinstance(item, dict):
                         score = item.get("squeeze_score", 0)
                         st.markdown(
-                            f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
-                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","-")}</span>''
-                            f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>''
-                            f''<span style="font-size:0.7rem;color:#D29922;font-weight:700;width:40px;text-align:right;">{score:.0f}</span></div>'',
+                            f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">'
+                            f'<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>'
+                            f'<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>'
+                            f'<span style="font-size:0.7rem;color:#D29922;font-weight:700;width:40px;text-align:right;">{score:.0f}</span></div>',
                             unsafe_allow_html=True
                         )
             else:
@@ -883,7 +700,6 @@ def page_dashboard():
             color = "#3FB950" if ok else "#F85149"
             cols[i % 4].markdown(f"<span style='color:{color};font-size:0.8rem;'>● {name}</span>", unsafe_allow_html=True)
 
-
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: ALPHA CENTER
 # ═══════════════════════════════════════════════════════════════════
@@ -891,10 +707,10 @@ def page_alpha():
     st.markdown("## ⚡ Alpha Center")
     st.markdown(_regime_banner_html(sq, conf=0.6, monthly=mq), unsafe_allow_html=True)
 
-    # ── TOP SUMMARY ──
+    # TOP SUMMARY
     summary = snap.get("summary", {}) or {}
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Markov Regime", str(summary.get("v7_markov_regime", "-")).split("_")[0] if summary.get("v7_markov_regime") else "-")
+    k1.metric("Markov Regime", str(summary.get("v7_markov_regime", "—")).split("_")[0] if summary.get("v7_markov_regime") else "—")
     k2.metric("Smart $ Consensus", summary.get("v7_smart_money_consensus", 0))
     k3.metric("Top Theses", summary.get("v7_top_theses_count", 0))
     k4.metric("Kelly", f"{summary.get('v7_markov_kelly', 0.25):.0%}")
@@ -924,7 +740,7 @@ def page_alpha():
                 alpha_candidates.append({
                     "ticker": ticker, "direction": sig.get("direction"),
                     "confidence": sig.get("confidence", 0), "thesis_score": thesis.get("thesis_score", 0),
-                    "primary_role": thesis.get("primary_role", "-"),
+                    "primary_role": thesis.get("primary_role", "—"),
                     "alpha_score": sig.get("confidence", 0) * 35 + thesis.get("thesis_score", 0) * 0.3 + sm_boost,
                 })
         alpha_candidates.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
@@ -952,7 +768,7 @@ def page_alpha():
                 st.metric("Buy Premium", len(vrp.get("low_vrp_buy_premium", [])))
                 for item in vrp.get("high_vrp_sell_premium", [])[:5]:
                     if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '-')}")
+                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
             else:
                 st.info("VRP scanner unavailable")
 
@@ -964,7 +780,7 @@ def page_alpha():
                 st.metric("Strong", len(sq.get("strong_candidates", [])))
                 for item in sq.get("imminent_squeezes", [])[:5]:
                     if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '-')}")
+                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}")
             else:
                 st.info("Squeeze scanner unavailable")
 
@@ -978,10 +794,10 @@ def page_alpha():
                     st.markdown(f"**{mode.title()}** ({len(items)})")
                     for item in items[:5]:
                         if isinstance(item, dict):
-                            with st.expander(f"{item.get('name', '-').replace('_', ' ')} · conf {item.get('confidence', 0):.0%}"):
-                                st.markdown(item.get("thesis", "-"))
+                            with st.expander(f"{item.get('name', '—').replace('_', ' ')} · conf {item.get('confidence', 0):.0%}"):
+                                st.markdown(item.get("thesis", "—"))
         else:
-            st.info("Discovery Brain - no candidates this snapshot")
+            st.info("Discovery Brain — no candidates this snapshot")
 
         st.markdown("### 💰 Position Sizing")
         sizing = snap.get("portfolio_sizing_v2", {}) or {}
@@ -995,7 +811,6 @@ def page_alpha():
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
             st.info("No sized positions yet.")
-
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: US STOCKS
@@ -1034,7 +849,7 @@ def page_us_stocks():
 
     st.markdown(f"**{len(rows)} setups** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
 
-    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})"])
+    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
     with tab_l:
         render_ticker_cards(longs)
     with tab_s:
@@ -1071,7 +886,7 @@ def page_forex():
 
     st.markdown(f"**{len(rows)} pairs** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
 
-    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})"])
+    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
     with tab_l:
         render_ticker_cards(longs)
     with tab_s:
@@ -1098,7 +913,7 @@ def page_commodities():
         st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.7rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "-") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -1108,7 +923,7 @@ def page_commodities():
 
     st.markdown(f"**{len(rows)} commodities** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
 
-    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})"])
+    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
     with tab_l:
         render_ticker_cards(longs)
     with tab_s:
@@ -1135,7 +950,7 @@ def page_crypto():
         st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.7rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "-") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -1145,7 +960,7 @@ def page_crypto():
 
     st.markdown(f"**{len(rows)} coins** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
 
-    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})"])
+    tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
     with tab_l:
         render_ticker_cards(longs)
     with tab_s:
@@ -1197,7 +1012,7 @@ def page_global():
         counts = [len(v) for v in by_sector.values()]
         colors = [_ret_color(sum(x.get("r1m",0) or 0 for x in by_sector[s])/max(len(by_sector[s]),1)) for s in sectors]
         fig = go.Figure(go.Bar(
-            y=sectors, x=counts, orientation='h',
+            y=sectors, x=counts, orientation="h",
             marker_color=colors,
             text=[str(c) for c in counts], textposition="outside",
             textfont=dict(size=11, color="#E6EDF3")
@@ -1253,9 +1068,9 @@ def page_themes():
             if not isinstance(b, dict): continue
             beneficiaries = ", ".join(b.get("beneficiaries", [])[:5])
             st.markdown(
-                f''<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:8px 12px;margin:4px 0;">''
-                f''<div style="font-size:0.85rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>''
-                f''<div style="font-size:0.75rem;color:#8B949E;margin-top:4px;">Beneficiaries: {beneficiaries}</div></div>'',
+                f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:8px 12px;margin:4px 0;">'
+                f'<div style="font-size:0.85rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
+                f'<div style="font-size:0.75rem;color:#8B949E;margin-top:4px;">Beneficiaries: {beneficiaries}</div></div>',
                 unsafe_allow_html=True
             )
     else:
@@ -1276,26 +1091,26 @@ def page_themes():
             v_arrow = "⬆" if "up" in str(vanna_dir).lower() or "pos" in str(vanna_dir).lower() else "⬇" if "down" in str(vanna_dir).lower() or "neg" in str(vanna_dir).lower() else "➡"
             c_arrow = "⬆" if "up" in str(charm_dir).lower() or "pos" in str(charm_dir).lower() else "⬇" if "down" in str(charm_dir).lower() or "neg" in str(charm_dir).lower() else "➡"
             st.markdown(
-                f''<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">''
-                f''<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>''
-                f''<div style="flex:1;">''
-                f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>''
-                f''{_gauge_html(pin, max_val=100, color="#D29922", height=10, label_left="0", label_right="100")}</div>''
-                f''<div style="font-size:0.8rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>''
-                f''<div style="font-size:0.8rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>'',
+                f'<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
+                f'<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>'
+                f'<div style="flex:1;">'
+                f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
+                f'{_gauge_html(pin, max_val=100, color="#D29922", height=10, label_left="0", label_right="100")}</div>'
+                f'<div style="font-size:0.8rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>'
+                f'<div style="font-size:0.8rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>',
                 unsafe_allow_html=True
             )
     else:
         st.caption("0DTE data unavailable - showing proxy")
         for t in ["SPY","QQQ","IWM"]:
             st.markdown(
-                f''<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">''
-                f''<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>''
-                f''<div style="flex:1;">''
-                f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>''
-                f''{_gauge_html(50, max_val=100, color="#30363D", height=10, label_left="0", label_right="100")}</div>''
-                f''<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Vanna ➡</div>''
-                f''<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>'',
+                f'<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
+                f'<span style="font-weight:700;font-size:0.9rem;color:#E6EDF3;min-width:50px;">{t}</span>'
+                f'<div style="flex:1;">'
+                f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
+                f'{_gauge_html(50, max_val=100, color="#30363D", height=10, label_left="0", label_right="100")}</div>'
+                f'<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Vanna ➡</div>'
+                f'<div style="font-size:0.8rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>',
                 unsafe_allow_html=True
             )
 
@@ -1343,4 +1158,4 @@ elif page == "📖 Themes":
 # Footer
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v30.1 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v30.2 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
