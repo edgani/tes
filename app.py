@@ -400,8 +400,8 @@ with st.sidebar:
     _s = st.session_state.snap
     if _s and _s.get("ok"):
         _g = _s.get("gip")
-        _sq = _g.structural_quad if _g else "—"
-        _mq = _g.monthly_quad if _g else "—"
+        _sq = getattr(_g, "structural_quad", "—") if _g is not None else "—"
+        _mq = getattr(_g, "monthly_quad", "—") if _g is not None else "—"
         color = _quad_color(_sq)
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">'
@@ -450,8 +450,8 @@ gip = snap.get("gip")
 prices = snap.get("prices", {}) or {}
 rr = snap.get("risk_ranges", {}) or {}
 ar = rr.get("asset_ranges", {}) if isinstance(rr, dict) else {}
-sq = gip.structural_quad if gip else "Q3"
-mq_raw = gip.monthly_quad if gip else "Q2"
+sq = getattr(gip, "structural_quad", "Q3") if gip is not None else "Q3"
+mq_raw = getattr(gip, "monthly_quad", "Q2") if gip is not None else "Q2"
 mq = st.session_state.mq_override if st.session_state.mq_override != "Auto" else mq_raw
 vix_now = _safe_float(prices.get("^VIX", pd.Series()).tail(1)) if prices.get("^VIX") is not None else 20.0
 
