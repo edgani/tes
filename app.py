@@ -2630,6 +2630,165 @@ def render_ticker_card(row, expanded=False, show_thesis=True, show_smart_money=T
             fw_html += "</div></div>"
             st.markdown(_html(fw_html), unsafe_allow_html=True)
 
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 20: SNDK PARABOLIC / ATH / BREAKOUT DETECTOR
+        # Catch "gen-wealth" moves before they top out
+        # ═══════════════════════════════════════════════════════════════
+        try:
+            sym = (row.get("ticker") or row.get("symbol") or "").upper()
+            sndk_flags = []
+            sndk_color = "#9ca3af"
+            sndk_action = ""
+
+            # Get price history if available
+            ret_1m = row.get("ret_1m") or row.get("return_1m") or row.get("mom_21d")
+            ret_3m = row.get("ret_3m") or row.get("return_3m") or row.get("mom_63d")
+            ret_12m = row.get("ret_12m") or row.get("return_12m")
+            rsi_14 = row.get("rsi_14") or row.get("rsi")
+            ath_dist = row.get("ath_distance") or row.get("dist_from_ath")
+            vol_ratio = row.get("volume_ratio_avg") or row.get("volume_spike")
+            pos_in_range = row.get("position_in_range")
+
+            # Get from risk_range if available
+            if pos_in_range is None and t_lo and t_hi and px > 0:
+                pos_in_range = ((px - t_lo) / max(t_hi - t_lo, 0.001)) * 100
+
+            # PARABOLIC detection
+            is_parabolic = False
+            if ret_1m and ret_1m > 0.50:  # +50% in 1 month
+                is_parabolic = True
+                sndk_flags.append(f"PARABOLIC (+{ret_1m*100:.0f}% 1M)")
+            if ret_3m and ret_3m > 1.0:  # +100% in 3 months
+                is_parabolic = True
+                if ret_1m is None or ret_1m <= 0.50:
+                    sndk_flags.append(f"PARABOLIC (+{ret_3m*100:.0f}% 3M)")
+            if rsi_14 and rsi_14 > 80:
+                sndk_flags.append(f"RSI EKSTREM ({rsi_14:.0f})")
+
+            # ATH detection
+            is_ath = False
+            if ath_dist is not None and ath_dist > -0.03:  # within 3% of ATH
+                is_ath = True
+                sndk_flags.append("DEKAT ATH" if ath_dist > -0.005 else f"ATH ZONE ({ath_dist*100:+.1f}%)")
+            elif pos_in_range and pos_in_range > 90:
+                sndk_flags.append(f"PUNCAK RANGE ({pos_in_range:.0f}%)")
+
+            # BREAKOUT detection
+            is_breakout = False
+            if vol_ratio and vol_ratio > 2.0 and ret_1m and ret_1m > 0.10:
+                is_breakout = True
+                sndk_flags.append(f"BREAKOUT (vol {vol_ratio:.1f}x)")
+
+            # 12M MOONING (catch SNDK before too late)
+            is_mooning = False
+            if ret_12m and ret_12m > 3.0:  # +300% in 12M
+                is_mooning = True
+                sndk_flags.append(f"MOONING (+{ret_12m*100:.0f}% 12M)")
+
+            # Determine action recommendation
+            if is_parabolic and is_ath:
+                sndk_color = "#ef4444"
+                sndk_action = "🚨 JANGAN CHASE — Parabolic + ATH. Kalau punya, JUAL 30-50%. Short = HIGH RISK (squeeze possible)."
+            elif is_parabolic:
+                sndk_color = "#f97316"
+                sndk_action = "⚠️ Parabolic move — tighten stop, jangan beli baru, tunggu pullback 20-30%."
+            elif is_breakout and not is_ath:
+                sndk_color = "#22c55e"
+                sndk_action = "🟢 BREAKOUT confirmed — masih ada runway. Beli retest atau chase dengan stop di breakout level."
+            elif is_mooning and not is_parabolic:
+                sndk_color = "#eab308"
+                sndk_action = "📈 Long-term winner. Hati2 chase. Tunggu pullback ke 50DMA atau LRR Trade."
+            elif is_ath and pos_in_range and pos_in_range > 80:
+                sndk_color = "#eab308"
+                sndk_action = "⏳ Dekat ATH/range high — jangan chase. Tunggu konsolidasi atau breakout confirmed."
+
+            if sndk_flags:
+                sndk_html = f"<div style='background:{sndk_color}11; border:1px solid {sndk_color}66; border-left:3px solid {sndk_color}; border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+                sndk_html += f"<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>SNDK-STYLE DETECTOR (Parabolic · ATH · Breakout)</div>"
+                sndk_html += f"<div style='display:flex; gap:8px; flex-wrap:wrap; margin-top:5px;'>"
+                for flag in sndk_flags:
+                    sndk_html += f"<span style='background:{sndk_color}33; color:{sndk_color}; padding:2px 8px; border-radius:8px; font-size:10px; font-weight:600;'>🚨 {flag}</span>"
+                sndk_html += "</div>"
+                if sndk_action:
+                    sndk_html += f"<div style='font-size:11px; margin-top:6px; line-height:1.4;'>{sndk_action}</div>"
+                sndk_html += "</div>"
+                st.markdown(_html(sndk_html), unsafe_allow_html=True)
+        except Exception:
+            pass
+
+        # ═══════════════════════════════════════════════════════════════
+        # SPRINT 20: EDGE TAMBAHAN (Squeeze + Insider + Analyst + DarkPool + Social)
+        # Per Kimi blueprint P14 — only renders if data available
+        # ═══════════════════════════════════════════════════════════════
+        squeeze_score = row.get("squeeze_score")
+        short_float = row.get("short_float_pct") or row.get("short_interest_pct")
+        borrow_rate = row.get("borrow_rate") or row.get("cost_to_borrow")
+        insider_signal = row.get("insider_signal") or row.get("insider_net_30d")
+        analyst_pt = row.get("analyst_pt") or row.get("price_target")
+        analyst_revision = row.get("analyst_revision_30d") or row.get("eps_revision_pct")
+        dark_pool = row.get("dark_pool_level") or row.get("dark_pool_block")
+        social_mentions = row.get("social_mentions_ratio") or row.get("social_spike")
+        cot_commercial = row.get("cot_commercial_net_pct") or row.get("cot_net")
+
+        edge_items = []
+        if squeeze_score is not None or short_float is not None:
+            sq_color = "#ef4444" if (squeeze_score or 0) > 70 else "#eab308" if (squeeze_score or 0) > 40 else "#22c55e"
+            sq_label = f"Squeeze {squeeze_score:.0f}/100" if squeeze_score is not None else f"Short Float {short_float:.1f}%"
+            if borrow_rate is not None:
+                sq_label += f" · Borrow {borrow_rate:.0f}%"
+            edge_items.append(("📊", sq_label, sq_color))
+
+        if insider_signal is not None:
+            try:
+                ins_val = float(insider_signal) if not isinstance(insider_signal, str) else 0
+                if isinstance(insider_signal, str):
+                    edge_items.append(("👔", f"Insider: {insider_signal}", "#9ca3af"))
+                elif ins_val > 1_000_000:
+                    edge_items.append(("👔", f"Insider BUY +${ins_val/1e6:.1f}M", "#22c55e"))
+                elif ins_val < -1_000_000:
+                    edge_items.append(("👔", f"Insider SELL ${ins_val/1e6:.1f}M", "#ef4444"))
+            except Exception:
+                pass
+
+        if analyst_pt is not None and px > 0:
+            try:
+                upside = (analyst_pt - px) / px
+                a_color = "#22c55e" if upside > 0.10 else "#ef4444" if upside < -0.05 else "#eab308"
+                a_label = f"PT ${analyst_pt:.0f} ({upside*100:+.0f}%)"
+                if analyst_revision is not None:
+                    rev_arrow = "↑" if analyst_revision > 0 else "↓"
+                    a_label += f" · EPS rev {rev_arrow}{abs(analyst_revision)*100:.0f}%"
+                edge_items.append(("📈", a_label, a_color))
+            except Exception:
+                pass
+
+        if dark_pool is not None:
+            edge_items.append(("🌊", f"Dark Pool: ${dark_pool}", "#9ca3af"))
+
+        if social_mentions is not None:
+            try:
+                s_color = "#ef4444" if social_mentions > 5 else "#eab308" if social_mentions > 2 else "#9ca3af"
+                edge_items.append(("📱", f"Social {social_mentions:.1f}x normal", s_color))
+            except Exception:
+                pass
+
+        if cot_commercial is not None:
+            try:
+                cot_color = "#22c55e" if cot_commercial > 50 else "#ef4444" if cot_commercial < -30 else "#eab308"
+                cot_label = "long" if cot_commercial > 0 else "short"
+                edge_items.append(("🏦", f"COT Commercial net {cot_label} {abs(cot_commercial):.0f}%", cot_color))
+            except Exception:
+                pass
+
+        if edge_items:
+            edge_html = "<div style='background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.08); border-radius:6px; padding:8px 12px; margin:6px 0;'>"
+            edge_html += "<div style='font-size:10px; opacity:0.7; font-weight:600; letter-spacing:0.5px;'>EDGE TAMBAHAN (Squeeze · Insider · Analyst · Flow · COT)</div>"
+            edge_html += "<div style='display:flex; gap:8px; flex-wrap:wrap; margin-top:5px; font-size:11px;'>"
+            for icon, label, color in edge_items:
+                edge_html += f"<div style='background:{color}11; border:1px solid {color}44; padding:3px 9px; border-radius:6px;'>{icon} <b style='color:{color};'>{label}</b></div>"
+            edge_html += "</div></div>"
+            st.markdown(_html(edge_html), unsafe_allow_html=True)
+
         # ── ROW 2: Badges (thesis + smart money + filter) ──
         badges = []
         if show_thesis:
@@ -6050,6 +6209,88 @@ elif page == "📖 Themes":
                 for hl in n["news_headlines"][:3]:
                     st.markdown(f'<div class="news-ticker">{hl}</div>', unsafe_allow_html=True)
             st.caption(f"Invalidators: {', '.join(n.get('invalidators',[])[:3])}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 20: NEXT SNDK WATCHLIST (Pre-Explosion Candidates)
+    # Per Kimi blueprint P18 — catch gen-wealth before parabolic
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("---")
+    st.markdown("### 🚀 NEXT SNDK Watchlist — Pre-Explosion Candidates")
+    st.caption("Bottleneck dengan keyakinan ≥70% + harga belum parabolic (still early-stage). Tangkap sebelum +400% mooning.")
+
+    next_sndk_candidates = []
+    try:
+        prices_pb = snap.get("prices", {}) or {}
+        # Pre-narrative phase: bottleneck high confidence + ticker belum parabolic
+        for bot in (bottlenecks_pb or []):
+            if not isinstance(bot, dict): continue
+            conf = bot.get("confidence", 0)
+            if conf < 0.70: continue
+            beneficiaries = bot.get("beneficiaries", []) or bot.get("tickers", []) or []
+            theme = bot.get("name") or bot.get("theme") or "Unknown"
+            for tkr in beneficiaries[:8]:
+                s = prices_pb.get(tkr)
+                if s is None: continue
+                try:
+                    ser = pd.to_numeric(s, errors="coerce").dropna()
+                    if len(ser) < 64: continue
+                    cur_px = float(ser.iloc[-1])
+                    ret_1m = float(ser.iloc[-1] / ser.iloc[-22] - 1) if len(ser) >= 22 else 0
+                    ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
+                    ret_12m = float(ser.iloc[-1] / ser.iloc[-252] - 1) if len(ser) >= 252 else None
+                    # Filter: belum parabolic (ret_1m < 50%), tapi sudah show building momentum
+                    if ret_1m < 0.50 and ret_3m < 1.0:
+                        # Stage classifier
+                        if ret_3m < 0.10 and ret_12m is not None and ret_12m < 0.20:
+                            stage = "🟢 EARLY"
+                            stage_color = "#22c55e"
+                            desc = "Pre-momentum, narrative forming, narasi belum dihargai"
+                        elif ret_3m < 0.30:
+                            stage = "🟡 BUILDING"
+                            stage_color = "#eab308"
+                            desc = "Momentum starting, akumulasi mulai keliatan"
+                        elif ret_3m < 0.60:
+                            stage = "🟠 ACCELERATING"
+                            stage_color = "#f97316"
+                            desc = "Trend confirmed, masih ada runway sebelum parabolic"
+                        else:
+                            stage = "🔴 LATE STAGE"
+                            stage_color = "#ef4444"
+                            desc = "Sudah hot, hati2 chase"
+                        next_sndk_candidates.append({
+                            "ticker": tkr, "theme": theme, "conf": conf,
+                            "stage": stage, "stage_color": stage_color, "desc": desc,
+                            "px": cur_px, "ret_1m": ret_1m, "ret_3m": ret_3m, "ret_12m": ret_12m,
+                        })
+                except Exception:
+                    pass
+
+        # Sort: EARLY > BUILDING > ACCELERATING (catch before too late)
+        stage_priority = {"🟢 EARLY": 0, "🟡 BUILDING": 1, "🟠 ACCELERATING": 2, "🔴 LATE STAGE": 3}
+        next_sndk_candidates.sort(key=lambda x: (stage_priority.get(x["stage"], 9), -x["conf"]))
+
+        if next_sndk_candidates:
+            ns_html = "<div style='display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:10px; margin-top:10px;'>"
+            for cand in next_sndk_candidates[:9]:  # Top 9
+                ret_12m_str = f" · 12M {cand['ret_12m']*100:+.0f}%" if cand['ret_12m'] is not None else ""
+                ns_html += f"""<div style='background:{cand['stage_color']}11; border:1px solid {cand['stage_color']}55; border-left:3px solid {cand['stage_color']}; border-radius:8px; padding:10px 12px;'>
+                  <div style='display:flex; justify-content:space-between; align-items:baseline; margin-bottom:4px;'>
+                    <div style='font-size:13px; font-weight:700;'>{cand['ticker']}</div>
+                    <div style='font-size:10px; font-weight:600; color:{cand['stage_color']};'>{cand['stage']}</div>
+                  </div>
+                  <div style='font-size:10px; opacity:0.75; margin-bottom:4px;'>🎯 {cand['theme']} ({cand['conf']*100:.0f}%)</div>
+                  <div style='font-size:11px; line-height:1.4;'>{cand['desc']}</div>
+                  <div style='font-size:10px; opacity:0.7; margin-top:4px; font-variant-numeric:tabular-nums;'>
+                    Px ${cand['px']:.2f} · 1M {cand['ret_1m']*100:+.0f}% · 3M {cand['ret_3m']*100:+.0f}%{ret_12m_str}
+                  </div>
+                </div>"""
+            ns_html += "</div>"
+            st.markdown(_html(ns_html), unsafe_allow_html=True)
+            st.caption("💡 Cara pakai: EARLY = watchlist + size kecil (1-2%). BUILDING = BELI dengan stop ketat. ACCELERATING = chase hati2. LATE STAGE = JANGAN CHASE, tunggu pullback.")
+        else:
+            st.info("🔍 Belum ada kandidat pre-explosion saat ini. Tunggu bottleneck baru muncul di Discovery Brain Proaktif.")
+    except Exception as e:
+        st.caption(f"NEXT SNDK scanner: tidak dapat memproses ({str(e)[:50]})")
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: HEALTH
