@@ -1,4 +1,4 @@
-"""app.py - MacroRegime Pro v32.0 VISUAL
+"""app.py - MacroRegime Pro v32.1 FIX
 Major rewrite:
 - Dashboard: regime + narrative + metrics + boom-bust + behavioral + allocation + scenarios + bottlenecks + asset pulse + deep technical
 - Alpha Center: bottleneck + front-run + quad rotation candidates
@@ -981,7 +981,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v32.0 VISUAL | Deep Options")
+    st.caption("v32.1 FIX | Deep Options")
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
@@ -1785,4 +1785,4 @@ elif page == "📖 Themes": page_themes()
 
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v32.0 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v32.1 FIX · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
