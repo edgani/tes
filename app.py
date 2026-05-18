@@ -1,4 +1,4 @@
-"""app.py — MacroRegime Pro v30.1 VISUAL
+"""app.py - MacroRegime Pro v30.1 VISUAL
 Visual-first rewrite:
 - Sparkline + risk range bar + dot + badge ticker cards
 - 3-panel regime bar chart (top dashboard)
@@ -21,7 +21,7 @@ logger = __import__('logging').getLogger(__name__)
 st.set_page_config(page_title="MacroRegime Pro v30", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
-# DESIGN SYSTEM CSS — v30 VISUAL
+# DESIGN SYSTEM CSS - v30 VISUAL
 # ═══════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
@@ -159,12 +159,12 @@ def _safe_float(v):
     except: return None
 
 def fp(v):
-    try: return f"{float(v):.1%}" if v is not None and math.isfinite(float(v)) else "—"
-    except: return "—"
+    try: return f"{float(v):.1%}" if v is not None and math.isfinite(float(v)) else "-"
+    except: return "-"
 
 def ff(v, d=2):
-    try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "—"
-    except: return "—"
+    try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "-"
+    except: return "-"
 
 def _price_ret(ticker, prices, days=21):
     s = prices.get(ticker)
@@ -205,7 +205,7 @@ def _sparkline_html(series, width=90, height=28, bars=20):
 
 def _risk_range_html(px, lrr, trr, width_pct=100):
     if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
-        return ''<div class="rr-track" style="height:18px;background:#21262D;border-radius:4px;"></div><div class="rr-labels"><span>—</span><span>—</span></div>''
+        return ''<div class="rr-track" style="height:18px;background:#21262D;border-radius:4px;"></div><div class="rr-labels"><span>-</span><span>-</span></div>''
     px, lrr, trr = float(px), float(lrr), float(trr)
     spread = trr - lrr
     pos = max(0, min(1, (px - lrr) / spread)) if spread > 0 else 0.5
@@ -273,7 +273,7 @@ def _timeline_html(stage="INCEPTION"):
 def _skew_bars_html(d30=None, d60=None, d90=None):
     def bar(label, val):
         if val is None:
-            return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:0%;background:#30363D;"></div></div><span class="skew-value">—</span></div>''
+            return f''<div class="skew-row"><span class="skew-label">{label}</span><div class="skew-track"><div class="skew-fill" style="width:0%;background:#30363D;"></div></div><span class="skew-value">-</span></div>''
         v = float(val)
         pct = max(5, min(100, abs(v) * 200))
         color = "#3FB950" if v > 0.05 else "#F85149" if v < -0.05 else "#D29922"
@@ -301,7 +301,7 @@ def _heatmap_grid_html(items, key_label="name", key_quad="quad"):
     for it in items:
         q = it.get(key_quad, "Q3")
         color = _quad_color(q)
-        name = it.get(key_label, "—")
+        name = it.get(key_label, "-")
         html += f''<div class="hm-cell" style="background:{color}18;border-color:{color}40;">{name}<div style="font-size:0.55rem;color:{color};margin-top:2px;">{q}</div></div>''
     html += ''</div>''
     return html
@@ -311,7 +311,7 @@ def _asset_pulse_box(label, ret, sub=""):
     if ret is not None:
         txt = f"{ret:+.1%}"
     else:
-        txt = "—"
+        txt = "-"
     return f''<div class="pulse-box" style="background:{c}15;border-color:{c}30;"><div>{txt}</div><div class="pulse-label">{label}</div>{f"<div style='font-size:0.55rem;color:#8B949E;margin-top:1px;'>{sub}</div>" if sub else ""}</div>''
 
 # ═══════════════════════════════════════════════════════════════════
@@ -399,9 +399,9 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
     sector = IHSG_SECTOR_MAP.get(ticker, "Indonesia")
     row["sector"] = sector
     r1m = row.get("r1m", 0) or 0
-    if r1m > 0.05: row["recommendation"] = f"Strong momentum +{r1m:.1%} — {sector} play"
-    elif r1m < -0.05: row["recommendation"] = f"Weak momentum {r1m:.1%} — avoid {sector}"
-    else: row["recommendation"] = f"{sector} — range bound, wait for breakout"
+    if r1m > 0.05: row["recommendation"] = f"Strong momentum +{r1m:.1%} - {sector} play"
+    elif r1m < -0.05: row["recommendation"] = f"Weak momentum {r1m:.1%} - avoid {sector}"
+    else: row["recommendation"] = f"{sector} - range bound, wait for breakout"
     return row
 
 def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None):
@@ -477,7 +477,7 @@ def render_ticker_card(row, expanded=False):
 
         if row.get("gamma_regime") or row.get("max_pain"):
             o1, o2, o3, o4 = st.columns(4)
-            o1.metric("Gamma", row.get("gamma_regime", "—"))
+            o1.metric("Gamma", row.get("gamma_regime", "-"))
             o2.metric("Max Pain", ff(row.get("max_pain")))
             o3.metric("Put Wall", ff(row.get("put_wall")))
             o4.metric("Call Wall", ff(row.get("call_wall")))
@@ -583,8 +583,8 @@ with st.sidebar:
     _s = st.session_state.snap
     if _s and _s.get("ok"):
         _g = _s.get("gip")
-        _sq = _g.structural_quad if _g else "—"
-        _mq = _g.monthly_quad if _g else "—"
+        _sq = _g.structural_quad if _g else "-"
+        _mq = _g.monthly_quad if _g else "-"
         color = _quad_color(_sq)
         st.markdown(
             f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">''
@@ -657,7 +657,7 @@ def page_dashboard():
         st.markdown(
             f''<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;">''
             f''<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.6px;font-weight:600;">Markov Regime</div>''
-            f''<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","—").replace("_"," ")}</div>''
+            f''<div style="font-size:1.1rem;font-weight:700;color:#E6EDF3;margin-top:4px;">{markov.get("current_regime","-").replace("_"," ")}</div>''
             f''<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Conf {markov.get("confidence",0):.0%}</div></div>'',
             unsafe_allow_html=True
         )
@@ -724,8 +724,8 @@ def page_dashboard():
                 gc = "#3FB950" if grade in ("A","A+") else "#D29922" if grade=="B" else "#8B949E"
                 st.markdown(
                     f''<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:3px 0;font-size:0.82rem;">''
-                    f''<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","—")}</span>''
-                    f''<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","—")}</span>''
+                    f''<span style="font-weight:700;min-width:50px;color:#E6EDF3;">{item.get("ticker","-")}</span>''
+                    f''<span style="color:{dir_color};font-weight:600;min-width:45px;">{item.get("direction","-")}</span>''
                     f''<span style="background:{gc}22;color:{gc};padding:1px 6px;border-radius:4px;font-size:0.7rem;font-weight:600;border:1px solid {gc};">{grade}</span>''
                     f''<span style="color:#8B949E;flex:1;text-align:right;">{str(item.get("thesis",""))[:55]}</span></div>'',
                     unsafe_allow_html=True
@@ -795,7 +795,7 @@ def page_dashboard():
                 color = "#3FB950" if "BULLISH" in sig else "#F85149" if "BEARISH" in sig else "#D29922"
                 st.markdown(
                     f''<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">''
-                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","—")}</span>''
+                    f''<span style="font-size:0.8rem;color:#E6EDF3;">{r.get("ticker","-")}</span>''
                     f''<span style="font-size:0.75rem;color:{color};font-weight:600;">{str(sig)[:20]}</span></div>'',
                     unsafe_allow_html=True
                 )
@@ -842,7 +842,7 @@ def page_dashboard():
                         score = item.get("vrp_pct", 0)
                         st.markdown(
                             f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
-                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>''
+                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","-")}</span>''
                             f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>''
                             f''<span style="font-size:0.7rem;color:#F85149;font-weight:700;width:40px;text-align:right;">{score:.0f}%</span></div>'',
                             unsafe_allow_html=True
@@ -858,7 +858,7 @@ def page_dashboard():
                         score = item.get("squeeze_score", 0)
                         st.markdown(
                             f''<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">''
-                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","—")}</span>''
+                            f''<span style="font-size:0.75rem;color:#E6EDF3;min-width:50px;">{item.get("ticker","-")}</span>''
                             f''<div class="gauge-track" style="flex:1;height:10px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>''
                             f''<span style="font-size:0.7rem;color:#D29922;font-weight:700;width:40px;text-align:right;">{score:.0f}</span></div>'',
                             unsafe_allow_html=True
@@ -894,7 +894,7 @@ def page_alpha():
     # ── TOP SUMMARY ──
     summary = snap.get("summary", {}) or {}
     k1, k2, k3, k4 = st.columns(4)
-    k1.metric("Markov Regime", str(summary.get("v7_markov_regime", "—")).split("_")[0] if summary.get("v7_markov_regime") else "—")
+    k1.metric("Markov Regime", str(summary.get("v7_markov_regime", "-")).split("_")[0] if summary.get("v7_markov_regime") else "-")
     k2.metric("Smart $ Consensus", summary.get("v7_smart_money_consensus", 0))
     k3.metric("Top Theses", summary.get("v7_top_theses_count", 0))
     k4.metric("Kelly", f"{summary.get('v7_markov_kelly', 0.25):.0%}")
@@ -924,7 +924,7 @@ def page_alpha():
                 alpha_candidates.append({
                     "ticker": ticker, "direction": sig.get("direction"),
                     "confidence": sig.get("confidence", 0), "thesis_score": thesis.get("thesis_score", 0),
-                    "primary_role": thesis.get("primary_role", "—"),
+                    "primary_role": thesis.get("primary_role", "-"),
                     "alpha_score": sig.get("confidence", 0) * 35 + thesis.get("thesis_score", 0) * 0.3 + sm_boost,
                 })
         alpha_candidates.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
@@ -952,7 +952,7 @@ def page_alpha():
                 st.metric("Buy Premium", len(vrp.get("low_vrp_buy_premium", [])))
                 for item in vrp.get("high_vrp_sell_premium", [])[:5]:
                     if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
+                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '-')}")
             else:
                 st.info("VRP scanner unavailable")
 
@@ -964,7 +964,7 @@ def page_alpha():
                 st.metric("Strong", len(sq.get("strong_candidates", [])))
                 for item in sq.get("imminent_squeezes", [])[:5]:
                     if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}")
+                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '-')}")
             else:
                 st.info("Squeeze scanner unavailable")
 
@@ -978,10 +978,10 @@ def page_alpha():
                     st.markdown(f"**{mode.title()}** ({len(items)})")
                     for item in items[:5]:
                         if isinstance(item, dict):
-                            with st.expander(f"{item.get('name', '—').replace('_', ' ')} · conf {item.get('confidence', 0):.0%}"):
-                                st.markdown(item.get("thesis", "—"))
+                            with st.expander(f"{item.get('name', '-').replace('_', ' ')} · conf {item.get('confidence', 0):.0%}"):
+                                st.markdown(item.get("thesis", "-"))
         else:
-            st.info("Discovery Brain — no candidates this snapshot")
+            st.info("Discovery Brain - no candidates this snapshot")
 
         st.markdown("### 💰 Position Sizing")
         sizing = snap.get("portfolio_sizing_v2", {}) or {}
@@ -1098,7 +1098,7 @@ def page_commodities():
         st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.7rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "-") + "</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -1135,7 +1135,7 @@ def page_crypto():
         st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.7rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.82rem; line-height:1.6;'>" + (" · ".join(pb["short"]) if pb["short"] else "-") + "</div>", unsafe_allow_html=True)
 
     st.divider()
 
@@ -1286,7 +1286,7 @@ def page_themes():
                 unsafe_allow_html=True
             )
     else:
-        st.caption("0DTE data unavailable — showing proxy")
+        st.caption("0DTE data unavailable - showing proxy")
         for t in ["SPY","QQQ","IWM"]:
             st.markdown(
                 f''<div style="display:flex;align-items:center;gap:10px;margin:6px 0;padding:8px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">''
@@ -1314,7 +1314,7 @@ def page_themes():
     ]
     for name, desc, data in methodologies:
         status = "🟢" if data else "⚪"
-        with st.expander(f"{status} {name} — {desc}", expanded=False):
+        with st.expander(f"{status} {name} - {desc}", expanded=False):
             if data:
                 st.json({k: str(v)[:100] for k, v in list(data.items())[:3]})
             else:
