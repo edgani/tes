@@ -329,7 +329,7 @@ def _get_options_data(ticker, snap):
         "oi_call": None, "oi_put": None, "pc_ratio": None,
         "iv_rank": None, "iv_percentile": None,
         "mm_positioning": "NEUTRAL", "mm_recommendation": "—",
-        "source": "PROXY",
+        "source": "PROXY", "next_expiry": None, "days_to_expiry": None,
     }
     yf = snap.get("yfinance_options", {}).get(ticker, {}) if isinstance(snap.get("yfinance_options"), dict) else {}
     if isinstance(yf, dict) and yf.get("ok"):
@@ -341,6 +341,10 @@ def _get_options_data(ticker, snap):
         out["gamma_regime"] = yf.get("gamma_regime")
         out["pc_ratio"] = yf.get("put_call_ratio")
         out["source"] = "YF"
+        if yf.get("next_expiry"):
+            out["next_expiry"] = yf.get("next_expiry")
+        if yf.get("days_to_expiry"):
+            out["days_to_expiry"] = yf.get("days_to_expiry")
     greeks = snap.get("greeks_data", {}).get(ticker, {}) if isinstance(snap.get("greeks_data"), dict) else {}
     if isinstance(greeks, dict):
         out["gex"] = greeks.get("net_gex") or greeks.get("gex")
@@ -383,6 +387,54 @@ def _get_options_data(ticker, snap):
         for item in vrp.get("low_vrp_buy_premium", []):
             if isinstance(item, dict) and item.get("ticker") == ticker:
                 out["iv_rank"] = item.get("iv_rank")
+
+    # ── More engine fallbacks ──
+    cem = snap.get("cem_karsan_universal", {}) if isinstance(snap.get("cem_karsan_universal"), dict) else {}
+    if isinstance(cem, dict):
+        for item in cem.get("per_ticker", {}).values() if isinstance(cem.get("per_ticker"), dict) else []:
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                if not out["skew_30d"]: out["skew_30d"] = _safe_float(item.get("skew_30d") or item.get("skew"))
+                if not out["gex"]: out["gex"] = _safe_float(item.get("gex") or item.get("net_gex"))
+                if not out["vanna"]: out["vanna"] = item.get("vanna")
+                if not out["charm"]: out["charm"] = item.get("charm")
+                if not out["gamma_regime"]: out["gamma_regime"] = item.get("gamma_regime")
+                if not out["max_pain"]: out["max_pain"] = _safe_float(item.get("max_pain"))
+                if not out["expected_move_pct"]: out["expected_move_pct"] = _safe_float(item.get("expected_move"))
+
+    spot = snap.get("spotgamma_scanner", {}) if isinstance(snap.get("spotgamma_scanner"), dict) else {}
+    if isinstance(spot, dict) and spot.get("ok"):
+        pt = spot.get("per_ticker_proxy_gex", {}) if isinstance(spot.get("per_ticker_proxy_gex"), dict) else {}
+        if ticker in pt and isinstance(pt[ticker], dict):
+            if not out["gex"]: out["gex"] = _safe_float(pt[ticker].get("gex") or pt[ticker].get("net_gex") or pt[ticker].get("total_gex"))
+            if not out["gamma_regime"]: out["gamma_regime"] = pt[ticker].get("gamma_regime")
+            if not out["max_pain"]: out["max_pain"] = _safe_float(pt[ticker].get("max_pain"))
+
+    karsan = snap.get("karsan_scanner", {}) if isinstance(snap.get("karsan_scanner"), dict) else {}
+    if isinstance(karsan, dict) and karsan.get("ok"):
+        for item in karsan.get("per_ticker", {}).values() if isinstance(karsan.get("per_ticker"), dict) else []:
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                if not out["skew_30d"]: out["skew_30d"] = _safe_float(item.get("skew") or item.get("skew_30d"))
+                if not out["expected_move_pct"]: out["expected_move_pct"] = _safe_float(item.get("expected_move"))
+
+    aft = snap.get("afternoon_data", {}) if isinstance(snap.get("afternoon_data"), dict) else {}
+    if isinstance(aft, dict) and ticker in aft:
+        a = aft[ticker]
+        if isinstance(a, dict):
+            if not out["vanna"]: out["vanna"] = a.get("vanna")
+            if not out["charm"]: out["charm"] = a.get("charm")
+
+    struct = snap.get("structure_data", {}) if isinstance(snap.get("structure_data"), dict) else {}
+    if isinstance(struct, dict) and ticker in struct:
+        s = struct[ticker]
+        if isinstance(s, dict):
+            if not out["gamma_regime"]: out["gamma_regime"] = s.get("gamma_regime")
+
+    volga = snap.get("volga_data", {}) if isinstance(snap.get("volga_data"), dict) else {}
+    if isinstance(volga, dict) and volga.get("ok"):
+        vt = volga.get("per_ticker", {}) if isinstance(volga.get("per_ticker"), dict) else {}
+        if ticker in vt and isinstance(vt[ticker], dict):
+            if not out["skew_30d"]: out["skew_30d"] = _safe_float(vt[ticker].get("skew"))
+
     px = None
     prices = snap.get("prices", {})
     if ticker in prices:
@@ -407,6 +459,14 @@ def _get_options_data(ticker, snap):
     else:
         out["mm_positioning"] = "UNKNOWN"
         out["mm_recommendation"] = "Insufficient options data for MM positioning."
+
+    # ── Fallback proxy: fill any missing fields from price action ──
+    proxy = _options_proxy_for_ticker_local(ticker, snap.get("prices", {}))
+    if proxy:
+        for k, v in proxy.items():
+            if out.get(k) is None:
+                out[k] = v
+
     return out
 
 def _skew_curve_proxy_html(ticker, options_data, width=300, height=120):
@@ -470,6 +530,101 @@ def _build_dark_pool_proxy(snap, prices):
             prints.append({"time": "Consensus", "ticker": t, "price": px, "size": size, "amount": amt, "side": "BUY"})
     prints.sort(key=lambda x: x["amount"], reverse=True)
     return prints[:15]
+
+def _get_next_expiry(days_to_add=21):
+    """Proxy: next monthly options expiry (3rd Friday) or just +21 days"""
+    from datetime import datetime, timedelta
+    d = datetime.now() + timedelta(days=days_to_add)
+    while d.weekday() != 4:
+        d += timedelta(days=1)
+    return d.strftime("%b %d")
+
+def _options_proxy_for_ticker_local(ticker, prices):
+    """Local fallback when snap options data is empty."""
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 20):
+        return {}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 20:
+            return {}
+        px = float(s_clean.iloc[-1])
+        sma20 = float(s_clean.tail(20).mean())
+        std20 = float(s_clean.tail(20).std())
+        if std20 == 0 or not all(math.isfinite(v) for v in [px, sma20, std20]):
+            return {}
+        max_pain = round(sma20, 2)
+        put_wall = round(sma20 - std20 * 2.0, 2)
+        call_wall = round(sma20 + std20 * 2.0, 2)
+        gamma_flip_up = round(sma20 + std20 * 1.5, 2)
+        gamma_flip_down = round(sma20 - std20 * 1.5, 2)
+        mp_dist = (px - max_pain) / max_pain if max_pain != 0 else 0
+        r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
+        r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else 0
+        if r5d > 0.03 and r20d > 0.05:
+            gamma_regime = "DEEP_POSITIVE"
+        elif r5d > 0.01 and r20d > 0.02:
+            gamma_regime = "POSITIVE"
+        elif r5d < -0.03 and r20d < -0.05:
+            gamma_regime = "DEEP_NEGATIVE"
+        elif r5d < -0.01 and r20d < -0.02:
+            gamma_regime = "NEGATIVE"
+        else:
+            gamma_regime = "TRANSITION"
+        returns = s_clean.tail(20).pct_change().dropna()
+        skew_val = float(returns.skew()) if len(returns) > 5 else 0.0
+        skew_30d = skew_val * 0.5
+        gex_proxy = -mp_dist * 5.0
+        vanna_proxy = r5d * 10.0
+        r11 = float(s_clean.iloc[-6] / s_clean.iloc[-11] - 1) if len(s_clean) >= 11 else r5d
+        charm_proxy = (r5d - r11) * 20.0
+        vol_20 = float(returns.std() * math.sqrt(252)) if len(returns) > 1 else 0.2
+        hist_vol = float(s_clean.tail(60).pct_change().dropna().std() * math.sqrt(252)) if len(s_clean) >= 60 else vol_20
+        iv_rank = min(100, max(0, (vol_20 / hist_vol * 50))) if hist_vol > 0 else 50
+        expected_move = vol_20 / math.sqrt(12)
+        pc_ratio = 0.8 if r20d > 0.05 else (1.2 if r20d < -0.05 else 1.0)
+        return {
+            "max_pain": max_pain, "put_wall": put_wall, "call_wall": call_wall,
+            "gamma_flip_up": gamma_flip_up, "gamma_flip_down": gamma_flip_down,
+            "gamma_regime": gamma_regime, "gex": gex_proxy, "vanna": vanna_proxy,
+            "charm": charm_proxy, "skew_30d": skew_30d, "skew_60d": skew_30d * 0.8,
+            "skew_90d": skew_30d * 0.6, "mp_dist": mp_dist, "iv_rank": iv_rank,
+            "expected_move_pct": expected_move, "pc_ratio": pc_ratio,
+            "source": "PROXY", "next_expiry": _get_next_expiry(), "days_to_expiry": 21,
+        }
+    except Exception:
+        return {}
+
+def _get_dark_pool_for_ticker(ticker, snap):
+    """Get dark pool print for specific ticker from snap."""
+    if not snap:
+        return None
+    inst = snap.get("institutional_data", {}) if isinstance(snap.get("institutional_data"), dict) else {}
+    if inst.get("per_ticker"):
+        data = inst.get("per_ticker", {}).get(ticker)
+        if isinstance(data, dict) and data.get("anomaly_score", 0) > 0.6:
+            px = None
+            prices = snap.get("prices", {})
+            if ticker in prices:
+                try: px = float(pd.to_numeric(pd.Series(prices[ticker]), errors="coerce").dropna().iloc[-1])
+                except: pass
+            if px:
+                size = int(data.get("volume_anomaly", 0) * 1000)
+                return {"size": size, "price": px, "amount": size * px,
+                        "side": "BUY" if data.get("buy_pressure", 0) > data.get("sell_pressure", 0) else "SELL",
+                        "time": "Live"}
+    fr = snap.get("front_run_candidates", []) or []
+    for item in fr:
+        if not isinstance(item, dict): continue
+        if item.get("ticker") == ticker:
+            px = None
+            prices = snap.get("prices", {})
+            if ticker in prices:
+                try: px = float(pd.to_numeric(pd.Series(prices[ticker]), errors="coerce").dropna().iloc[-1])
+                except: pass
+            if px:
+                return {"size": 250000, "price": px, "amount": 250000 * px, "side": "BUY", "time": "Consensus"}
+    return None
 
 # ═══════════════════════════════════════════════════════════════════
 # RISK RANGE / ROW BUILDERS (ENRICHED WITH OPTIONS)
@@ -635,6 +790,13 @@ def render_ticker_card_v4(row, expanded=False):
     if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
     if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
     if mm_pos and mm_pos != "UNKNOWN": badges += _badge_html(mm_pos, "mm")
+    alpha_src = row.get("alpha_source", "")
+    alpha_score = row.get("alpha_score", 0)
+    if alpha_src:
+        src_emoji = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(alpha_src,"⚡")
+        badges += _badge_html(f"{src_emoji} {alpha_src.replace('_',' ').title()}", "mm")
+    if alpha_score:
+        badges += _badge_html(f"α{alpha_score}", "a" if alpha_score >= 80 else "b" if alpha_score >= 70 else "c")
 
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
@@ -650,6 +812,12 @@ def render_ticker_card_v4(row, expanded=False):
     st.markdown(card_html, unsafe_allow_html=True)
 
     with st.expander("🎯 Trade Setup", expanded=expanded):
+        # Alpha thesis if present
+        alpha_thesis = row.get("alpha_thesis", "")
+        alpha_src = row.get("alpha_source", "")
+        if alpha_thesis:
+            src_emoji = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(alpha_src,"⚡")
+            st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;margin-bottom:6px;padding:6px 8px;background:#161B22;border-left:3px solid #A855F7;border-radius:4px;"><b>{src_emoji} {alpha_src.replace("_"," ").title()} Thesis:</b> {alpha_thesis}</div>', unsafe_allow_html=True)
         # Basis explanation
         basis_html = '<div style="font-size:0.7rem;color:#8B949E;margin-bottom:8px;">'
         basis_parts = []
@@ -688,20 +856,41 @@ def render_ticker_card_v4(row, expanded=False):
                 unsafe_allow_html=True
             )
 
+        # Dark Pool for this ticker
+        market_type = row.get("market_type", "us_equity")
+        show_options = market_type != "ihsg"
+        if show_options:
+            dp = _get_dark_pool_for_ticker(ticker, st.session_state.snap)
+            if dp:
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                    f'<div style="font-size:0.65rem;color:#A855F7;text-transform:uppercase;font-weight:600;margin-bottom:4px;">🌑 Dark Pool Print</div>'
+                    f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#E6EDF3;">'
+                    f'<span>{dp.get("side","—")} {dp.get("size",0):,.0f} @ ${ff(dp.get("price"))}</span>'
+                    f'<span style="color:#3FB950;font-weight:700;">${dp.get("amount",0)/1e6:.1f}M</span></div></div>',
+                    unsafe_allow_html=True
+                )
+
         # Options detail columns
-        if options.get("gamma_regime") or options.get("max_pain"):
-            o1, o2, o3, o4 = st.columns(4)
+        if show_options and (options.get("gamma_regime") or options.get("max_pain")):
+            o1, o2, o3, o4, o5 = st.columns(5)
             o1.metric("Gamma", options.get("gamma_regime", "-"))
             o2.metric("Max Pain", ff(options.get("max_pain")))
             o3.metric("Put Wall", ff(options.get("put_wall")))
             o4.metric("Call Wall", ff(options.get("call_wall")))
+            expiry_text = f"{options.get('days_to_expiry','—')}D" if options.get('days_to_expiry') else "—"
+            expiry_date = options.get("next_expiry", "")
+            if expiry_date and options.get("days_to_expiry"):
+                o5.metric("Expiry", f"{expiry_date} ({expiry_text})")
+            else:
+                o5.metric("Expiry", expiry_text)
 
         # Skew Curve Proxy
-        if options.get("skew_30d") is not None or options.get("skew_60d") is not None:
+        if show_options and (options.get("skew_30d") is not None or options.get("skew_60d") is not None):
             st.markdown(_skew_curve_proxy_html(ticker, options, width=300, height=100), unsafe_allow_html=True)
 
         # Greeks mini
-        if options.get("gex") is not None or options.get("vanna") is not None or options.get("charm") is not None:
+        if show_options and (options.get("gex") is not None or options.get("vanna") is not None or options.get("charm") is not None):
             g1, g2, g3 = st.columns(3)
             g1.metric("GEX", f"{options.get('gex',0):+.2f}" if options.get('gex') is not None else "-")
             g2.metric("Vanna", str(options.get("vanna","-"))[:10])
@@ -1046,27 +1235,6 @@ def page_dashboard():
 
     st.divider()
 
-    # Dark Pool Proxy
-    st.markdown("### 🌑 Dark Pool Prints (Proxy)")
-    dp_prints = _build_dark_pool_proxy(snap, prices)
-    if dp_prints:
-        st.markdown(f'<div style="display:flex;gap:8px;padding:4px 8px;background:#21262D;border-radius:6px 6px 0 0;font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">'
-                    f'<span style="width:60px;">Time</span><span style="width:55px;">Ticker</span><span style="width:60px;">Price</span>'
-                    f'<span style="width:70px;text-align:right;">Size</span><span style="width:65px;text-align:right;">Amount</span></div>', unsafe_allow_html=True)
-        for p in dp_prints[:10]:
-            side_cls = "sell" if p.get("side") == "SELL" else ""
-            st.markdown(
-                f'<div class="dp-row">'
-                f'<span class="dp-time">{p.get("time","—")}</span>'
-                f'<span class="dp-ticker">{p.get("ticker","—")}</span>'
-                f'<span class="dp-price">${ff(p.get("price"))}</span>'
-                f'<span class="dp-size">{p.get("size",0):,.0f}</span>'
-                f'<span class="dp-amt {side_cls}">${p.get("amount",0)/1e6:.1f}M</span>'
-                f'</div>', unsafe_allow_html=True
-            )
-    else:
-        st.caption("No dark pool proxy data available")
-
     st.divider()
 
     with st.expander("🔬 Deep Technical", expanded=False):
@@ -1160,62 +1328,37 @@ def page_alpha():
             for item in bottleneck.get("active_bottlenecks", []) or []:
                 if not isinstance(item, dict): continue
                 for t in item.get("beneficiaries", [])[:5]:
-                    alpha_candidates.append({
-                        "ticker": t, "source": "bottleneck", "score": 85,
-                        "thesis": f"Bottleneck: {item.get('name','').replace('_',' ').title()}",
-                        "direction": "LONG",
-                    })
+                    alpha_candidates.append({"ticker": t, "source": "bottleneck", "score": 85, "thesis": f"Bottleneck: {item.get('name','').replace('_',' ').title()}", "direction": "LONG"})
 
         # 2. Front-run candidates
         fr = snap.get("front_run_candidates", []) or []
         for item in fr[:15]:
             if not isinstance(item, dict): continue
-            alpha_candidates.append({
-                "ticker": item.get("ticker",""), "source": "front_run", "score": 75,
-                "thesis": item.get("why_front_run", "")[:80],
-                "direction": "LONG",
-                "options": item.get("options", {}),
-            })
+            alpha_candidates.append({"ticker": item.get("ticker",""), "source": "front_run", "score": 75, "thesis": item.get("why_front_run", "")[:80], "direction": "LONG", "options": item.get("options", {})})
 
         # 3. Leopold asymmetry setups
         leopold = snap.get("leopold_scan", {}) or {}
         if isinstance(leopold, dict):
             for t in leopold.get("asymmetry_setups", []) or []:
                 if isinstance(t, dict):
-                    alpha_candidates.append({
-                        "ticker": t.get("ticker",""), "source": "leopold", "score": 80,
-                        "thesis": t.get("thesis", "Asymmetry setup"),
-                        "direction": t.get("direction", "LONG"),
-                    })
+                    alpha_candidates.append({"ticker": t.get("ticker",""), "source": "leopold", "score": 80, "thesis": t.get("thesis", "Asymmetry setup"), "direction": t.get("direction", "LONG")})
 
         # 4. Karsan squeeze setups
         karsan = snap.get("karsan_scanner", {}) or {}
         if isinstance(karsan, dict):
             for t in karsan.get("squeeze_setups", []) or []:
                 if isinstance(t, dict):
-                    alpha_candidates.append({
-                        "ticker": t.get("ticker",""), "source": "karsan_squeeze", "score": 78,
-                        "thesis": f"Squeeze setup · Score {t.get('squeeze_score',0):.0f}",
-                        "direction": "LONG",
-                    })
+                    alpha_candidates.append({"ticker": t.get("ticker",""), "source": "karsan_squeeze", "score": 78, "thesis": f"Squeeze setup · Score {t.get('squeeze_score',0):.0f}", "direction": "LONG"})
             for t in karsan.get("buy_convexity", []) or []:
                 if isinstance(t, dict):
-                    alpha_candidates.append({
-                        "ticker": t.get("ticker",""), "source": "karsan_convexity", "score": 72,
-                        "thesis": "Buy convexity — vol expansion play",
-                        "direction": "LONG",
-                    })
+                    alpha_candidates.append({"ticker": t.get("ticker",""), "source": "karsan_convexity", "score": 72, "thesis": "Buy convexity — vol expansion play", "direction": "LONG"})
 
         # 5. COATUE agentic plays
         coatue = snap.get("coatue_scan", {}) or {}
         if isinstance(coatue, dict):
             for t in coatue.get("agentic_plays", []) or []:
                 if isinstance(t, dict):
-                    alpha_candidates.append({
-                        "ticker": t.get("ticker",""), "source": "coatue", "score": 70,
-                        "thesis": t.get("thesis", "Agentic play"),
-                        "direction": "LONG",
-                    })
+                    alpha_candidates.append({"ticker": t.get("ticker",""), "source": "coatue", "score": 70, "thesis": t.get("thesis", "Agentic play"), "direction": "LONG"})
 
         # Deduplicate by ticker, keep highest score
         seen = {}
@@ -1232,20 +1375,25 @@ def page_alpha():
             st.info(f"No alpha candidates this snapshot. Total analyzed: {len(alpha_candidates)}. Run orchestrator with all engines enabled.")
         else:
             st.markdown(f"**{len(top_alpha)} alpha candidates** from {len(alpha_candidates)} total (bar: ≥60/100)")
-            for i, c in enumerate(top_alpha):
-                dir_color = "#3FB950" if c.get("direction") == "LONG" else "#F85149"
-                source_badge = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(c.get("source"),"⚡")
-                with st.expander(f"#{i+1} {c['ticker']} · Score {c['score']}/100 · {source_badge} {c.get('source','').replace('_',' ').title()}", expanded=(i < 3)):
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Direction", c.get("direction", "—"))
-                    c2.metric("Source", c.get("source", "—").replace("_", " ").title())
-                    c3.metric("Score", c.get("score", 0))
-                    st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;margin-top:4px;">{c.get("thesis", "—")}</div>', unsafe_allow_html=True)
-                    # If has options, show risk range
-                    if c.get("options") and isinstance(c["options"], dict):
-                        opt = c["options"]
-                        if opt.get("max_pain"):
-                            st.markdown(f'<div style="font-size:0.72rem;color:#8B949E;">Max Pain: {ff(opt["max_pain"])} · Put Wall: {ff(opt.get("put_wall"))} · Call Wall: {ff(opt.get("call_wall"))}</div>', unsafe_allow_html=True)
+            # Build visual rows for alpha tickers
+            alpha_tickers = [c["ticker"] for c in top_alpha if c.get("ticker")]
+            alpha_rows = build_ticker_rows(alpha_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
+            # Enrich with alpha metadata
+            for row in alpha_rows:
+                c = seen.get(row.get("ticker"), {})
+                if c:
+                    row["alpha_source"] = c.get("source", "")
+                    row["alpha_score"] = c.get("score", 0)
+                    row["alpha_thesis"] = c.get("thesis", "")
+                    row["direction"] = c.get("direction", row.get("direction", "LONG"))
+            # Split long/short and render
+            longs, shorts = split_long_short(alpha_rows)
+            if longs:
+                st.markdown(f"<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🟢 Long Setups ({len(longs)})</div>", unsafe_allow_html=True)
+                render_ticker_cards_v4(longs, max_rows=20)
+            if shorts:
+                st.markdown(f"<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🔴 Short Setups ({len(shorts)})</div>", unsafe_allow_html=True)
+                render_ticker_cards_v4(shorts, max_rows=20)
 
     with tab2:
         st.markdown("### 🔮 Front-Run Candidates")
@@ -1354,26 +1502,34 @@ def page_us_stocks():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
 
-    # Aggregate Options Section for key ETFs
+    # Index ETF visual setups
     st.divider()
-    st.markdown("### 📊 Index / ETF Options (SPY · QQQ · IWM · GLD · TLT)")
+    st.markdown("### 📊 Index / ETF Setups (SPY · QQQ · IWM · GLD · TLT)")
     key_etfs = ["SPY", "QQQ", "IWM", "GLD", "TLT"]
-    for etf in key_etfs:
-        opt = _get_options_data(etf, snap)
-        if opt.get("max_pain") or opt.get("gamma_regime"):
-            with st.expander(f"{etf} · Gamma: {opt.get('gamma_regime','—')} · Max Pain: {ff(opt.get('max_pain'))}", expanded=False):
-                c1, c2, c3, c4, c5 = st.columns(5)
-                c1.metric("Max Pain", ff(opt.get("max_pain")))
-                c2.metric("Put Wall", ff(opt.get("put_wall")))
-                c3.metric("Call Wall", ff(opt.get("call_wall")))
-                c4.metric("GEX", f"{opt.get('gex',0):+.2f}" if opt.get('gex') is not None else "-")
-                c5.metric("Vanna", str(opt.get("vanna","-"))[:8])
-                # Skew curve
-                if opt.get("skew_30d") is not None or opt.get("skew_60d") is not None:
-                    st.markdown(_skew_curve_proxy_html(etf, opt, width=280, height=90), unsafe_allow_html=True)
-                # MM recommendation
-                if opt.get("mm_recommendation"):
-                    st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
+    etf_rows = build_ticker_rows(key_etfs, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
+    etf_longs, etf_shorts = split_long_short(etf_rows)
+    if etf_longs:
+        st.markdown(f"<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>🟢 Long Bias</div>", unsafe_allow_html=True)
+        render_ticker_cards_v4(etf_longs, max_rows=10)
+    if etf_shorts:
+        st.markdown(f"<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>🔴 Short Bias</div>", unsafe_allow_html=True)
+        render_ticker_cards_v4(etf_shorts, max_rows=10)
+    # Fallback: if no rows built (missing price data), show raw options
+    if not etf_rows:
+        for etf in key_etfs:
+            opt = _get_options_data(etf, snap)
+            if opt.get("max_pain") or opt.get("gamma_regime"):
+                with st.expander(f"{etf} · Gamma: {opt.get('gamma_regime','—')} · Max Pain: {ff(opt.get('max_pain'))}", expanded=False):
+                    c1, c2, c3, c4, c5 = st.columns(5)
+                    c1.metric("Max Pain", ff(opt.get("max_pain")))
+                    c2.metric("Put Wall", ff(opt.get("put_wall")))
+                    c3.metric("Call Wall", ff(opt.get("call_wall")))
+                    c4.metric("GEX", f"{opt.get('gex',0):+.2f}" if opt.get('gex') is not None else "-")
+                    c5.metric("Expiry", f"{opt.get('days_to_expiry','—')}D")
+                    if opt.get("skew_30d") is not None or opt.get("skew_60d") is not None:
+                        st.markdown(_skew_curve_proxy_html(etf, opt, width=280, height=90), unsafe_allow_html=True)
+                    if opt.get("mm_recommendation"):
+                        st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -1563,40 +1719,6 @@ def page_themes():
     st.markdown("### 💼 Portfolio Allocation")
     st.markdown(_stacked_bar_html(alloc["long"], alloc["short"], alloc["cash"]), unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:0.78rem; color:#8B949E; margin-top:6px;'>**Style:** {alloc['style']}</div>", unsafe_allow_html=True)
-    st.divider()
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("### 🌀 Boom-Bust Stage")
-        bb = snap.get("boom_bust", {}) or {}
-        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
-        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
-        reflex = snap.get("reflexivity", {}) or {}
-        if isinstance(reflex, dict):
-            score = reflex.get("super_bubble_score", 0)
-            st.markdown(f'<div style="margin-top:8px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
-            st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
-    with c2:
-        st.markdown("### 🧠 Behavioral Macro (Yves)")
-        behavioral = snap.get("behavioral_macro", {}) or {}
-        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-        if isinstance(yves, dict):
-            alert = yves.get("alert", "No alert")
-            level = yves.get("alert_level", "NONE")
-            color = "#F85149" if level in ("HIGH", "CRITICAL") else "#D29922" if level == "MEDIUM" else "#3FB950"
-            st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
-        else: st.caption("Behavioral macro unavailable")
-    st.divider()
-    st.markdown("### 🚧 Active Bottlenecks")
-    bottlenecks = ((snap.get("narrative", {}) or {}).get("active_bottlenecks", []) or []) if isinstance(snap.get("narrative"), dict) else []
-    if bottlenecks:
-        for b in bottlenecks[:5]:
-            if not isinstance(b, dict): continue
-            beneficiaries = ", ".join(b.get("beneficiaries", [])[:5])
-            st.markdown(f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:7px 10px;margin:3px 0;">'
-                        f'<div style="font-size:0.82rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
-                        f'<div style="font-size:0.72rem;color:#8B949E;margin-top:3px;">Beneficiaries: {beneficiaries}</div></div>', unsafe_allow_html=True)
-    else: st.info("No active bottlenecks detected.")
     st.divider()
     st.markdown("### ⚡ Cem Karsan / 0DTE")
     odte = snap.get("odte_monitor", {}) or {}
