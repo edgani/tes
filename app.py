@@ -1,9 +1,10 @@
-"""app.py - MacroRegime Pro v31.0 VISUAL
-Complete redesign based on user feedback:
-- Dashboard: zero tickers, regime-fusion visual, macro narrative first
-- Alpha Center: loosened filters so candidates actually appear
-- Regime bars merged with Markov into unified compass
-- Cleaner visual system, reduced clutter, premium dark UI
+"""app.py - MacroRegime Pro v31.1 VISUAL
+Critical fixes from screenshot audit:
+- Ticker cards: render HTML via markdown instead of expander label (fixes raw HTML text bug)
+- Asset Pulse: single horizontal row, compact
+- Regime Compass removed from market tabs (only Dashboard + Alpha Center)
+- Alpha Center: enriched per-ticker cards with risk range + badges
+- Added missing orchestrator fields: crypto_center, behavioral_macro, front_run_candidates, dxy_correlation, vol_forecast, stress_test, reflexivity
 """
 import streamlit as st
 import pandas as pd
@@ -19,7 +20,7 @@ logger = __import__("logging").getLogger(__name__)
 st.set_page_config(page_title="MacroRegime Pro v31", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
-# DESIGN SYSTEM CSS — Premium Dark, Clean, Spacious
+# DESIGN SYSTEM CSS
 # ═══════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
@@ -34,21 +35,21 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 [data-testid="stMetricLabel"] { font-size: 0.58rem !important; font-weight: 600 !important; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.55; }
 [data-testid="stMetricValue"] { font-size: 1.05rem !important; font-weight: 700 !important; }
 
-/* Ticker Card v2 — tighter, cleaner */
-.ticker-card-v2 {
+/* Ticker Card v3 */
+.ticker-card-v3 {
     display: flex; align-items: center; gap: 10px;
     padding: 7px 10px; background: #161B22;
     border: 1px solid #30363D; border-radius: 8px;
     margin: 3px 0; transition: border-color 0.2s; flex-wrap: wrap;
 }
-.ticker-card-v2:hover { border-color: #484F58; }
-.tc-v2-left { min-width: 80px; }
-.tc-v2-symbol { font-weight: 800; font-size: 0.9rem; color: #E6EDF3; letter-spacing: -0.3px; }
-.tc-v2-price { font-weight: 600; font-size: 0.75rem; color: #8B949E; font-variant-numeric: tabular-nums; }
-.tc-v2-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
-.tc-v2-spark { width: 80px; height: 24px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
-.tc-v2-rr { flex: 1; min-width: 120px; }
-.tc-v2-meta { display: flex; gap: 8px; font-size: 0.68rem; color: #8B949E; font-variant-numeric: tabular-nums; min-width: 110px; }
+.ticker-card-v3:hover { border-color: #484F58; }
+.tc-v3-left { min-width: 80px; }
+.tc-v3-symbol { font-weight: 800; font-size: 0.9rem; color: #E6EDF3; letter-spacing: -0.3px; }
+.tc-v3-price { font-weight: 600; font-size: 0.75rem; color: #8B949E; font-variant-numeric: tabular-nums; }
+.tc-v3-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
+.tc-v3-spark { width: 80px; height: 24px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+.tc-v3-rr { flex: 1; min-width: 120px; }
+.tc-v3-meta { display: flex; gap: 8px; font-size: 0.68rem; color: #8B949E; font-variant-numeric: tabular-nums; min-width: 110px; }
 
 /* Badges */
 .badge { display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 10px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3px; border: 1px solid transparent; line-height: 1.3; }
@@ -60,21 +61,14 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .badge-grade-c { background: rgba(139,148,158,0.15); color: #8B949E; border-color: #8B949E; }
 .badge-news { background: rgba(88,166,255,0.12); color: #58A6FF; border-color: rgba(88,166,255,0.3); }
 
-/* Spark bars */
-.sp-bar-v2 { width: 3px; border-radius: 1px; opacity: 0.85; }
+/* Spark */
+.sp-bar-v3 { width: 3px; border-radius: 1px; opacity: 0.85; }
 
-/* Risk Range v2 */
-.rr-track-v2 { position: relative; height: 16px; background: #21262D; border-radius: 4px; overflow: hidden; }
-.rr-zone-v2 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
-.rr-dot-v2 { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 7px; height: 7px; border-radius: 50%; background: #E6EDF3; border: 2px solid #58A6FF; z-index: 10; box-shadow: 0 0 4px rgba(88,166,255,0.4); }
-.rr-labels-v2 { display: flex; justify-content: space-between; font-size: 0.58rem; color: #8B949E; margin-top: 1px; font-variant-numeric: tabular-nums; }
-
-/* Regime Compass */
-.compass-container { background: #161B22; border: 1px solid #30363D; border-radius: 10px; padding: 12px 14px; margin: 6px 0; }
-.compass-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.compass-title { font-size: 0.75rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
-.compass-quad { font-size: 1.2rem; font-weight: 800; letter-spacing: -1px; }
-.compass-sub { font-size: 0.7rem; color: #8B949E; }
+/* Risk Range v3 */
+.rr-track-v3 { position: relative; height: 16px; background: #21262D; border-radius: 4px; overflow: hidden; }
+.rr-zone-v3 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.rr-dot-v3 { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 7px; height: 7px; border-radius: 50%; background: #E6EDF3; border: 2px solid #58A6FF; z-index: 10; box-shadow: 0 0 4px rgba(88,166,255,0.4); }
+.rr-labels-v3 { display: flex; justify-content: space-between; font-size: 0.58rem; color: #8B949E; margin-top: 1px; font-variant-numeric: tabular-nums; }
 
 /* Gauge */
 .gauge-track { position: relative; height: 12px; background: #21262D; border-radius: 6px; overflow: hidden; margin: 3px 0; }
@@ -85,10 +79,9 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .hm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .hm-cell { padding: 5px 3px; border-radius: 4px; text-align: center; font-size: 0.68rem; font-weight: 600; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.05); }
 
-/* Pulse grid */
-.pulse-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-.pulse-box { aspect-ratio: 1; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.62rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); }
-.pulse-label { font-size: 0.52rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 1px; }
+/* Pulse horizontal */
+.pulse-hbox { min-width: 90px; height: 52px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+.pulse-hlabel { font-size: 0.6rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 1px; }
 
 /* Timeline */
 .timeline { display: flex; align-items: center; gap: 0px; margin: 6px 0; }
@@ -121,12 +114,12 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 [data-testid="stExpander"] > details > summary { padding: 7px 10px !important; font-size: 0.78rem !important; font-weight: 600 !important; }
 [data-testid="stSidebar"] .block-container { padding-top: 0.6rem !important; }
 
-/* Narrative card */
+/* Narrative */
 .narrative-card { background: #161B22; border-left: 3px solid #58A6FF; border-radius: 8px; padding: 10px 14px; margin: 6px 0; }
 .narrative-headline { font-size: 0.85rem; font-weight: 600; color: #E6EDF3; line-height: 1.4; }
 .narrative-sub { font-size: 0.7rem; color: #8B949E; margin-top: 4px; }
 
-/* Metric grid card */
+/* Metric grid */
 .metric-grid-card { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px 12px; }
 .metric-grid-title { font-size: 0.6rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px; }
 .metric-grid-value { font-size: 1.05rem; font-weight: 700; color: #E6EDF3; }
@@ -135,6 +128,13 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 /* Alpha row */
 .alpha-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #161B22; border: 1px solid #30363D; border-radius: 6px; margin: 3px 0; font-size: 0.8rem; }
 .alpha-row:hover { border-color: #484F58; }
+
+/* Compass */
+.compass-container { background: #161B22; border: 1px solid #30363D; border-radius: 10px; padding: 12px 14px; margin: 6px 0; }
+.compass-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.compass-title { font-size: 0.75rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+.compass-quad { font-size: 1.2rem; font-weight: 800; letter-spacing: -1px; }
+.compass-sub { font-size: 0.7rem; color: #8B949E; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -158,17 +158,13 @@ _IHSG_FALLBACK = {"ADRO.JK":"Coal","ITMG.JK":"Coal","PTBA.JK":"Coal","NCKL.JK":"
 if not locals().get("IHSG_SECTOR_MAP"):
     IHSG_SECTOR_MAP = _IHSG_FALLBACK
 
-# GIP proxy
 class _GipProxy:
     def __init__(self, data):
         self._is_dict = isinstance(data, dict)
-        if self._is_dict:
-            self._d = data
-        else:
-            self._obj = data
+        if self._is_dict: self._d = data
+        else: self._obj = data
     def __getattr__(self, name):
-        if self._is_dict:
-            return self._d.get(name)
+        if self._is_dict: return self._d.get(name)
         return getattr(self._obj, name, None)
 
 # ═══════════════════════════════════════════════════════════════════
@@ -196,8 +192,7 @@ def _price_ret(ticker, prices, days=21):
     if s is None: return None
     try:
         s = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-    except:
-        return None
+    except: return None
     if len(s) < days + 1: return None
     try: return float(s.iloc[-1] / s.iloc[-(days+1)] - 1)
     except: return None
@@ -231,24 +226,24 @@ def _sparkline_html(series, width=80, height=24, bars=18):
     for i, v in enumerate(s):
         pct = max(2, min(100, int((float(v) - mn) / rng * 100)))
         color = "#3FB950" if (i > 0 and float(v) >= float(s.iloc[i-1])) else "#F85149"
-        bars_html += f'<div class="sp-bar-v2" style="height:{pct}%;background:{color};"></div>'
-    return f'<div class="tc-v2-spark" style="width:{width}px;height:{height}px;display:flex;align-items:flex-end;gap:1px;">{bars_html}</div>'
+        bars_html += f'<div class="sp-bar-v3" style="height:{pct}%;background:{color};"></div>'
+    return f'<div class="tc-v3-spark" style="width:{width}px;height:{height}px;display:flex;align-items:flex-end;gap:1px;">{bars_html}</div>'
 
 def _risk_range_html(px, lrr, trr, width_pct=100):
     if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
-        return '<div class="rr-track-v2" style="height:16px;background:#21262D;border-radius:4px;"></div><div class="rr-labels-v2"><span>-</span><span>-</span></div>'
+        return '<div class="rr-track-v3" style="height:16px;background:#21262D;border-radius:4px;"></div><div class="rr-labels-v3"><span>-</span><span>-</span></div>'
     px, lrr, trr = float(px), float(lrr), float(trr)
     spread = trr - lrr
     pos = max(0, min(1, (px - lrr) / spread)) if spread > 0 else 0.5
     left_pct = pos * 100
     color = "#3FB950" if pos <= 0.35 else "#F85149" if pos >= 0.65 else "#8B949E"
     return (
-        f'<div class="rr-track-v2" style="width:{width_pct}%;">'
-        f'<div class="rr-zone-v2" style="left:0%;width:100%;background:#21262D;"></div>'
-        f'<div class="rr-zone-v2" style="left:0%;width:{left_pct:.0f}%;background:{color}15;"></div>'
-        f'<div class="rr-dot-v2" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>'
+        f'<div class="rr-track-v3" style="width:{width_pct}%;">'
+        f'<div class="rr-zone-v3" style="left:0%;width:100%;background:#21262D;"></div>'
+        f'<div class="rr-zone-v3" style="left:0%;width:{left_pct:.0f}%;background:{color}15;"></div>'
+        f'<div class="rr-dot-v3" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>'
         f'</div>'
-        f'<div class="rr-labels-v2" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>'
+        f'<div class="rr-labels-v3" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>'
     )
 
 def _gauge_html(value, max_val=100, color=None, height=12, label_left="0", label_right="100"):
@@ -278,14 +273,12 @@ def _stacked_bar_html(long_pct, short_pct, cash_pct):
 def _timeline_html(stage="INCEPTION"):
     stages = ["INCEPTION","ACCELERATION","EUPHORIA","CRISIS","AUCTION"]
     idx = stages.index(stage) if stage in stages else 0
-    nodes = ""
-    labels = ""
+    nodes = ""; labels = ""
     for i, s in enumerate(stages):
         cls = "past" if i < idx else "active" if i == idx else ""
         line_cls = "active" if i < idx else ""
         nodes += f'<div class="tl-node {cls}"></div>'
-        if i < len(stages) - 1:
-            nodes += f'<div class="tl-line {line_cls}"></div>'
+        if i < len(stages) - 1: nodes += f'<div class="tl-line {line_cls}"></div>'
         labels += f'<span>{s}</span>'
     return f'<div class="timeline">{nodes}</div><div class="tl-labels">{labels}</div>'
 
@@ -326,11 +319,11 @@ def _heatmap_grid_html(items, key_label="name", key_quad="quad"):
     html += '</div>'
     return html
 
-def _asset_pulse_box(label, ret, sub=""):
+def _asset_pulse_box_h(label, ret, sub=""):
     c = _ret_color(ret)
     txt = f"{ret:+.1%}" if ret is not None else "-"
     sub_html = f'<div style="font-size:0.52rem;color:#8B949E;margin-top:1px;">{sub}</div>' if sub else ""
-    return f'<div class="pulse-box" style="background:{c}12;border-color:{c}25;"><div>{txt}</div><div class="pulse-label">{label}</div>{sub_html}</div>'
+    return f'<div class="pulse-hbox" style="background:{c}12;border-color:{c}25;"><div>{txt}</div><div class="pulse-hlabel">{label}</div>{sub_html}</div>'
 
 # ═══════════════════════════════════════════════════════════════════
 # RISK RANGE / ROW BUILDERS
@@ -338,14 +331,11 @@ def _asset_pulse_box(label, ret, sub=""):
 def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None):
     v = ar.get(ticker, {}) if ar else {}
     s = prices.get(ticker)
-    if not v and (s is None or len(s) < 15):
-        return None
-
+    if not v and (s is None or len(s) < 15): return None
     if not v and s is not None:
         try:
             s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-        except:
-            return None
+        except: return None
         if len(s_clean) < 15: return None
         px = float(s_clean.iloc[-1])
         sma20 = float(s_clean.tail(20).mean()) if len(s_clean) >= 20 else float(s_clean.mean())
@@ -361,11 +351,8 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         v = {"px": px, "trade": {"lrr": lrr, "trr": trr}, "composite": comp, "quality": "B", "market": market_type}
 
     tr = v.get("trade", {})
-    px = _safe_float(v.get("px"))
-    lrr = _safe_float(tr.get("lrr"))
-    trr = _safe_float(tr.get("trr"))
-    if not px or not lrr or not trr:
-        return None
+    px = _safe_float(v.get("px")); lrr = _safe_float(tr.get("lrr")); trr = _safe_float(tr.get("trr"))
+    if not px or not lrr or not trr: return None
 
     composite = v.get("composite", "neutral")
     side = "long" if composite == "bullish" else "short"
@@ -389,12 +376,8 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             if len(s_clean) >= 15:
                 sma20 = float(s_clean.tail(20).mean()) if len(s_clean) >= 20 else float(s_clean.mean())
                 std20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else float(s_clean.std())
-                gamma = {
-                    "ok": True, "regime": "TRANSITION", "max_pain": round(sma20, 2),
-                    "put_wall": round(sma20 - std20 * 2.0, 2), "call_wall": round(sma20 + std20 * 2.0, 2),
-                }
-        except:
-            pass
+                gamma = {"ok": True, "regime": "TRANSITION", "max_pain": round(sma20, 2), "put_wall": round(sma20 - std20 * 2.0, 2), "call_wall": round(sma20 + std20 * 2.0, 2)}
+        except: pass
 
     news_signal = ""; news_headline = ""; news_sentiment = 0
     if news and isinstance(news, dict) and news.get("ticker_specific"):
@@ -431,10 +414,8 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
 def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None):
     rows = []
     for t in tickers:
-        if market_type == "ihsg":
-            r = _build_ihsg_row(t, prices, ar)
-        else:
-            r = _build_row(t, prices, ar, vix_now=vix_now, gamma_data=gamma_data, greeks_data=greeks_data, market_type=market_type, news=news)
+        if market_type == "ihsg": r = _build_ihsg_row(t, prices, ar)
+        else: r = _build_row(t, prices, ar, vix_now=vix_now, gamma_data=gamma_data, greeks_data=greeks_data, market_type=market_type, news=news)
         if r: rows.append(r)
     return rows
 
@@ -444,9 +425,9 @@ def split_long_short(rows):
     return sorted(longs, key=lambda x: x.get("rr", 0), reverse=True), sorted(shorts, key=lambda x: x.get("rr", 0), reverse=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# VISUAL RENDERERS v2
+# VISUAL RENDERERS v3 — FIX RAW HTML BUG
 # ═══════════════════════════════════════════════════════════════════
-def render_ticker_card_v2(row, expanded=False):
+def render_ticker_card_v3(row, expanded=False):
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
     direction = row.get("direction", "NEUTRAL")
@@ -469,27 +450,28 @@ def render_ticker_card_v2(row, expanded=False):
     grade_kind = grade.lower().replace("+", "")
 
     badges = _badge_html(dir_label, dir_kind) + _badge_html(grade, grade_kind)
-    if rr_val and rr_val >= 2:
-        badges += _badge_html(f"RR {rr_val}x", "news")
+    if rr_val and rr_val >= 2: badges += _badge_html(f"RR {rr_val}x", "news")
     if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
     if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
 
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
 
-    header_html = (
-        f'<div class="ticker-card-v2">'
-        f'<div class="tc-v2-left"><div class="tc-v2-symbol">{ticker}</div><div class="tc-v2-price">{ff(px)}</div><div class="tc-v2-badges">{badges}</div></div>'
+    # FIX: render card as markdown HTML, NOT as expander label
+    card_html = (
+        f'<div class="ticker-card-v3">'
+        f'<div class="tc-v3-left"><div class="tc-v3-symbol">{ticker}</div><div class="tc-v3-price">{ff(px)}</div><div class="tc-v3-badges">{badges}</div></div>'
         f'{spark}'
-        f'<div class="tc-v2-rr">{rr_html}</div>'
-        f'<div class="tc-v2-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
+        f'<div class="tc-v3-rr">{rr_html}</div>'
+        f'<div class="tc-v3-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
         f'</div>'
     )
+    st.markdown(card_html, unsafe_allow_html=True)
 
-    with st.expander(header_html, expanded=expanded):
+    # Details in plain-text expander
+    with st.expander("🎯 Trade Setup", expanded=expanded):
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-            f'<div style="font-size:0.78rem;color:#E6EDF3;font-weight:600;margin-bottom:5px;">🎯 Trade Setup</div>'
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;">'
             f'<div>📍 <b>Entry:</b> {ff(entry)}</div><div>🎯 <b>Target 1:</b> {ff(t1)}</div>'
             f'<div>🎯 <b>Target 2:</b> {ff(t2)}</div><div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>'
@@ -508,25 +490,22 @@ def render_ticker_card_v2(row, expanded=False):
         if row.get("news_headline"):
             st.markdown(f'<div style="font-size:0.72rem;color:#58A6FF;margin-top:3px;">📰 {row.get("news_headline")[:120]}</div>', unsafe_allow_html=True)
 
-def render_ticker_cards_v2(rows, max_rows=30):
+def render_ticker_cards_v3(rows, max_rows=30):
     if not rows:
         st.info("No setups pass filter.")
         return
     st.markdown(f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:4px;">Showing {min(len(rows), max_rows)} of {len(rows)} setups</div>', unsafe_allow_html=True)
     for i, r in enumerate(rows[:max_rows]):
-        render_ticker_card_v2(r, expanded=(i < 2))
+        render_ticker_card_v3(r, expanded=(i < 2))
 
 # ═══════════════════════════════════════════════════════════════════
 # REGIME COMPASS — Merged Markov + Quad + Probability
 # ═══════════════════════════════════════════════════════════════════
 def render_regime_compass(snap):
     gip_local = snap.get("gip")
-    if gip_local is not None and not isinstance(gip_local, dict):
-        gip_local = _GipProxy(gip_local)
-    elif isinstance(gip_local, dict):
-        gip_local = _GipProxy(gip_local)
-    else:
-        return
+    if gip_local is not None and not isinstance(gip_local, dict): gip_local = _GipProxy(gip_local)
+    elif isinstance(gip_local, dict): gip_local = _GipProxy(gip_local)
+    else: return
 
     q_probs = getattr(gip_local, "structural_probs", {}) or {}
     m_probs = getattr(gip_local, "monthly_probs", {}) or {}
@@ -538,77 +517,51 @@ def render_regime_compass(snap):
     markov_conf = markov.get("confidence", 0) if isinstance(markov, dict) else 0
     markov_kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
     cp_alert = markov.get("change_point_alert", False) if isinstance(markov, dict) else False
-    cp_prob = markov.get("change_point_probability", 0) if isinstance(markov, dict) else 0
 
     rf = snap.get("regime_forecast", {})
     rf3 = rf.get("3m", {}) if isinstance(rf, dict) else {}
     fq = rf3.get("predicted_quad", "Q3") if isinstance(rf3, dict) else "Q3"
     fc = rf3.get("prediction_confidence", 0) if isinstance(rf3, dict) else 0
 
-    # Single row: compass + mini bars
     c1, c2 = st.columns([1, 1.6])
-
     with c1:
-        # Compass card
-        sq_color = _quad_color(sq)
-        mq_color = _quad_color(mq)
+        sq_color = _quad_color(sq); mq_color = _quad_color(mq)
         markov_color = "#58A6FF" if "BULL" in str(markov_regime).upper() else "#F85149" if "BEAR" in str(markov_regime).upper() else "#D29922"
-        cp_badge = '<span style="background:#F8514922;color:#F85149;padding:1px 5px;border-radius:4px;font-size:0.6rem;font-weight:700;border:1px solid #F85149;margin-left:6px;">⚠ CHANGE POINT</span>' if cp_alert else ""
-
+        cp_badge = '<span style="background:#F8514922;color:#F85149;padding:1px 5px;border-radius:4px;font-size:0.6rem;font-weight:700;border:1px solid #F85149;margin-left:6px;">⚠ CP</span>' if cp_alert else ""
         st.markdown(
             f'<div class="compass-container">'
-            f'<div class="compass-header">'
-            f'<div><div class="compass-title">Regime Compass</div></div>'
-            f'</div>'
+            f'<div class="compass-header"><div class="compass-title">Regime Compass</div></div>'
             f'<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">'
-            f'<div style="text-align:center;min-width:70px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Structural</div>'
-            f'<div class="compass-quad" style="color:{sq_color};">{sq}</div>'
-            f'<div class="compass-sub">{_quad_name(sq)}</div></div>'
+            f'<div style="text-align:center;min-width:70px;"><div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Structural</div>'
+            f'<div class="compass-quad" style="color:{sq_color};">{sq}</div><div class="compass-sub">{_quad_name(sq)}</div></div>'
             f'<div style="width:1px;height:36px;background:#30363D;"></div>'
-            f'<div style="text-align:center;min-width:70px;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Monthly</div>'
-            f'<div class="compass-quad" style="color:{mq_color};">{mq}</div>'
-            f'<div class="compass-sub">{_quad_name(mq)}</div></div>'
+            f'<div style="text-align:center;min-width:70px;"><div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Monthly</div>'
+            f'<div class="compass-quad" style="color:{mq_color};">{mq}</div><div class="compass-sub">{_quad_name(mq)}</div></div>'
             f'<div style="width:1px;height:36px;background:#30363D;"></div>'
-            f'<div style="flex:1;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Markov {cp_badge}</div>'
+            f'<div style="flex:1;"><div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Markov {cp_badge}</div>'
             f'<div style="font-size:1.05rem;font-weight:700;color:{markov_color};margin-top:2px;">{str(markov_regime).replace("_"," ")}</div>'
             f'<div class="compass-sub">Conf {markov_conf:.0%} · Kelly {markov_kelly:.0%}</div></div>'
             f'</div>'
             f'{_gauge_html(markov_conf*100, max_val=100, color=markov_color, height=10, label_left="0%", label_right="100%")}'
-            f'</div>',
-            unsafe_allow_html=True
+            f'</div>', unsafe_allow_html=True
         )
-
     with c2:
-        # Mini probability bars — merged into one compact chart
         fig = go.Figure()
-        quads = ["Q1","Q2","Q3","Q4"]
-        colors = [_quad_color(q) for q in quads]
+        quads = ["Q1","Q2","Q3","Q4"]; colors = [_quad_color(q) for q in quads]
         q_vals = [q_probs.get(q, 0) if isinstance(q_probs, dict) else 0 for q in quads]
         m_vals = [m_probs.get(q, 0) if isinstance(m_probs, dict) else 0 for q in quads]
         f_vals = [fc if q == fq else (1-fc)/3 for q in quads]
-
         fig.add_trace(go.Bar(name="Structural", x=quads, y=q_vals, marker_color=colors, opacity=1.0,
-                             text=[f"{v:.0%}" for v in q_vals], textposition="outside",
-                             textfont=dict(size=10, color="#E6EDF3"), showlegend=True))
+                             text=[f"{v:.0%}" for v in q_vals], textposition="outside", textfont=dict(size=10, color="#E6EDF3"), showlegend=True))
         fig.add_trace(go.Bar(name="Monthly", x=quads, y=m_vals, marker_color=colors, opacity=0.55,
-                             text=[f"{v:.0%}" for v in m_vals], textposition="outside",
-                             textfont=dict(size=9, color="#8B949E"), showlegend=True))
+                             text=[f"{v:.0%}" for v in m_vals], textposition="outside", textfont=dict(size=9, color="#8B949E"), showlegend=True))
         fig.add_trace(go.Bar(name="Forward 3M", x=quads, y=f_vals, marker_color=colors, opacity=0.25,
-                             text=[f"{v:.0%}" for v in f_vals], textposition="outside",
-                             textfont=dict(size=8, color="#484F58"), showlegend=True))
-
-        fig.update_layout(
-            height=160, margin=dict(t=10,b=20,l=20,r=20),
-            paper_bgcolor="#0D1117", plot_bgcolor="#0D1117",
-            font=dict(color="#E6EDF3", size=10, family="Inter"),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
-                       font=dict(size=9), bgcolor="rgba(0,0,0,0)"),
-            yaxis=dict(range=[0,1.15], tickformat=".0%", showgrid=True, gridcolor="#21262D", dtick=0.25),
-            barmode="group", bargap=0.35, bargroupgap=0.1,
-        )
+                             text=[f"{v:.0%}" for v in f_vals], textposition="outside", textfont=dict(size=8, color="#484F58"), showlegend=True))
+        fig.update_layout(height=160, margin=dict(t=10,b=20,l=20,r=20), paper_bgcolor="#0D1117", plot_bgcolor="#0D1117",
+                          font=dict(color="#E6EDF3", size=10, family="Inter"),
+                          legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=9), bgcolor="rgba(0,0,0,0)"),
+                          yaxis=dict(range=[0,1.15], tickformat=".0%", showgrid=True, gridcolor="#21262D", dtick=0.25),
+                          barmode="group", bargap=0.35, bargroupgap=0.1)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="regime_compass_bars")
 
 # ═══════════════════════════════════════════════════════════════════
@@ -620,65 +573,51 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v31.0 VISUAL | Clean Redesign")
+    st.caption("v31.1 VISUAL | Audit Fixed")
     st.divider()
-
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
         "🛢️ Commodities", "₿ Crypto", "🌍 Global & EM", "📖 Themes"
     ], label_visibility="collapsed")
-
     st.divider()
     try:
         from data.loader import snapshot_age_str
         st.caption(f"Last update: {snapshot_age_str()}")
     except:
         st.caption("Last update: unknown")
-
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔄 Update", use_container_width=True):
-            st.session_state.loading = True
+        if st.button("🔄 Update", use_container_width=True): st.session_state.loading = True
     with c2:
         if st.button("⚡ Rebuild", use_container_width=True):
-            st.session_state.loading = True
-            st.session_state.snap = None
-
+            st.session_state.loading = True; st.session_state.snap = None
     with st.expander("⚙️ Settings"):
         inc_us = st.checkbox("US Stocks", True)
         inc_fx = st.checkbox("Forex", True)
         inc_comm = st.checkbox("Commodities", True)
         inc_cryp = st.checkbox("Crypto", True)
         inc_ihsg = st.checkbox("Indonesia", True)
-
     with st.expander("💰 Portfolio"):
         pv = st.number_input("Value", min_value=1000, max_value=1_000_000_000,
                             value=int(st.session_state.get("portfolio_value", 100_000)), step=10_000)
         st.session_state["portfolio_value"] = pv
-
     with st.expander("🔧 Quad Override"):
         mq_ov = st.selectbox("Monthly", ["Auto", "Q1", "Q2", "Q3", "Q4"],
                             index=["Auto", "Q1", "Q2", "Q3", "Q4"].index(st.session_state.mq_override))
         st.session_state.mq_override = mq_ov
-
     st.divider()
     _s = st.session_state.snap
     if _s and _s.get("ok"):
         _g = _s.get("gip")
-        if _g is not None and not isinstance(_g, dict):
-            _g = _GipProxy(_g)
-        elif isinstance(_g, dict):
-            _g = _GipProxy(_g)
+        if _g is not None and not isinstance(_g, dict): _g = _GipProxy(_g)
+        elif isinstance(_g, dict): _g = _GipProxy(_g)
         _sq = getattr(_g, "structural_quad", "—") if _g is not None else "—"
         _mq = getattr(_g, "monthly_quad", "—") if _g is not None else "—"
         color = _quad_color(_sq)
-        st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
-            f'<div style="font-size:1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
-            f'<div style="font-size:0.65rem;color:#8B949E;">{_quad_name(_sq)}</div></div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;text-align:center;">'
+                    f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
+                    f'<div style="font-size:1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
+                    f'<div style="font-size:0.65rem;color:#8B949E;">{_quad_name(_sq)}</div></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
 # DATA LOADING
@@ -688,8 +627,7 @@ if snap is None:
     try:
         from data.loader import load_snapshot
         snap = load_snapshot(max_age_hours=6.0)
-        if snap and snap.get("ok"):
-            st.session_state.snap = snap
+        if snap and snap.get("ok"): st.session_state.snap = snap
     except Exception as e:
         logger.warning(f"Initial snapshot load failed: {e}")
         snap = None
@@ -698,40 +636,26 @@ if snap is None or not snap.get("ok") or st.session_state.loading:
     try:
         from orchestrator import build_snapshot
     except Exception as e:
-        st.error(f"Failed to import orchestrator: {e}")
-        st.stop()
+        st.error(f"Failed to import orchestrator: {e}"); st.stop()
     _msg = "Updating..." if st.session_state.loading else "Building..."
     with st.spinner(_msg):
-        pb = st.progress(0.0)
-        pt = st.empty()
-        def prog(m, f):
-            pb.progress(f)
-            pt.caption(f"Loading {m}")
+        pb = st.progress(0.0); pt = st.empty()
+        def prog(m, f): pb.progress(f); pt.caption(f"Loading {m}")
         try:
             snap = build_snapshot(progress_cb=prog, include_us_stocks=inc_us, include_forex=inc_fx,
                                   include_commodities=inc_comm, include_crypto=inc_cryp, include_ihsg=inc_ihsg,
                                   portfolio_value=st.session_state.get("portfolio_value", 100_000))
-            st.session_state.snap = snap
-            st.session_state.loading = False
-            pb.empty(); pt.empty()
-            st.rerun()
+            st.session_state.snap = snap; st.session_state.loading = False; pb.empty(); pt.empty(); st.rerun()
         except Exception as e:
-            st.session_state.loading = False
-            st.error(f"Build failed: {e}")
-            st.stop()
+            st.session_state.loading = False; st.error(f"Build failed: {e}"); st.stop()
 
 if not snap or not snap.get("ok"):
-    st.error("Build failed. Click Rebuild to retry.")
-    st.stop()
+    st.error("Build failed. Click Rebuild to retry."); st.stop()
 
-# Extract globals
 gip_raw = snap.get("gip")
-if gip_raw is not None and not isinstance(gip_raw, dict):
-    gip = _GipProxy(gip_raw)
-elif isinstance(gip_raw, dict):
-    gip = _GipProxy(gip_raw)
-else:
-    gip = None
+if gip_raw is not None and not isinstance(gip_raw, dict): gip = _GipProxy(gip_raw)
+elif isinstance(gip_raw, dict): gip = _GipProxy(gip_raw)
+else: gip = None
 prices = snap.get("prices", {}) or {}
 rr = snap.get("risk_ranges", {}) or {}
 ar = rr.get("asset_ranges", {}) if isinstance(rr, dict) else {}
@@ -739,19 +663,14 @@ sq = getattr(gip, "structural_quad", None) or "Q3" if gip is not None else "Q3"
 mq_raw = getattr(gip, "monthly_quad", None) or "Q2" if gip is not None else "Q2"
 mq = st.session_state.mq_override if st.session_state.mq_override != "Auto" else mq_raw
 
-# Robust VIX
 _vix_raw = prices.get("^VIX")
 vix_now = 20.0
 if _vix_raw is not None:
     try:
-        if hasattr(_vix_raw, "tail"):
-            vix_now = _safe_float(_vix_raw.tail(1)) or 20.0
-        elif hasattr(_vix_raw, "__len__") and len(_vix_raw) > 0:
-            vix_now = _safe_float(pd.Series(_vix_raw).iloc[-1]) or 20.0
-        else:
-            vix_now = _safe_float(_vix_raw) or 20.0
-    except Exception:
-        vix_now = 20.0
+        if hasattr(_vix_raw, "tail"): vix_now = _safe_float(_vix_raw.tail(1)) or 20.0
+        elif hasattr(_vix_raw, "__len__") and len(_vix_raw) > 0: vix_now = _safe_float(pd.Series(_vix_raw).iloc[-1]) or 20.0
+        else: vix_now = _safe_float(_vix_raw) or 20.0
+    except Exception: vix_now = 20.0
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD — Zero tickers, regime fusion, narrative-first
@@ -760,21 +679,16 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
 
-    # Narrative first
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
     if macro_nar.get("headline") or macro_nar.get("narrative"):
         headline = macro_nar.get("headline", macro_nar.get("narrative", ""))
-        st.markdown(
-            f'<div class="narrative-card">'
-            f'<div class="narrative-headline">{str(headline)[:180]}{"..." if len(str(headline)) > 180 else ""}</div>'
-            f'<div class="narrative-sub">{macro_nar.get("sub_narrative", "")[:120]}</div></div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="narrative-card">'
+                    f'<div class="narrative-headline">{str(headline)[:180]}{"..." if len(str(headline)) > 180 else ""}</div>'
+                    f'<div class="narrative-sub">{macro_nar.get("sub_narrative", "")[:120]}</div></div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # Key metrics grid — 4 columns, no tickers
     summary = snap.get("summary", {}) or {}
     health = snap.get("health", {}) or {}
     markov = snap.get("markov_v3", {}) or {}
@@ -783,78 +697,70 @@ def page_dashboard():
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
-        st.markdown(
-            f'<div class="metric-grid-card">'
-            f'<div class="metric-grid-title">Volatility (VIX)</div>'
-            f'<div class="metric-grid-value" style="color:{vix_color};">{vix_now:.1f}</div>'
-            f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=8, label_left="Low", label_right="High")}'
-            f'</div>', unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Volatility (VIX)</div>'
+                    f'<div class="metric-grid-value" style="color:{vix_color};">{vix_now:.1f}</div>'
+                    f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=8, label_left="Low", label_right="High")}'
+                    f'</div>', unsafe_allow_html=True)
     with k2:
         health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
         hcolor = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
-        st.markdown(
-            f'<div class="metric-grid-card">'
-            f'<div class="metric-grid-title">Market Health</div>'
-            f'<div class="metric-grid-value" style="color:{hcolor};">{health_score:.0f}</div>'
-            f'{_gauge_html(health_score, max_val=100, color=hcolor, height=8, label_left="Weak", label_right="Strong")}'
-            f'</div>', unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Market Health</div>'
+                    f'<div class="metric-grid-value" style="color:{hcolor};">{health_score:.0f}</div>'
+                    f'{_gauge_html(health_score, max_val=100, color=hcolor, height=8, label_left="Weak", label_right="Strong")}'
+                    f'</div>', unsafe_allow_html=True)
     with k3:
+        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
+        alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
-        alert_color = "#F85149" if n_alerts > 2 else "#D29922" if n_alerts > 0 else "#3FB950"
-        st.markdown(
-            f'<div class="metric-grid-card">'
-            f'<div class="metric-grid-title">Behavioral Alerts</div>'
-            f'<div class="metric-grid-value" style="color:{alert_color};">{n_alerts}</div>'
-            f'<div class="metric-grid-sub">Yves / AAII signals</div>'
-            f'</div>', unsafe_allow_html=True
-        )
+        alert_color = "#F85149" if alert_level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if alert_level == "MEDIUM" or n_alerts > 0 else "#3FB950"
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Behavioral Alerts</div>'
+                    f'<div class="metric-grid-value" style="color:{alert_color};">{n_alerts}</div>'
+                    f'<div class="metric-grid-sub">Yves / AAII · {alert_level}</div>'
+                    f'</div>', unsafe_allow_html=True)
     with k4:
         kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
         kelly_color = "#3FB950" if kelly >= 0.5 else "#D29922" if kelly >= 0.25 else "#F85149"
-        st.markdown(
-            f'<div class="metric-grid-card">'
-            f'<div class="metric-grid-title">Kelly Fraction</div>'
-            f'<div class="metric-grid-value" style="color:{kelly_color};">{kelly:.0%}</div>'
-            f'<div class="metric-grid-sub">Optimal bet size</div>'
-            f'</div>', unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Kelly Fraction</div>'
+                    f'<div class="metric-grid-value" style="color:{kelly_color};">{kelly:.0%}</div>'
+                    f'<div class="metric-grid-sub">Optimal bet size</div>'
+                    f'</div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # Two column layout: Playbook + Scenarios
     left, right = st.columns([1.1, 1])
-
     with left:
         st.markdown("### 📋 Regime Playbook")
         pb = snap.get("playbook", {}) or {}
         if isinstance(pb, dict):
-            best = pb.get("best_assets", [])[:6]
-            worst = pb.get("worst_assets", [])[:6]
-            strategy = pb.get("strategy", "")
-            if strategy:
-                st.markdown(f'<div style="font-size:0.8rem;color:#E6EDF3;line-height:1.5;margin-bottom:8px;">{strategy}</div>', unsafe_allow_html=True)
+            best = pb.get("best_assets", [])[:6]; worst = pb.get("worst_assets", [])[:6]; strategy = pb.get("strategy", "")
+            if strategy: st.markdown(f'<div style="font-size:0.8rem;color:#E6EDF3;line-height:1.5;margin-bottom:8px;">{strategy}</div>', unsafe_allow_html=True)
             if best or worst:
                 c1, c2 = st.columns(2)
                 with c1:
                     st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Overweight</div>", unsafe_allow_html=True)
-                    for b in best:
-                        st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {b}</div>", unsafe_allow_html=True)
+                    for b in best: st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {b}</div>", unsafe_allow_html=True)
                 with c2:
                     st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
-                    for w in worst:
-                        st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {w}</div>", unsafe_allow_html=True)
+                    for w in worst: st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {w}</div>", unsafe_allow_html=True)
 
         st.markdown("### 💼 Allocation")
-        allocation = {
-            "Q1": {"long": 75, "short": 5, "cash": 20},
-            "Q2": {"long": 70, "short": 10, "cash": 20},
-            "Q3": {"long": 60, "short": 15, "cash": 25},
-            "Q4": {"long": 50, "short": 20, "cash": 30},
-        }
+        allocation = {"Q1": {"long": 75, "short": 5, "cash": 20}, "Q2": {"long": 70, "short": 10, "cash": 20}, "Q3": {"long": 60, "short": 15, "cash": 25}, "Q4": {"long": 50, "short": 20, "cash": 30}}
         alloc = allocation.get(sq, allocation["Q3"])
         st.markdown(_stacked_bar_html(alloc["long"], alloc["short"], alloc["cash"]), unsafe_allow_html=True)
+
+        # Front-run candidates (new)
+        fr = snap.get("front_run_candidates", []) or []
+        if fr:
+            st.markdown("### 🔮 Front-Run Candidates")
+            for item in fr[:3]:
+                if not isinstance(item, dict): continue
+                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.78rem;">'
+                            f'<span style="color:#E6EDF3;">• {item.get("ticker","—")}</span>'
+                            f'<span style="color:#8B949E;">{item.get("why_front_run","")[:50]}</span></div>', unsafe_allow_html=True)
 
     with right:
         st.markdown("### 🔮 Scenarios")
@@ -866,51 +772,51 @@ def page_dashboard():
                 p = scen.get("probability", 0) if isinstance(scen, dict) else 0
                 color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
                 is_dom = " ★" if dom == scen_name else ""
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #21262D;">'
-                    f'<span style="font-size:0.78rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>'
-                    f'<span style="font-size:0.82rem;font-weight:700;color:{color};">{p:.0%}</span></div>',
-                    unsafe_allow_html=True
-                )
+                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #21262D;">'
+                            f'<span style="font-size:0.78rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>'
+                            f'<span style="font-size:0.82rem;font-weight:700;color:{color};">{p:.0%}</span></div>', unsafe_allow_html=True)
 
         st.markdown("### 🚧 Bottlenecks")
         bottlenecks = ((snap.get("narrative", {}) or {}).get("active_bottlenecks", []) or []) if isinstance(snap.get("narrative"), dict) else []
         if bottlenecks:
             for b in bottlenecks[:3]:
                 if not isinstance(b, dict): continue
-                st.markdown(
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.78rem;">'
-                    f'<span style="color:#E6EDF3;">• {str(b.get("name","")).replace("_"," ").title()}</span>'
-                    f'<span style="color:#F85149;font-weight:600;">{len(b.get("beneficiaries",[]))} plays</span></div>',
-                    unsafe_allow_html=True
-                )
-        else:
-            st.caption("No active bottlenecks")
+                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.78rem;">'
+                            f'<span style="color:#E6EDF3;">• {str(b.get("name","")).replace("_"," ").title()}</span>'
+                            f'<span style="color:#F85149;font-weight:600;">{len(b.get("beneficiaries",[]))} plays</span></div>', unsafe_allow_html=True)
+        else: st.caption("No active bottlenecks")
+
+        # DXY Correlation mini (new)
+        dxy_corr = snap.get("dxy_correlation", {}) or {}
+        if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
+            st.markdown("### 💱 DXY Correlation")
+            pos = dxy_corr.get("strongest_positive_corr", [])[:2]
+            neg = dxy_corr.get("strongest_negative_corr", [])[:2]
+            for t, data in pos + neg:
+                if not isinstance(data, dict): continue
+                corr = data.get("correlation", 0)
+                color = "#3FB950" if corr > 0 else "#F85149"
+                st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{t}: <span style="color:{color};font-weight:700;">{corr:+.2f}</span></div>', unsafe_allow_html=True)
 
     st.divider()
 
-    # Asset pulse — compact, no tickers, just returns
+    # Asset Pulse — 1 row horizontal
     st.markdown("### ⚡ Asset Pulse (21D)")
-    pulse_assets = [
-        ("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"),
-        ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")
-    ]
-    pulse_html = '<div class="pulse-grid">'
+    pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
+    pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
     for t, label in pulse_assets:
         ret = _price_ret(t, prices, 21)
-        pulse_html += _asset_pulse_box(label, ret, t)
+        pulse_html += _asset_pulse_box_h(label, ret, t)
     pulse_html += '</div>'
     st.markdown(pulse_html, unsafe_allow_html=True)
 
     st.divider()
 
-    # Deep technical — compact
     with st.expander("🔬 Deep Technical", expanded=False):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**Skew Term**")
-            skew = snap.get("skew_term", {}) or {}
-            skew_data = skew.get("skew_data", {}) if isinstance(skew, dict) else {}
+            skew = snap.get("skew_term", {}) or {}; skew_data = skew.get("skew_data", {}) if isinstance(skew, dict) else {}
             d30 = d60 = d90 = None
             if isinstance(skew_data, dict):
                 for k, v in skew_data.items():
@@ -920,19 +826,14 @@ def page_dashboard():
                         if "60" in str(k).lower() or "2m" in str(k).lower(): d60 = _safe_float(val)
                         if "90" in str(k).lower() or "3m" in str(k).lower(): d90 = _safe_float(val)
             st.markdown(_skew_bars_html(d30, d60, d90), unsafe_allow_html=True)
-
             st.markdown("**GEX**")
-            gex = snap.get("gex_data", {}) or {}
-            gex_val = None
+            gex = snap.get("gex_data", {}) or {}; gex_val = None
             if isinstance(gex, dict):
                 for k, v in gex.items():
                     if isinstance(v, dict):
                         gv = v.get("net_gex") or v.get("gex") or v.get("total_gex")
-                        if gv is not None:
-                            gex_val = _safe_float(gv)
-                            break
+                        if gv is not None: gex_val = _safe_float(gv); break
             st.markdown(_gex_bar_html(gex_val), unsafe_allow_html=True)
-
         with c2:
             st.markdown("**VRP**")
             vrp = snap.get("vrp_scanner", {}) or {}
@@ -940,50 +841,42 @@ def page_dashboard():
                 for item in vrp.get("high_vrp_sell_premium", [])[:3]:
                     if isinstance(item, dict):
                         score = item.get("vrp_pct", 0)
-                        st.markdown(
-                            f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
-                            f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
-                            f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>'
-                            f'<span style="font-size:0.65rem;color:#F85149;font-weight:700;width:35px;text-align:right;">{score:.0f}%</span></div>',
-                            unsafe_allow_html=True
-                        )
-            else:
-                st.caption("VRP unavailable")
-
+                        st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
+                                    f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
+                                    f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>'
+                                    f'<span style="font-size:0.65rem;color:#F85149;font-weight:700;width:35px;text-align:right;">{score:.0f}%</span></div>', unsafe_allow_html=True)
+            else: st.caption("VRP unavailable")
             st.markdown("**Squeeze**")
             sq_scan = snap.get("squeeze_scanner", {}) or {}
             if isinstance(sq_scan, dict) and sq_scan.get("ok"):
                 for item in sq_scan.get("imminent_squeezes", [])[:3]:
                     if isinstance(item, dict):
                         score = item.get("squeeze_score", 0)
-                        st.markdown(
-                            f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
-                            f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
-                            f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>'
-                            f'<span style="font-size:0.65rem;color:#D29922;font-weight:700;width:35px;text-align:right;">{score:.0f}</span></div>',
-                            unsafe_allow_html=True
-                        )
-            else:
-                st.caption("Squeeze unavailable")
-
+                        st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
+                                    f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
+                                    f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>'
+                                    f'<span style="font-size:0.65rem;color:#D29922;font-weight:700;width:35px;text-align:right;">{score:.0f}</span></div>', unsafe_allow_html=True)
+            else: st.caption("Squeeze unavailable")
+            st.markdown("**Vol Forecast**")
+            vol_f = snap.get("vol_forecast", {}) or {}
+            if isinstance(vol_f, dict):
+                for k, v in list(vol_f.items())[:3]:
+                    if isinstance(v, dict):
+                        regime = v.get("vol_regime", "-")
+                        color = "#3FB950" if regime == "LOW" else "#D29922" if regime == "NORMAL" else "#F85149"
+                        st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{k}: <span style="color:{color};font-weight:700;">{v.get("current_ann_vol",0):.1f}%</span> ({regime})</div>', unsafe_allow_html=True)
+            else: st.caption("Vol forecast unavailable")
         st.markdown("**Engine Status**")
-        engines = [
-            ("GIP v10", snap.get("gip_v10") is not None),
-            ("Markov V3", snap.get("markov_v3") is not None),
-            ("Yves v2", snap.get("yves_v2") is not None),
-            ("Cascade", snap.get("cascade_analysis") is not None),
-            ("VRP", snap.get("vrp_scanner") is not None),
-            ("Squeeze", snap.get("squeeze_scanner") is not None),
-            ("Smart Money", snap.get("smart_money") is not None),
-            ("Discovery", snap.get("discovery_brain") is not None),
-        ]
+        engines = [("GIP v10", snap.get("gip_v10") is not None), ("Markov V3", snap.get("markov_v3") is not None), ("Yves v2", snap.get("yves_v2") is not None),
+                   ("Cascade", snap.get("cascade_analysis") is not None), ("VRP", snap.get("vrp_scanner") is not None), ("Squeeze", snap.get("squeeze_scanner") is not None),
+                   ("Smart Money", snap.get("smart_money") is not None), ("Discovery", snap.get("discovery_brain") is not None)]
         cols = st.columns(4)
         for i, (name, ok) in enumerate(engines):
             color = "#3FB950" if ok else "#F85149"
             cols[i % 4].markdown(f"<span style='color:{color};font-size:0.75rem;'>● {name}</span>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: ALPHA CENTER — Loosened filters
+# PAGE: ALPHA CENTER — Loosened filters + enriched cards
 # ═══════════════════════════════════════════════════════════════════
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
@@ -1005,39 +898,26 @@ def page_alpha():
         comp_signals = snap.get("composite_signals", {}) or {}
         if isinstance(comp_signals, dict):
             for ticker, sig in comp_signals.items():
-                if not isinstance(sig, dict):
-                    continue
-                # ── LOOSENED FILTERS ──
-                if sig.get("direction") in ("NEUTRAL", "AVOID"):
-                    continue
-                if sig.get("confidence", 0) < 0.15:  # was 0.4
-                    continue
+                if not isinstance(sig, dict): continue
+                if sig.get("direction") in ("NEUTRAL", "AVOID"): continue
+                if sig.get("confidence", 0) < 0.15: continue
                 thesis = (snap.get("thought_process", {}) or {}).get(ticker, {})
-                if not isinstance(thesis, dict):
-                    thesis = {}
-                if thesis.get("thesis_score", 0) < 20:  # was 60
-                    continue
-                rr = (snap.get("risk_ranges", {}) or {}).get("asset_ranges", {})
-                rr_t = rr.get(ticker, {}) if isinstance(rr, dict) else {}
-                if not isinstance(rr_t, dict):
-                    continue
-                # Quality filter loosened: accept A+, A, B
-                if rr_t.get("quality") not in ("A+", "A", "B", None):
-                    continue
+                if not isinstance(thesis, dict): thesis = {}
+                if thesis.get("thesis_score", 0) < 20: continue
+                rr_all = (snap.get("risk_ranges", {}) or {}).get("asset_ranges", {})
+                rr_t = rr_all.get(ticker, {}) if isinstance(rr_all, dict) else {}
+                if not isinstance(rr_t, dict): continue
+                if rr_t.get("quality") not in ("A+", "A", "B", None): continue
                 sm = ((snap.get("smart_money", {}) or {}).get("per_ticker", {}) or {}).get(ticker, {})
-                if not isinstance(sm, dict):
-                    sm = {}
+                if not isinstance(sm, dict): sm = {}
                 sm_boost = 10 if sm.get("smart_money_held") else 0
                 alpha_candidates.append({
-                    "ticker": ticker,
-                    "direction": sig.get("direction"),
-                    "confidence": sig.get("confidence", 0),
-                    "thesis_score": thesis.get("thesis_score", 0),
-                    "primary_role": thesis.get("primary_role", "—"),
+                    "ticker": ticker, "direction": sig.get("direction"), "confidence": sig.get("confidence", 0),
+                    "thesis_score": thesis.get("thesis_score", 0), "primary_role": thesis.get("primary_role", "—"),
                     "alpha_score": sig.get("confidence", 0) * 30 + thesis.get("thesis_score", 0) * 0.4 + sm_boost,
+                    "rr": rr_t,
                 })
         alpha_candidates.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
-        # Threshold lowered from 70 to 40
         top_alpha = [c for c in alpha_candidates if c.get("alpha_score", 0) >= 40][:25]
 
         if not top_alpha:
@@ -1046,11 +926,24 @@ def page_alpha():
             st.markdown(f"**{len(top_alpha)} candidates** from {len(alpha_candidates)} total (bar: ≥40/100)")
             for i, c in enumerate(top_alpha):
                 dir_color = "#3FB950" if c["direction"] == "LONG" else "#F85149"
+                # Enriched expander with risk range
                 with st.expander(f"#{i+1} {c['ticker']} · Score {c['alpha_score']:.0f}/100 · {c['direction']}", expanded=(i < 3)):
-                    c1, c2, c3 = st.columns(3)
+                    c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Confidence", f"{c['confidence']:.0%}")
                     c2.metric("Thesis", f"{c['thesis_score']:.0f}/100")
                     c3.metric("Role", c["primary_role"])
+                    c4.metric("Direction", c["direction"])
+                    rr_t = c.get("rr", {})
+                    if isinstance(rr_t, dict):
+                        px = rr_t.get("px")
+                        lrr = rr_t.get("trade", {}).get("lrr")
+                        trr = rr_t.get("trade", {}).get("trr")
+                        if px and lrr and trr:
+                            st.markdown(_risk_range_html(px, lrr, trr, width_pct=100), unsafe_allow_html=True)
+                    # Smart money detail
+                    sm = ((snap.get("smart_money", {}) or {}).get("per_ticker", {}) or {}).get(c["ticker"], {})
+                    if isinstance(sm, dict) and sm.get("smart_money_held"):
+                        st.markdown(f'<div style="font-size:0.75rem;color:#3FB950;margin-top:4px;">✅ Smart Money holding this ticker</div>', unsafe_allow_html=True)
 
     with tab2:
         col1, col2 = st.columns(2)
@@ -1058,25 +951,30 @@ def page_alpha():
             st.markdown("### 📊 VRP Scanner")
             vrp = snap.get("vrp_scanner", {}) or {}
             if isinstance(vrp, dict) and vrp.get("ok"):
-                st.metric("Sell Premium", len(vrp.get("high_vrp_sell_premium", [])))
-                st.metric("Buy Premium", len(vrp.get("low_vrp_buy_premium", [])))
-                for item in vrp.get("high_vrp_sell_premium", [])[:5]:
-                    if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
-            else:
-                st.info("VRP scanner unavailable")
-
+                sell = vrp.get("high_vrp_sell_premium", [])
+                buy = vrp.get("low_vrp_buy_premium", [])
+                st.metric("Sell Premium", len(sell))
+                st.metric("Buy Premium", len(buy))
+                if sell:
+                    for item in sell[:5]:
+                        if isinstance(item, dict):
+                            st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
+                else: st.caption("No sell premium setups")
+            else: st.info("VRP scanner unavailable")
         with col2:
             st.markdown("### 🔥 Squeeze Scanner")
             sq_scan = snap.get("squeeze_scanner", {}) or {}
             if isinstance(sq_scan, dict) and sq_scan.get("ok"):
-                st.metric("Imminent", len(sq_scan.get("imminent_squeezes", [])))
-                st.metric("Strong", len(sq_scan.get("strong_candidates", [])))
-                for item in sq_scan.get("imminent_squeezes", [])[:5]:
-                    if isinstance(item, dict):
-                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}")
-            else:
-                st.info("Squeeze scanner unavailable")
+                imm = sq_scan.get("imminent_squeezes", [])
+                strong = sq_scan.get("strong_candidates", [])
+                st.metric("Imminent", len(imm))
+                st.metric("Strong", len(strong))
+                if imm:
+                    for item in imm[:5]:
+                        if isinstance(item, dict):
+                            st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}")
+                else: st.caption("No imminent squeezes")
+            else: st.info("Squeeze scanner unavailable")
 
     with tab3:
         st.markdown("### 🔮 Discovery Brain")
@@ -1090,31 +988,35 @@ def page_alpha():
                         if isinstance(item, dict):
                             with st.expander(f"{item.get('name', '—').replace('_', ' ')} · conf {item.get('confidence', 0):.0%}"):
                                 st.markdown(item.get("thesis", "—"))
-        else:
-            st.info("Discovery Brain — no candidates this snapshot")
+        else: st.info("Discovery Brain — no candidates this snapshot")
 
         st.markdown("### 💰 Position Sizing")
         sizing = snap.get("portfolio_sizing_v2", {}) or {}
         if isinstance(sizing, dict) and sizing.get("positions"):
             st.metric("Deployed", f"{sizing.get('total_deployed_pct', 0):.1%}")
             st.metric("Cash", f"{sizing.get('cash_pct', 0):.1%}")
-            df = pd.DataFrame([{
-                "Ticker": p.get("ticker"),
-                "Size %": f"{p.get('target_pct', 0):.2f}%",
-                "Size $": f"{p.get('target_dollar', 0):,.0f}",
-                "Mode": p.get("mode"),
-                "Sector": p.get("sector"),
-            } for p in sizing.get("positions", []) if isinstance(p, dict)])
+            df = pd.DataFrame([{"Ticker": p.get("ticker"), "Size %": f"{p.get('target_pct', 0):.2f}%",
+                                "Size $": f"{p.get('target_dollar', 0):,.0f}", "Mode": p.get("mode"), "Sector": p.get("sector")}
+                               for p in sizing.get("positions", []) if isinstance(p, dict)])
             st.dataframe(df, use_container_width=True, hide_index=True)
-        else:
-            st.info("No sized positions yet.")
+        else: st.info("No sized positions yet.")
+
+        # Conviction sizing (new)
+        conv = snap.get("conviction_sizing", {}) or {}
+        if isinstance(conv, dict) and conv.get("positions"):
+            st.markdown("### 🎯 Conviction Sizing (Soros)")
+            for p in conv.get("positions", [])[:5]:
+                if not isinstance(p, dict): continue
+                st.markdown(f'<div style="display:flex;justify-content:space-between;font-size:0.78rem;padding:3px 0;">'
+                            f'<span style="color:#E6EDF3;">{p.get("ticker","—")}</span>'
+                            f'<span style="color:#8B949E;">{p.get("conviction","—")} · {p.get("size_pct",0):.1f}%</span></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: US STOCKS
+# PAGE: US STOCKS — NO REGIME COMPASS
 # ═══════════════════════════════════════════════════════════════════
 def page_us_stocks():
     st.markdown("## 🇺🇸 US Stocks")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     playbook = {
         "Q1": {"beli": ["QQQ","XLK","NVDA","AAPL","MSFT","GOOGL","META","AMD","ARKK"], "short": ["XLU","XLP","TLT","GLD"]},
@@ -1137,27 +1039,23 @@ def page_us_stocks():
     us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
     for bucket in ["Growth","Quality","Defensives","Semis","Energy","Industrials","Financials","AI_Infra","PreciousMetals"]:
         us_tickers += US_BUCKETS.get(bucket, []) if US_BUCKETS else []
-    if not us_tickers:
-        us_tickers = FALLBACK_US
+    if not us_tickers: us_tickers = FALLBACK_US
     us_tickers = list(dict.fromkeys(us_tickers))
 
     rows = build_ticker_rows(us_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar)
     longs, shorts = split_long_short(rows)
 
     st.markdown(f"**{len(rows)} setups** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
-
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l:
-        render_ticker_cards_v2(longs)
-    with tab_s:
-        render_ticker_cards_v2(shorts)
+    with tab_l: render_ticker_cards_v3(longs)
+    with tab_s: render_ticker_cards_v3(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: FOREX
+# PAGE: FOREX — NO REGIME COMPASS
 # ═══════════════════════════════════════════════════════════════════
 def page_forex():
     st.markdown("## 💱 Forex")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     playbook = {
         "Q1": {"beli": ["EURUSD","AUDUSD","EM FX"], "short": ["DXY/UUP"]},
@@ -1175,6 +1073,25 @@ def page_forex():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"]) + "</div>", unsafe_allow_html=True)
 
+    # DXY Correlation detail (new)
+    dxy_corr = snap.get("dxy_correlation", {}) or {}
+    if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
+        st.divider()
+        st.markdown("### 💱 DXY Correlation (20D)")
+        pos = dxy_corr.get("strongest_positive_corr", [])[:5]
+        neg = dxy_corr.get("strongest_negative_corr", [])[:5]
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Positive</div>", unsafe_allow_html=True)
+            for t, data in pos:
+                if isinstance(data, dict):
+                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#3FB950;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Negative</div>", unsafe_allow_html=True)
+            for t, data in neg:
+                if isinstance(data, dict):
+                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
+
     st.divider()
 
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
@@ -1182,19 +1099,16 @@ def page_forex():
     longs, shorts = split_long_short(rows)
 
     st.markdown(f"**{len(rows)} pairs** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
-
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l:
-        render_ticker_cards_v2(longs)
-    with tab_s:
-        render_ticker_cards_v2(shorts)
+    with tab_l: render_ticker_cards_v3(longs)
+    with tab_s: render_ticker_cards_v3(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: COMMODITIES
+# PAGE: COMMODITIES — NO REGIME COMPASS
 # ═══════════════════════════════════════════════════════════════════
 def page_commodities():
     st.markdown("## 🛢️ Commodities")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     playbook = {
         "Q1": {"beli": ["Copper","Industrial Metals"], "short": ["Gold (counter-trend)"]},
@@ -1219,19 +1133,16 @@ def page_commodities():
     longs, shorts = split_long_short(rows)
 
     st.markdown(f"**{len(rows)} commodities** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
-
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l:
-        render_ticker_cards_v2(longs)
-    with tab_s:
-        render_ticker_cards_v2(shorts)
+    with tab_l: render_ticker_cards_v3(longs)
+    with tab_s: render_ticker_cards_v3(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: CRYPTO
+# PAGE: CRYPTO — NO REGIME COMPASS + crypto_center
 # ═══════════════════════════════════════════════════════════════════
 def page_crypto():
     st.markdown("## ₿ Crypto")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     playbook = {
         "Q1": {"beli": ["BTC","ETH","SOL","alts"], "short": []},
@@ -1249,6 +1160,27 @@ def page_crypto():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
 
+    # Crypto Center detail (new)
+    cc = snap.get("crypto_center", {}) or {}
+    if isinstance(cc, dict) and (cc.get("capital_flows") or cc.get("market_structure")):
+        st.divider()
+        st.markdown("### ₿ On-Chain / Market Structure")
+        flows = cc.get("capital_flows", {})
+        if isinstance(flows, dict):
+            st.markdown(f'<div style="font-size:0.78rem;color:#8B949E;">Stablecoin: <span style="color:#E6EDF3;font-weight:700;">{flows.get("total_b",0):.1f}B</span> ({flows.get("change_7d_b",0):+.1f}B 7D)</div>', unsafe_allow_html=True)
+        structure = cc.get("market_structure", {})
+        if isinstance(structure, dict) and structure.get("funding"):
+            st.markdown("<div style='font-size:0.65rem; color:#8B949E; text-transform:uppercase; font-weight:600; margin-top:6px; margin-bottom:3px;'>Funding Rates</div>", unsafe_allow_html=True)
+            for sym, data in list(structure.get("funding", {}).items())[:4]:
+                if isinstance(data, dict):
+                    rate = data.get("rate", 0)
+                    color = "#3FB950" if rate < 0 else "#F85149" if rate > 0.0005 else "#8B949E"
+                    st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{sym}: <span style="color:{color};font-weight:700;">{rate:.4f}</span></div>', unsafe_allow_html=True)
+        narrative_crypto = cc.get("narrative", {})
+        if isinstance(narrative_crypto, dict) and narrative_crypto.get("fear_greed"):
+            fg = narrative_crypto.get("fear_greed", {})
+            st.markdown(f'<div style="margin-top:6px;font-size:0.78rem;color:#8B949E;">Fear & Greed: <span style="color:#E6EDF3;font-weight:700;">{fg.get("value",50)}</span> ({fg.get("label","Neutral")})</div>', unsafe_allow_html=True)
+
     st.divider()
 
     crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
@@ -1256,19 +1188,16 @@ def page_crypto():
     longs, shorts = split_long_short(rows)
 
     st.markdown(f"**{len(rows)} coins** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
-
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l:
-        render_ticker_cards_v2(longs)
-    with tab_s:
-        render_ticker_cards_v2(shorts)
+    with tab_l: render_ticker_cards_v3(longs)
+    with tab_s: render_ticker_cards_v3(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: GLOBAL & EM
+# PAGE: GLOBAL & EM — NO REGIME COMPASS
 # ═══════════════════════════════════════════════════════════════════
 def page_global():
     st.markdown("## 🌍 Global & EM")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     global_ = snap.get("global", {}) or {}
     country_list = global_.get("country_list", []) if isinstance(global_, dict) else []
@@ -1282,13 +1211,11 @@ def page_global():
         }
         country_list = []
         for q, countries in base_map.items():
-            for c in countries:
-                country_list.append({"country": c, "quad": q, "regime_name": _quad_name(q)})
+            for c in countries: country_list.append({"country": c, "quad": q, "regime_name": _quad_name(q)})
 
     st.markdown("### 🗺️ Country Regime Map")
     st.markdown(_heatmap_grid_html(country_list[:16], key_label="country", key_quad="quad"), unsafe_allow_html=True)
-    if len(country_list) > 16:
-        st.markdown(_heatmap_grid_html(country_list[16:32], key_label="country", key_quad="quad"), unsafe_allow_html=True)
+    if len(country_list) > 16: st.markdown(_heatmap_grid_html(country_list[16:32], key_label="country", key_quad="quad"), unsafe_allow_html=True)
 
     st.divider()
 
@@ -1297,39 +1224,26 @@ def page_global():
     ihsg_rows = build_ticker_rows(ihsg_tickers, "ihsg", vix_now, prices=prices, ar=ar)
 
     by_sector = {}
-    for r in ihsg_rows:
-        sect = IHSG_SECTOR_MAP.get(r.get("ticker"), "Other")
-        by_sector.setdefault(sect, []).append(r)
+    for r in ihsg_rows: by_sector.setdefault(IHSG_SECTOR_MAP.get(r.get("ticker"), "Other"), []).append(r)
 
     if by_sector:
-        sectors = list(by_sector.keys())
-        counts = [len(v) for v in by_sector.values()]
+        sectors = list(by_sector.keys()); counts = [len(v) for v in by_sector.values()]
         colors = [_ret_color(sum(x.get("r1m",0) or 0 for x in by_sector[s])/max(len(by_sector[s]),1)) for s in sectors]
-        fig = go.Figure(go.Bar(
-            y=sectors, x=counts, orientation="h",
-            marker_color=colors,
-            text=[str(c) for c in counts], textposition="outside",
-            textfont=dict(size=11, color="#E6EDF3")
-        ))
-        fig.update_layout(height=max(250, len(sectors)*35), margin=dict(l=120,r=40,t=20,b=20),
-                          paper_bgcolor="#0D1117", plot_bgcolor="#0D1117",
-                          font=dict(color="#E6EDF3", size=11, family="Inter"),
-                          xaxis=dict(showgrid=True, gridcolor="#21262D"),
-                          yaxis=dict(showgrid=False))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="ihsg_sector_bar_v2")
+        fig = go.Figure(go.Bar(y=sectors, x=counts, orientation="h", marker_color=colors, text=[str(c) for c in counts], textposition="outside", textfont=dict(size=11, color="#E6EDF3")))
+        fig.update_layout(height=max(250, len(sectors)*35), margin=dict(l=120,r=40,t=20,b=20), paper_bgcolor="#0D1117", plot_bgcolor="#0D1117", font=dict(color="#E6EDF3", size=11, family="Inter"), xaxis=dict(showgrid=True, gridcolor="#21262D"), yaxis=dict(showgrid=False))
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="ihsg_sector_bar_v3")
 
     st.markdown(f"**{len(ihsg_rows)} stocks** · Sectors: {', '.join(by_sector.keys())}")
-
     for sector, items in by_sector.items():
         with st.expander(f"**{sector}** ({len(items)} stocks)", expanded=False):
-            render_ticker_cards_v2(items, max_rows=10)
+            render_ticker_cards_v3(items, max_rows=10)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: THEMES
+# PAGE: THEMES — NO REGIME COMPASS + enriched
 # ═══════════════════════════════════════════════════════════════════
 def page_themes():
     st.markdown("## 📖 Themes & Playbook")
-    render_regime_compass(snap)
+    # REMOVED render_regime_compass(snap)
 
     allocation = {
         "Q1": {"long": 75, "short": 5, "cash": 20, "style": "Tech 30% | Growth 20% | Crypto 15% | EM 5% | Defensives 5%"},
@@ -1345,10 +1259,31 @@ def page_themes():
 
     st.divider()
 
-    st.markdown("### 🌀 Boom-Bust Stage")
-    bb = snap.get("boom_bust", {}) or {}
-    stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
-    st.markdown(_timeline_html(stage), unsafe_allow_html=True)
+    # Reflexivity + Boom-Bust (new visual)
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### 🌀 Boom-Bust Stage")
+        bb = snap.get("boom_bust", {}) or {}
+        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
+        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
+        # Reflexivity score
+        reflex = snap.get("reflexivity", {}) or {}
+        if isinstance(reflex, dict):
+            score = reflex.get("super_bubble_score", 0)
+            st.markdown(f'<div style="margin-top:8px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
+            st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
+    with c2:
+        st.markdown("### 🧠 Behavioral Macro (Yves)")
+        behavioral = snap.get("behavioral_macro", {}) or {}
+        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
+        if isinstance(yves, dict):
+            alert = yves.get("alert", "No alert")
+            level = yves.get("alert_level", "NONE")
+            color = "#F85149" if level in ("HIGH", "CRITICAL") else "#D29922" if level == "MEDIUM" else "#3FB950"
+            st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("Behavioral macro unavailable")
 
     st.divider()
 
@@ -1358,14 +1293,10 @@ def page_themes():
         for b in bottlenecks[:5]:
             if not isinstance(b, dict): continue
             beneficiaries = ", ".join(b.get("beneficiaries", [])[:5])
-            st.markdown(
-                f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:7px 10px;margin:3px 0;">'
-                f'<div style="font-size:0.82rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
-                f'<div style="font-size:0.72rem;color:#8B949E;margin-top:3px;">Beneficiaries: {beneficiaries}</div></div>',
-                unsafe_allow_html=True
-            )
-    else:
-        st.info("No active bottlenecks detected.")
+            st.markdown(f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:7px 10px;margin:3px 0;">'
+                        f'<div style="font-size:0.82rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
+                        f'<div style="font-size:0.72rem;color:#8B949E;margin-top:3px;">Beneficiaries: {beneficiaries}</div></div>', unsafe_allow_html=True)
+    else: st.info("No active bottlenecks detected.")
 
     st.divider()
 
@@ -1375,31 +1306,38 @@ def page_themes():
         for t, data in list(odte.get("tickers", {}).items())[:3]:
             if not isinstance(data, dict): continue
             pin = data.get("pin_risk", 50)
-            vanna_dir = data.get("vanna", "neutral")
-            charm_dir = data.get("charm", "neutral")
+            vanna_dir = data.get("vanna", "neutral"); charm_dir = data.get("charm", "neutral")
             v_arrow = "⬆" if "up" in str(vanna_dir).lower() or "pos" in str(vanna_dir).lower() else "⬇" if "down" in str(vanna_dir).lower() or "neg" in str(vanna_dir).lower() else "➡"
             c_arrow = "⬆" if "up" in str(charm_dir).lower() or "pos" in str(charm_dir).lower() else "⬇" if "down" in str(charm_dir).lower() or "neg" in str(charm_dir).lower() else "➡"
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:8px;margin:5px 0;padding:7px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
-                f'<span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:45px;">{t}</span>'
-                f'<div style="flex:1;"><div style="font-size:0.58rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
-                f'{_gauge_html(pin, max_val=100, color="#D29922", height=9, label_left="0", label_right="100")}</div>'
-                f'<div style="font-size:0.75rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>'
-                f'<div style="font-size:0.75rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>',
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin:5px 0;padding:7px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
+                        f'<span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:45px;">{t}</span>'
+                        f'<div style="flex:1;"><div style="font-size:0.58rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
+                        f'{_gauge_html(pin, max_val=100, color="#D29922", height=9, label_left="0", label_right="100")}</div>'
+                        f'<div style="font-size:0.75rem;color:#58A6FF;font-weight:700;">Vanna {v_arrow}</div>'
+                        f'<div style="font-size:0.75rem;color:#A371F7;font-weight:700;">Charm {c_arrow}</div></div>', unsafe_allow_html=True)
     else:
         st.caption("0DTE data unavailable — showing proxy")
         for t in ["SPY","QQQ","IWM"]:
-            st.markdown(
-                f'<div style="display:flex;align-items:center;gap:8px;margin:5px 0;padding:7px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
-                f'<span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:45px;">{t}</span>'
-                f'<div style="flex:1;"><div style="font-size:0.58rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
-                f'{_gauge_html(50, max_val=100, color="#30363D", height=9, label_left="0", label_right="100")}</div>'
-                f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Vanna ➡</div>'
-                f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>',
-                unsafe_allow_html=True
-            )
+            st.markdown(f'<div style="display:flex;align-items:center;gap:8px;margin:5px 0;padding:7px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;">'
+                        f'<span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:45px;">{t}</span>'
+                        f'<div style="flex:1;"><div style="font-size:0.58rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Pin Risk</div>'
+                        f'{_gauge_html(50, max_val=100, color="#30363D", height=9, label_left="0", label_right="100")}</div>'
+                        f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Vanna ➡</div>'
+                        f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>', unsafe_allow_html=True)
+
+    st.divider()
+
+    # Stress Test (new)
+    st.markdown("### 🧪 Stress Test")
+    stress = snap.get("stress_test", []) or []
+    if stress:
+        for s in stress[:3]:
+            if not isinstance(s, dict): continue
+            severity_color = "#F85149" if s.get("severity") == "EXTREME" else "#D29922"
+            with st.expander(f"{s.get('scenario','—')} · DD {s.get('portfolio_dd',0):.0%}"):
+                st.markdown(f'<div style="font-size:0.78rem;color:#8B949E;">Worst: <span style="color:#F85149;font-weight:700;">{s.get("worst_asset","—")} {s.get("worst_dd",0):.0%}</span> · Best: <span style="color:#3FB950;font-weight:700;">{s.get("best_asset","—")} {s.get("best_dd",0):.0%}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size:0.78rem;color:#8B949E;margin-top:4px;">Hedge: <span style="color:#E6EDF3;">{s.get("hedge","—")}</span></div>', unsafe_allow_html=True)
+    else: st.caption("Stress test unavailable")
 
     st.divider()
 
@@ -1416,32 +1354,21 @@ def page_themes():
     for name, desc, data in methodologies:
         status = "🟢" if data else "⚪"
         with st.expander(f"{status} {name} — {desc}", expanded=False):
-            if data:
-                st.json({k: str(v)[:100] for k, v in list(data.items())[:3]})
-            else:
-                st.caption("Data not loaded this snapshot.")
+            if data: st.json({k: str(v)[:100] for k, v in list(data.items())[:3]})
+            else: st.caption("Data not loaded this snapshot.")
 
 # ═══════════════════════════════════════════════════════════════════
 # MAIN ROUTER
 # ═══════════════════════════════════════════════════════════════════
-if page == "🏠 Dashboard":
-    page_dashboard()
-elif page == "⚡ Alpha Center":
-    page_alpha()
-elif page == "🇺🇸 US Stocks":
-    page_us_stocks()
-elif page == "💱 Forex":
-    page_forex()
-elif page == "🛢️ Commodities":
-    page_commodities()
-elif page == "₿ Crypto":
-    page_crypto()
-elif page == "🌍 Global & EM":
-    page_global()
-elif page == "📖 Themes":
-    page_themes()
+if page == "🏠 Dashboard": page_dashboard()
+elif page == "⚡ Alpha Center": page_alpha()
+elif page == "🇺🇸 US Stocks": page_us_stocks()
+elif page == "💱 Forex": page_forex()
+elif page == "🛢️ Commodities": page_commodities()
+elif page == "₿ Crypto": page_crypto()
+elif page == "🌍 Global & EM": page_global()
+elif page == "📖 Themes": page_themes()
 
-# Footer
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v31.0 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v31.1 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
