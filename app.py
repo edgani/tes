@@ -1,10 +1,10 @@
-"""app.py - MacroRegime Pro v31.1 VISUAL
-Critical fixes from screenshot audit:
-- Ticker cards: render HTML via markdown instead of expander label (fixes raw HTML text bug)
-- Asset Pulse: single horizontal row, compact
-- Regime Compass removed from market tabs (only Dashboard + Alpha Center)
-- Alpha Center: enriched per-ticker cards with risk range + badges
-- Added missing orchestrator fields: crypto_center, behavioral_macro, front_run_candidates, dxy_correlation, vol_forecast, stress_test, reflexivity
+"""app.py - MacroRegime Pro v32.0 VISUAL
+Major rewrite:
+- Dashboard: regime + narrative + metrics + boom-bust + behavioral + allocation + scenarios + bottlenecks + asset pulse + deep technical
+- Alpha Center: bottleneck + front-run + quad rotation candidates
+- Market tabs: ticker cards enriched with MM positioning (max pain, gamma, gex, vanna, charm, skew)
+- US Stocks aggregate: SPY/QQQ/IWM/GLD/TLT options section
+- Dark Pool proxy prints
 """
 import streamlit as st
 import pandas as pd
@@ -16,11 +16,10 @@ import json, os
 from datetime import datetime
 
 logger = __import__("logging").getLogger(__name__)
-
-st.set_page_config(page_title="MacroRegime Pro v31", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MacroRegime Pro v32", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
-# DESIGN SYSTEM CSS
+# CSS
 # ═══════════════════════════════════════════════════════════════════
 st.markdown("""
 <style>
@@ -35,23 +34,16 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 [data-testid="stMetricLabel"] { font-size: 0.58rem !important; font-weight: 600 !important; letter-spacing: 0.6px; text-transform: uppercase; opacity: 0.55; }
 [data-testid="stMetricValue"] { font-size: 1.05rem !important; font-weight: 700 !important; }
 
-/* Ticker Card v3 */
-.ticker-card-v3 {
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 10px; background: #161B22;
-    border: 1px solid #30363D; border-radius: 8px;
-    margin: 3px 0; transition: border-color 0.2s; flex-wrap: wrap;
-}
-.ticker-card-v3:hover { border-color: #484F58; }
-.tc-v3-left { min-width: 80px; }
-.tc-v3-symbol { font-weight: 800; font-size: 0.9rem; color: #E6EDF3; letter-spacing: -0.3px; }
-.tc-v3-price { font-weight: 600; font-size: 0.75rem; color: #8B949E; font-variant-numeric: tabular-nums; }
-.tc-v3-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
-.tc-v3-spark { width: 80px; height: 24px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
-.tc-v3-rr { flex: 1; min-width: 120px; }
-.tc-v3-meta { display: flex; gap: 8px; font-size: 0.68rem; color: #8B949E; font-variant-numeric: tabular-nums; min-width: 110px; }
+.ticker-card-v4 { display: flex; align-items: center; gap: 10px; padding: 7px 10px; background: #161B22; border: 1px solid #30363D; border-radius: 8px; margin: 3px 0; transition: border-color 0.2s; flex-wrap: wrap; }
+.ticker-card-v4:hover { border-color: #484F58; }
+.tc-v4-left { min-width: 80px; }
+.tc-v4-symbol { font-weight: 800; font-size: 0.9rem; color: #E6EDF3; letter-spacing: -0.3px; }
+.tc-v4-price { font-weight: 600; font-size: 0.75rem; color: #8B949E; font-variant-numeric: tabular-nums; }
+.tc-v4-badges { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 2px; }
+.tc-v4-spark { width: 80px; height: 24px; display: flex; align-items: flex-end; gap: 1px; flex-shrink: 0; }
+.tc-v4-rr { flex: 1; min-width: 120px; }
+.tc-v4-meta { display: flex; gap: 8px; font-size: 0.68rem; color: #8B949E; font-variant-numeric: tabular-nums; min-width: 110px; }
 
-/* Badges */
 .badge { display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 10px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3px; border: 1px solid transparent; line-height: 1.3; }
 .badge-long { background: rgba(34,197,94,0.12); color: #3FB950; border-color: rgba(34,197,94,0.3); }
 .badge-short { background: rgba(239,68,68,0.12); color: #F85149; border-color: rgba(239,68,68,0.3); }
@@ -60,30 +52,24 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .badge-grade-b { background: rgba(234,179,8,0.15); color: #D29922; border-color: #D29922; }
 .badge-grade-c { background: rgba(139,148,158,0.15); color: #8B949E; border-color: #8B949E; }
 .badge-news { background: rgba(88,166,255,0.12); color: #58A6FF; border-color: rgba(88,166,255,0.3); }
+.badge-mm { background: rgba(168,85,247,0.12); color: #A855F7; border-color: rgba(168,85,247,0.3); }
 
-/* Spark */
-.sp-bar-v3 { width: 3px; border-radius: 1px; opacity: 0.85; }
+.sp-bar-v4 { width: 3px; border-radius: 1px; opacity: 0.85; }
+.rr-track-v4 { position: relative; height: 16px; background: #21262D; border-radius: 4px; overflow: hidden; }
+.rr-zone-v4 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
+.rr-dot-v4 { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 7px; height: 7px; border-radius: 50%; background: #E6EDF3; border: 2px solid #58A6FF; z-index: 10; box-shadow: 0 0 4px rgba(88,166,255,0.4); }
+.rr-labels-v4 { display: flex; justify-content: space-between; font-size: 0.58rem; color: #8B949E; margin-top: 1px; font-variant-numeric: tabular-nums; }
 
-/* Risk Range v3 */
-.rr-track-v3 { position: relative; height: 16px; background: #21262D; border-radius: 4px; overflow: hidden; }
-.rr-zone-v3 { position: absolute; top: 2px; bottom: 2px; border-radius: 2px; }
-.rr-dot-v3 { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 7px; height: 7px; border-radius: 50%; background: #E6EDF3; border: 2px solid #58A6FF; z-index: 10; box-shadow: 0 0 4px rgba(88,166,255,0.4); }
-.rr-labels-v3 { display: flex; justify-content: space-between; font-size: 0.58rem; color: #8B949E; margin-top: 1px; font-variant-numeric: tabular-nums; }
-
-/* Gauge */
 .gauge-track { position: relative; height: 12px; background: #21262D; border-radius: 6px; overflow: hidden; margin: 3px 0; }
 .gauge-fill { position: absolute; top: 0; bottom: 0; left: 0; border-radius: 6px; transition: width 0.5s ease; }
 .gauge-label { display: flex; justify-content: space-between; font-size: 0.6rem; color: #8B949E; margin-top: 1px; }
 
-/* Heatmap */
 .hm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .hm-cell { padding: 5px 3px; border-radius: 4px; text-align: center; font-size: 0.68rem; font-weight: 600; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.05); }
 
-/* Pulse horizontal */
 .pulse-hbox { min-width: 90px; height: 52px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
 .pulse-hlabel { font-size: 0.6rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 1px; }
 
-/* Timeline */
 .timeline { display: flex; align-items: center; gap: 0px; margin: 6px 0; }
 .tl-node { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #30363D; background: #21262D; flex-shrink: 0; }
 .tl-node.active { border-color: #58A6FF; background: #58A6FF; box-shadow: 0 0 5px rgba(88,166,255,0.35); }
@@ -92,49 +78,54 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .tl-line.active { background: #58A6FF; }
 .tl-labels { display: flex; justify-content: space-between; font-size: 0.58rem; color: #8B949E; margin-top: 3px; }
 
-/* Stack bar */
 .stack-bar { display: flex; height: 20px; border-radius: 4px; overflow: hidden; background: #21262D; }
 .stack-seg { display: flex; align-items: center; justify-content: center; font-size: 0.6rem; font-weight: 700; color: #fff; }
 
-/* Skew */
 .skew-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
 .skew-label { width: 32px; font-size: 0.65rem; color: #8B949E; font-weight: 600; }
 .skew-track { flex: 1; height: 14px; background: #21262D; border-radius: 4px; position: relative; overflow: hidden; }
 .skew-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
 .skew-value { width: 36px; font-size: 0.65rem; color: #E6EDF3; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
 
-/* GEX */
 .gex-track { position: relative; height: 18px; background: #21262D; border-radius: 4px; overflow: hidden; display: flex; align-items: center; }
 .gex-center { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: #8B949E; opacity: 0.3; }
 
-/* Tabs */
 .stTabs [data-baseweb="tab-list"] { gap: 2px !important; margin-bottom: 5px !important; }
 .stTabs [data-baseweb="tab"] { padding: 4px 10px !important; font-size: 0.78rem !important; font-weight: 600 !important; border-radius: 6px 6px 0 0 !important; }
 [data-testid="stExpander"] { border: 1px solid #30363D !important; border-radius: 8px !important; margin-bottom: 5px !important; }
 [data-testid="stExpander"] > details > summary { padding: 7px 10px !important; font-size: 0.78rem !important; font-weight: 600 !important; }
 [data-testid="stSidebar"] .block-container { padding-top: 0.6rem !important; }
 
-/* Narrative */
 .narrative-card { background: #161B22; border-left: 3px solid #58A6FF; border-radius: 8px; padding: 10px 14px; margin: 6px 0; }
 .narrative-headline { font-size: 0.85rem; font-weight: 600; color: #E6EDF3; line-height: 1.4; }
 .narrative-sub { font-size: 0.7rem; color: #8B949E; margin-top: 4px; }
 
-/* Metric grid */
 .metric-grid-card { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px 12px; }
 .metric-grid-title { font-size: 0.6rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 4px; }
 .metric-grid-value { font-size: 1.05rem; font-weight: 700; color: #E6EDF3; }
 .metric-grid-sub { font-size: 0.65rem; color: #8B949E; margin-top: 2px; }
 
-/* Alpha row */
-.alpha-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #161B22; border: 1px solid #30363D; border-radius: 6px; margin: 3px 0; font-size: 0.8rem; }
-.alpha-row:hover { border-color: #484F58; }
-
-/* Compass */
 .compass-container { background: #161B22; border: 1px solid #30363D; border-radius: 10px; padding: 12px 14px; margin: 6px 0; }
-.compass-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .compass-title { font-size: 0.75rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
 .compass-quad { font-size: 1.2rem; font-weight: 800; letter-spacing: -1px; }
 .compass-sub { font-size: 0.7rem; color: #8B949E; }
+
+.dp-row { display: flex; align-items: center; gap: 8px; padding: 5px 8px; background: #161B22; border-bottom: 1px solid #21262D; font-size: 0.75rem; }
+.dp-time { width: 60px; color: #8B949E; font-variant-numeric: tabular-nums; }
+.dp-ticker { width: 55px; color: #E6EDF3; font-weight: 700; }
+.dp-price { width: 60px; color: #E6EDF3; font-variant-numeric: tabular-nums; }
+.dp-size { width: 70px; color: #8B949E; font-variant-numeric: tabular-nums; text-align: right; }
+.dp-amt { width: 65px; color: #3FB950; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+.dp-amt.sell { color: #F85149; }
+
+.mm-box { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px 12px; margin: 4px 0; }
+.mm-title { font-size: 0.7rem; color: #A855F7; text-transform: uppercase; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.5px; }
+.mm-line { display: flex; justify-content: space-between; font-size: 0.75rem; padding: 2px 0; }
+.mm-label { color: #8B949E; }
+.mm-value { color: #E6EDF3; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.skew-curve-container { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px; margin: 4px 0; }
+.skew-curve-title { font-size: 0.7rem; color: #8B949E; text-transform: uppercase; font-weight: 600; margin-bottom: 6px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -226,24 +217,24 @@ def _sparkline_html(series, width=80, height=24, bars=18):
     for i, v in enumerate(s):
         pct = max(2, min(100, int((float(v) - mn) / rng * 100)))
         color = "#3FB950" if (i > 0 and float(v) >= float(s.iloc[i-1])) else "#F85149"
-        bars_html += f'<div class="sp-bar-v3" style="height:{pct}%;background:{color};"></div>'
-    return f'<div class="tc-v3-spark" style="width:{width}px;height:{height}px;display:flex;align-items:flex-end;gap:1px;">{bars_html}</div>'
+        bars_html += f'<div class="sp-bar-v4" style="height:{pct}%;background:{color};"></div>'
+    return f'<div class="tc-v4-spark" style="width:{width}px;height:{height}px;display:flex;align-items:flex-end;gap:1px;">{bars_html}</div>'
 
 def _risk_range_html(px, lrr, trr, width_pct=100):
     if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
-        return '<div class="rr-track-v3" style="height:16px;background:#21262D;border-radius:4px;"></div><div class="rr-labels-v3"><span>-</span><span>-</span></div>'
+        return '<div class="rr-track-v4" style="height:16px;background:#21262D;border-radius:4px;"></div><div class="rr-labels-v4"><span>-</span><span>-</span></div>'
     px, lrr, trr = float(px), float(lrr), float(trr)
     spread = trr - lrr
     pos = max(0, min(1, (px - lrr) / spread)) if spread > 0 else 0.5
     left_pct = pos * 100
     color = "#3FB950" if pos <= 0.35 else "#F85149" if pos >= 0.65 else "#8B949E"
     return (
-        f'<div class="rr-track-v3" style="width:{width_pct}%;">'
-        f'<div class="rr-zone-v3" style="left:0%;width:100%;background:#21262D;"></div>'
-        f'<div class="rr-zone-v3" style="left:0%;width:{left_pct:.0f}%;background:{color}15;"></div>'
-        f'<div class="rr-dot-v3" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>'
+        f'<div class="rr-track-v4" style="width:{width_pct}%;">'
+        f'<div class="rr-zone-v4" style="left:0%;width:100%;background:#21262D;"></div>'
+        f'<div class="rr-zone-v4" style="left:0%;width:{left_pct:.0f}%;background:{color}15;"></div>'
+        f'<div class="rr-dot-v4" style="left:{max(3,min(97,left_pct)):.0f}%;border-color:{color};"></div>'
         f'</div>'
-        f'<div class="rr-labels-v3" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>'
+        f'<div class="rr-labels-v4" style="width:{width_pct}%;"><span>{ff(lrr)}</span><span>{ff(px)}</span><span>{ff(trr)}</span></div>'
     )
 
 def _gauge_html(value, max_val=100, color=None, height=12, label_left="0", label_right="100"):
@@ -258,7 +249,7 @@ def _gauge_html(value, max_val=100, color=None, height=12, label_left="0", label
     )
 
 def _badge_html(text, kind="long"):
-    cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news"}.get(kind,"badge-neut")
+    cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news","mm":"badge-mm"}.get(kind,"badge-neut")
     return f'<span class="badge {cls}">{text}</span>'
 
 def _stacked_bar_html(long_pct, short_pct, cash_pct):
@@ -326,9 +317,164 @@ def _asset_pulse_box_h(label, ret, sub=""):
     return f'<div class="pulse-hbox" style="background:{c}12;border-color:{c}25;"><div>{txt}</div><div class="pulse-hlabel">{label}</div>{sub_html}</div>'
 
 # ═══════════════════════════════════════════════════════════════════
-# RISK RANGE / ROW BUILDERS
+# OPTIONS / GREEKS / MM DATA ENRICHMENT
 # ═══════════════════════════════════════════════════════════════════
-def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None):
+def _get_options_data(ticker, snap):
+    out = {
+        "max_pain": None, "put_wall": None, "call_wall": None,
+        "gamma_flip_up": None, "gamma_flip_down": None, "gamma_regime": None,
+        "gex": None, "vanna": None, "charm": None,
+        "skew_30d": None, "skew_60d": None, "skew_90d": None,
+        "pin_risk": None, "expected_move_pct": None,
+        "oi_call": None, "oi_put": None, "pc_ratio": None,
+        "iv_rank": None, "iv_percentile": None,
+        "mm_positioning": "NEUTRAL", "mm_recommendation": "—",
+        "source": "PROXY",
+    }
+    yf = snap.get("yfinance_options", {}).get(ticker, {}) if isinstance(snap.get("yfinance_options"), dict) else {}
+    if isinstance(yf, dict) and yf.get("ok"):
+        out["max_pain"] = yf.get("max_pain")
+        out["put_wall"] = yf.get("put_wall")
+        out["call_wall"] = yf.get("call_wall")
+        out["gamma_flip_up"] = yf.get("gamma_flip_up")
+        out["gamma_flip_down"] = yf.get("gamma_flip_down")
+        out["gamma_regime"] = yf.get("gamma_regime")
+        out["pc_ratio"] = yf.get("put_call_ratio")
+        out["source"] = "YF"
+    greeks = snap.get("greeks_data", {}).get(ticker, {}) if isinstance(snap.get("greeks_data"), dict) else {}
+    if isinstance(greeks, dict):
+        out["gex"] = greeks.get("net_gex") or greeks.get("gex")
+        out["vanna"] = greeks.get("vanna")
+        out["charm"] = greeks.get("charm")
+        out["skew_30d"] = greeks.get("skew_30d") or greeks.get("skew")
+    gamma = snap.get("gamma_data", {}).get(ticker, {}) if isinstance(snap.get("gamma_data"), dict) else {}
+    if isinstance(gamma, dict):
+        if not out["gamma_regime"]: out["gamma_regime"] = gamma.get("regime")
+        if not out["max_pain"]: out["max_pain"] = gamma.get("max_pain")
+    gex = snap.get("gex_data", {}).get(ticker, {}) if isinstance(snap.get("gex_data"), dict) else {}
+    if isinstance(gex, dict):
+        if not out["gex"]: out["gex"] = gex.get("net_gex") or gex.get("gex") or gex.get("total_gex")
+    vanna = snap.get("vanna_data", {}).get(ticker, {}) if isinstance(snap.get("vanna_data"), dict) else {}
+    if isinstance(vanna, dict):
+        if not out["vanna"]: out["vanna"] = vanna.get("vanna")
+    charm = snap.get("charm_data", {}).get(ticker, {}) if isinstance(snap.get("charm_data"), dict) else {}
+    if isinstance(charm, dict):
+        if not out["charm"]: out["charm"] = charm.get("charm")
+    skew = snap.get("skew_term", {}).get("skew_data", {}) if isinstance(snap.get("skew_term"), dict) else {}
+    if isinstance(skew, dict):
+        for k, v in skew.items():
+            if isinstance(v, dict):
+                val = v.get("skew") or v.get("value") or v.get("90_10")
+                if ticker in str(k).upper() or (ticker.replace("-","") in str(k).upper()):
+                    if "30" in str(k).lower() or "1m" in str(k).lower(): out["skew_30d"] = _safe_float(val)
+                    if "60" in str(k).lower() or "2m" in str(k).lower(): out["skew_60d"] = _safe_float(val)
+                    if "90" in str(k).lower() or "3m" in str(k).lower(): out["skew_90d"] = _safe_float(val)
+    odte = snap.get("odte_monitor", {}).get("tickers", {}).get(ticker, {}) if isinstance(snap.get("odte_monitor"), dict) else {}
+    if isinstance(odte, dict):
+        out["pin_risk"] = odte.get("pin_risk")
+        out["vanna"] = odte.get("vanna") or out["vanna"]
+        out["charm"] = odte.get("charm") or out["charm"]
+    vrp = snap.get("vrp_scanner", {}) if isinstance(snap.get("vrp_scanner"), dict) else {}
+    if isinstance(vrp, dict) and vrp.get("ok"):
+        for item in vrp.get("high_vrp_sell_premium", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                out["iv_rank"] = item.get("iv_rank")
+                out["expected_move_pct"] = item.get("expected_move_pct")
+        for item in vrp.get("low_vrp_buy_premium", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                out["iv_rank"] = item.get("iv_rank")
+    px = None
+    prices = snap.get("prices", {})
+    if ticker in prices:
+        try: px = float(pd.to_numeric(pd.Series(prices[ticker]), errors="coerce").dropna().iloc[-1])
+        except: pass
+    mp = out["max_pain"]
+    if px and mp:
+        mp_dist = (px - mp) / mp
+        out["mp_dist"] = mp_dist
+        if abs(mp_dist) < 0.02:
+            out["mm_positioning"] = "PINNED"
+            out["mm_recommendation"] = "MM pinned — expect range-bound until expiry. Sell straddles or wait for breakout."
+        elif mp_dist > 0.03 and out["gamma_regime"] in ("POSITIVE", "DEEP_POSITIVE"):
+            out["mm_positioning"] = "CALL_WALL"
+            out["mm_recommendation"] = "Price above max pain + positive gamma — MM will sell into rallies. Fade strength above call wall."
+        elif mp_dist < -0.03 and out["gamma_regime"] in ("NEGATIVE", "DEEP_NEGATIVE"):
+            out["mm_positioning"] = "PUT_WALL"
+            out["mm_recommendation"] = "Price below max pain + negative gamma — MM will buy dips. Support at put wall likely holds."
+        else:
+            out["mm_positioning"] = "TRANSITION"
+            out["mm_recommendation"] = "Between walls — directional play valid. Watch vanna/charm for momentum shift."
+    else:
+        out["mm_positioning"] = "UNKNOWN"
+        out["mm_recommendation"] = "Insufficient options data for MM positioning."
+    return out
+
+def _skew_curve_proxy_html(ticker, options_data, width=300, height=120):
+    skew_val = options_data.get("skew_30d") or options_data.get("skew_60d") or 0
+    if skew_val is None: skew_val = 0
+    if skew_val > 0.05:
+        shape = "smirk"; left_h = 85; mid_h = 40; right_h = 25; color = "#F85149"
+    elif skew_val < -0.05:
+        shape = "reverse_smirk"; left_h = 25; mid_h = 40; right_h = 85; color = "#3FB950"
+    else:
+        shape = "smile"; left_h = 70; mid_h = 30; right_h = 70; color = "#D29922"
+    bars = 15
+    bar_width = int(width / bars)
+    bars_html = ""
+    for i in range(bars):
+        x = (i - bars//2) / (bars//2)
+        if shape == "smirk": h = int(30 + 55 * math.exp(-x))
+        elif shape == "reverse_smirk": h = int(30 + 55 * math.exp(x))
+        else: h = int(30 + 55 * (x**2))
+        h = max(10, min(95, h))
+        bars_html += f'<div style="width:{bar_width-2}px;height:{h}%;background:{color}40;border-radius:2px;opacity:0.8;"></div>'
+    return (
+        f'<div class="skew-curve-container">'
+        f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f})</div>'
+        f'<div style="display:flex;align-items:flex-end;gap:1px;height:{height}px;padding:0 4px;">'
+        f'{bars_html}'
+        f'</div>'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-top:2px;">'
+        f'<span>OTM Puts</span><span>ATM</span><span>OTM Calls</span></div>'
+        f'</div>'
+    )
+
+def _build_dark_pool_proxy(snap, prices):
+    prints = []
+    inst = snap.get("institutional_data", {}) if isinstance(snap.get("institutional_data"), dict) else {}
+    if inst.get("per_ticker"):
+        for t, data in inst.get("per_ticker", {}).items():
+            if not isinstance(data, dict): continue
+            if data.get("anomaly_score", 0) > 0.6:
+                px = None
+                if t in prices:
+                    try: px = float(pd.to_numeric(pd.Series(prices[t]), errors="coerce").dropna().iloc[-1])
+                    except: pass
+                if px:
+                    size = int(data.get("volume_anomaly", 0) * 1000)
+                    amt = size * px
+                    side = "BUY" if data.get("buy_pressure", 0) > data.get("sell_pressure", 0) else "SELL"
+                    prints.append({"time": "Live", "ticker": t, "price": px, "size": size, "amount": amt, "side": side})
+    fr = snap.get("front_run_candidates", []) or []
+    for item in fr[:5]:
+        if not isinstance(item, dict): continue
+        t = item.get("ticker", "")
+        if any(p["ticker"] == t for p in prints): continue
+        px = None
+        if t in prices:
+            try: px = float(pd.to_numeric(pd.Series(prices[t]), errors="coerce").dropna().iloc[-1])
+            except: pass
+        if px:
+            size = 250000
+            amt = size * px
+            prints.append({"time": "Consensus", "ticker": t, "price": px, "size": size, "amount": amt, "side": "BUY"})
+    prints.sort(key=lambda x: x["amount"], reverse=True)
+    return prints[:15]
+
+# ═══════════════════════════════════════════════════════════════════
+# RISK RANGE / ROW BUILDERS (ENRICHED WITH OPTIONS)
+# ═══════════════════════════════════════════════════════════════════
+def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None, snap=None):
     v = ar.get(ticker, {}) if ar else {}
     s = prices.get(ticker)
     if not v and (s is None or len(s) < 15): return None
@@ -359,25 +505,59 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     spread = trr - lrr
     pos = (px - lrr) / spread if spread > 0 else 0.5
 
+    options = _get_options_data(ticker, snap) if snap else {}
+    mp = options.get("max_pain")
+    pw = options.get("put_wall")
+    cw = options.get("call_wall")
+    gf_up = options.get("gamma_flip_up")
+    gf_down = options.get("gamma_flip_down")
+
     if side == "long":
-        entry = round(lrr, 2); tp1 = round(lrr + spread * 0.5, 2); tp2 = round(trr, 2); stop = round(lrr - spread * 0.25, 2)
+        entry_candidates = [lrr]
+        if pw and pw > lrr: entry_candidates.append(pw)
+        if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
+        entry = round(min(entry_candidates), 2)
+        tp1_candidates = [round(lrr + spread * 0.5, 2)]
+        if mp: tp1_candidates.append(round(mp, 2))
+        if gf_up: tp1_candidates.append(round(gf_up, 2))
+        tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(lrr + spread * 0.5, 2)), 2)
+        tp2_candidates = [trr]
+        if cw: tp2_candidates.append(cw)
+        if gf_up: tp2_candidates.append(gf_up)
+        tp2 = round(max(tp2_candidates), 2)
+        stop_candidates = [round(lrr - spread * 0.25, 2)]
+        if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
+        stop = round(min(stop_candidates), 2)
         near_entry = pos <= 0.35
     else:
-        entry = round(trr, 2); tp1 = round(trr - spread * 0.5, 2); tp2 = round(lrr, 2); stop = round(trr + spread * 0.25, 2)
+        entry_candidates = [trr]
+        if cw and cw < trr: entry_candidates.append(cw)
+        if gf_up and gf_up < trr: entry_candidates.append(gf_up)
+        entry = round(max(entry_candidates), 2)
+        tp1_candidates = [round(trr - spread * 0.5, 2)]
+        if mp: tp1_candidates.append(round(mp, 2))
+        if gf_down: tp1_candidates.append(round(gf_down, 2))
+        tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(trr - spread * 0.5, 2)), 2)
+        tp2_candidates = [lrr]
+        if pw: tp2_candidates.append(pw)
+        if gf_down: tp2_candidates.append(gf_down)
+        tp2 = round(min(tp2_candidates), 2)
+        stop_candidates = [round(trr + spread * 0.25, 2)]
+        if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
+        stop = round(max(stop_candidates), 2)
         near_entry = pos >= 0.65
 
     rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
     grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
 
-    gamma = {"ok": False}
-    if s is not None:
-        try:
-            s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-            if len(s_clean) >= 15:
-                sma20 = float(s_clean.tail(20).mean()) if len(s_clean) >= 20 else float(s_clean.mean())
-                std20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else float(s_clean.std())
-                gamma = {"ok": True, "regime": "TRANSITION", "max_pain": round(sma20, 2), "put_wall": round(sma20 - std20 * 2.0, 2), "call_wall": round(sma20 + std20 * 2.0, 2)}
-        except: pass
+    mm_rec = options.get("mm_recommendation", "—")
+    mm_pos = options.get("mm_positioning", "UNKNOWN")
+    if mm_pos == "CALL_WALL" and side == "long":
+        mm_rec += " ⚠️ Call wall resistance — consider taking profit at call wall."
+    elif mm_pos == "PUT_WALL" and side == "short":
+        mm_rec += " ⚠️ Put wall support — consider covering at put wall."
+    elif mm_pos == "PINNED":
+        mm_rec += " 🔄 Pinned — directional edge low. Prefer range strategies."
 
     news_signal = ""; news_headline = ""; news_sentiment = 0
     if news and isinstance(news, dict) and news.get("ticker_specific"):
@@ -393,10 +573,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "near_entry": near_entry, "pos_in_range": round(pos, 2), "side": side,
         "trade_l": lrr, "trade_r": trr, "r1m": _price_ret(ticker, prices, 21), "r3m": _price_ret(ticker, prices, 63),
         "composite": composite, "market_type": market_type,
-        "gamma_regime": gamma.get("regime"), "max_pain": gamma.get("max_pain"),
-        "put_wall": gamma.get("put_wall"), "call_wall": gamma.get("call_wall"),
+        "options": options,
+        "mm_positioning": mm_pos, "mm_recommendation": mm_rec,
         "news_signal": news_signal, "news_headline": news_headline, "news_sentiment": news_sentiment,
-        "options_source": "PROXY",
     }
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
@@ -411,11 +590,11 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
     else: row["recommendation"] = f"{sector} — range bound, wait breakout"
     return row
 
-def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None):
+def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None, snap=None):
     rows = []
     for t in tickers:
-        if market_type == "ihsg": r = _build_ihsg_row(t, prices, ar)
-        else: r = _build_row(t, prices, ar, vix_now=vix_now, gamma_data=gamma_data, greeks_data=greeks_data, market_type=market_type, news=news)
+        if market_type == "ihsg": r = _build_ihsg_row(t, prices, ar, snap=snap)
+        else: r = _build_row(t, prices, ar, vix_now=vix_now, gamma_data=gamma_data, greeks_data=greeks_data, market_type=market_type, news=news, snap=snap)
         if r: rows.append(r)
     return rows
 
@@ -425,9 +604,9 @@ def split_long_short(rows):
     return sorted(longs, key=lambda x: x.get("rr", 0), reverse=True), sorted(shorts, key=lambda x: x.get("rr", 0), reverse=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# VISUAL RENDERERS v3 — FIX RAW HTML BUG
+# VISUAL RENDERERS v4
 # ═══════════════════════════════════════════════════════════════════
-def render_ticker_card_v3(row, expanded=False):
+def render_ticker_card_v4(row, expanded=False):
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
     direction = row.get("direction", "NEUTRAL")
@@ -441,6 +620,8 @@ def render_ticker_card_v3(row, expanded=False):
     trade_r = row.get("trade_r")
     news_sig = row.get("news_signal", "")
     r1m = row.get("r1m")
+    mm_pos = row.get("mm_positioning", "")
+    options = row.get("options", {})
     prices_series = None
     if st.session_state.snap is not None:
         prices_series = st.session_state.snap.get("prices", {}).get(ticker)
@@ -453,23 +634,35 @@ def render_ticker_card_v3(row, expanded=False):
     if rr_val and rr_val >= 2: badges += _badge_html(f"RR {rr_val}x", "news")
     if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
     if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
+    if mm_pos and mm_pos != "UNKNOWN": badges += _badge_html(mm_pos, "mm")
 
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
 
-    # FIX: render card as markdown HTML, NOT as expander label
     card_html = (
-        f'<div class="ticker-card-v3">'
-        f'<div class="tc-v3-left"><div class="tc-v3-symbol">{ticker}</div><div class="tc-v3-price">{ff(px)}</div><div class="tc-v3-badges">{badges}</div></div>'
+        f'<div class="ticker-card-v4">'
+        f'<div class="tc-v4-left"><div class="tc-v4-symbol">{ticker}</div><div class="tc-v4-price">{ff(px)}</div><div class="tc-v4-badges">{badges}</div></div>'
         f'{spark}'
-        f'<div class="tc-v3-rr">{rr_html}</div>'
-        f'<div class="tc-v3-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
+        f'<div class="tc-v4-rr">{rr_html}</div>'
+        f'<div class="tc-v4-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
         f'</div>'
     )
     st.markdown(card_html, unsafe_allow_html=True)
 
-    # Details in plain-text expander
     with st.expander("🎯 Trade Setup", expanded=expanded):
+        # Basis explanation
+        basis_html = '<div style="font-size:0.7rem;color:#8B949E;margin-bottom:8px;">'
+        basis_parts = []
+        if options.get("max_pain"): basis_parts.append(f"Max Pain {ff(options['max_pain'])}")
+        if options.get("put_wall"): basis_parts.append(f"Put Wall {ff(options['put_wall'])}")
+        if options.get("call_wall"): basis_parts.append(f"Call Wall {ff(options['call_wall'])}")
+        if row.get("trade_l"): basis_parts.append(f"LRR {ff(row['trade_l'])}")
+        if row.get("trade_r"): basis_parts.append(f"TRR {ff(row['trade_r'])}")
+        if basis_parts:
+            basis_html += "Basis: " + " · ".join(basis_parts)
+        basis_html += '</div>'
+        st.markdown(basis_html, unsafe_allow_html=True)
+
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;">'
@@ -481,25 +674,52 @@ def render_ticker_card_v3(row, expanded=False):
             f'</div></div>',
             unsafe_allow_html=True
         )
-        if row.get("gamma_regime") or row.get("max_pain"):
+
+        # MM Positioning Box
+        if mm_pos and mm_pos != "UNKNOWN":
+            st.markdown(
+                f'<div class="mm-box">'
+                f'<div class="mm-title">🧠 Market Maker Positioning</div>'
+                f'<div class="mm-line"><span class="mm-label">Position</span><span class="mm-value" style="color:{"#3FB950" if mm_pos=="PUT_WALL" else "#F85149" if mm_pos=="CALL_WALL" else "#D29922"};">{mm_pos}</span></div>'
+                f'<div class="mm-line"><span class="mm-label">Max Pain Dist</span><span class="mm-value">{options.get("mp_dist",0):+.1%}</span></div>'
+                f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid #30363D;font-size:0.72rem;color:#A855F7;">'
+                f'{row.get("mm_recommendation", "—")}'
+                f'</div></div>',
+                unsafe_allow_html=True
+            )
+
+        # Options detail columns
+        if options.get("gamma_regime") or options.get("max_pain"):
             o1, o2, o3, o4 = st.columns(4)
-            o1.metric("Gamma", row.get("gamma_regime", "-"))
-            o2.metric("Max Pain", ff(row.get("max_pain")))
-            o3.metric("Put Wall", ff(row.get("put_wall")))
-            o4.metric("Call Wall", ff(row.get("call_wall")))
+            o1.metric("Gamma", options.get("gamma_regime", "-"))
+            o2.metric("Max Pain", ff(options.get("max_pain")))
+            o3.metric("Put Wall", ff(options.get("put_wall")))
+            o4.metric("Call Wall", ff(options.get("call_wall")))
+
+        # Skew Curve Proxy
+        if options.get("skew_30d") is not None or options.get("skew_60d") is not None:
+            st.markdown(_skew_curve_proxy_html(ticker, options, width=300, height=100), unsafe_allow_html=True)
+
+        # Greeks mini
+        if options.get("gex") is not None or options.get("vanna") is not None or options.get("charm") is not None:
+            g1, g2, g3 = st.columns(3)
+            g1.metric("GEX", f"{options.get('gex',0):+.2f}" if options.get('gex') is not None else "-")
+            g2.metric("Vanna", str(options.get("vanna","-"))[:10])
+            g3.metric("Charm", str(options.get("charm","-"))[:10])
+
         if row.get("news_headline"):
             st.markdown(f'<div style="font-size:0.72rem;color:#58A6FF;margin-top:3px;">📰 {row.get("news_headline")[:120]}</div>', unsafe_allow_html=True)
 
-def render_ticker_cards_v3(rows, max_rows=30):
+def render_ticker_cards_v4(rows, max_rows=30):
     if not rows:
         st.info("No setups pass filter.")
         return
     st.markdown(f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:4px;">Showing {min(len(rows), max_rows)} of {len(rows)} setups</div>', unsafe_allow_html=True)
     for i, r in enumerate(rows[:max_rows]):
-        render_ticker_card_v3(r, expanded=(i < 2))
+        render_ticker_card_v4(r, expanded=(i < 2))
 
 # ═══════════════════════════════════════════════════════════════════
-# REGIME COMPASS — Merged Markov + Quad + Probability
+# REGIME COMPASS
 # ═══════════════════════════════════════════════════════════════════
 def render_regime_compass(snap):
     gip_local = snap.get("gip")
@@ -530,7 +750,6 @@ def render_regime_compass(snap):
         cp_badge = '<span style="background:#F8514922;color:#F85149;padding:1px 5px;border-radius:4px;font-size:0.6rem;font-weight:700;border:1px solid #F85149;margin-left:6px;">⚠ CP</span>' if cp_alert else ""
         st.markdown(
             f'<div class="compass-container">'
-            f'<div class="compass-header"><div class="compass-title">Regime Compass</div></div>'
             f'<div style="display:flex;gap:10px;align-items:center;margin-bottom:8px;">'
             f'<div style="text-align:center;min-width:70px;"><div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">Structural</div>'
             f'<div class="compass-quad" style="color:{sq_color};">{sq}</div><div class="compass-sub">{_quad_name(sq)}</div></div>'
@@ -573,7 +792,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v31.1 VISUAL | Audit Fixed")
+    st.caption("v32.0 VISUAL | Deep Options")
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
@@ -673,7 +892,7 @@ if _vix_raw is not None:
     except Exception: vix_now = 20.0
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: DASHBOARD — Zero tickers, regime fusion, narrative-first
+# PAGE: DASHBOARD
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
@@ -752,16 +971,6 @@ def page_dashboard():
         alloc = allocation.get(sq, allocation["Q3"])
         st.markdown(_stacked_bar_html(alloc["long"], alloc["short"], alloc["cash"]), unsafe_allow_html=True)
 
-        # Front-run candidates (new)
-        fr = snap.get("front_run_candidates", []) or []
-        if fr:
-            st.markdown("### 🔮 Front-Run Candidates")
-            for item in fr[:3]:
-                if not isinstance(item, dict): continue
-                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.78rem;">'
-                            f'<span style="color:#E6EDF3;">• {item.get("ticker","—")}</span>'
-                            f'<span style="color:#8B949E;">{item.get("why_front_run","")[:50]}</span></div>', unsafe_allow_html=True)
-
     with right:
         st.markdown("### 🔮 Scenarios")
         scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
@@ -786,7 +995,6 @@ def page_dashboard():
                             f'<span style="color:#F85149;font-weight:600;">{len(b.get("beneficiaries",[]))} plays</span></div>', unsafe_allow_html=True)
         else: st.caption("No active bottlenecks")
 
-        # DXY Correlation mini (new)
         dxy_corr = snap.get("dxy_correlation", {}) or {}
         if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
             st.markdown("### 💱 DXY Correlation")
@@ -800,7 +1008,33 @@ def page_dashboard():
 
     st.divider()
 
-    # Asset Pulse — 1 row horizontal
+    # Boom-Bust + Behavioral row
+    bb = snap.get("boom_bust", {}) or {}
+    stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
+    reflex = snap.get("reflexivity", {}) or {}
+    score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("### 🌀 Boom-Bust Stage")
+        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
+        st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
+        st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
+    with c2:
+        st.markdown("### 🧠 Behavioral Macro (Yves)")
+        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
+        if isinstance(yves, dict):
+            alert = yves.get("alert", "No alert")
+            level = yves.get("alert_level", "NONE")
+            color = "#F85149" if level in ("HIGH", "CRITICAL") else "#D29922" if level == "MEDIUM" else "#3FB950"
+            st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("Behavioral macro unavailable")
+
+    st.divider()
+
+    # Asset Pulse
     st.markdown("### ⚡ Asset Pulse (21D)")
     pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
     pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
@@ -809,6 +1043,29 @@ def page_dashboard():
         pulse_html += _asset_pulse_box_h(label, ret, t)
     pulse_html += '</div>'
     st.markdown(pulse_html, unsafe_allow_html=True)
+
+    st.divider()
+
+    # Dark Pool Proxy
+    st.markdown("### 🌑 Dark Pool Prints (Proxy)")
+    dp_prints = _build_dark_pool_proxy(snap, prices)
+    if dp_prints:
+        st.markdown(f'<div style="display:flex;gap:8px;padding:4px 8px;background:#21262D;border-radius:6px 6px 0 0;font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;">'
+                    f'<span style="width:60px;">Time</span><span style="width:55px;">Ticker</span><span style="width:60px;">Price</span>'
+                    f'<span style="width:70px;text-align:right;">Size</span><span style="width:65px;text-align:right;">Amount</span></div>', unsafe_allow_html=True)
+        for p in dp_prints[:10]:
+            side_cls = "sell" if p.get("side") == "SELL" else ""
+            st.markdown(
+                f'<div class="dp-row">'
+                f'<span class="dp-time">{p.get("time","—")}</span>'
+                f'<span class="dp-ticker">{p.get("ticker","—")}</span>'
+                f'<span class="dp-price">${ff(p.get("price"))}</span>'
+                f'<span class="dp-size">{p.get("size",0):,.0f}</span>'
+                f'<span class="dp-amt {side_cls}">${p.get("amount",0)/1e6:.1f}M</span>'
+                f'</div>', unsafe_allow_html=True
+            )
+    else:
+        st.caption("No dark pool proxy data available")
 
     st.divider()
 
@@ -876,7 +1133,7 @@ def page_dashboard():
             cols[i % 4].markdown(f"<span style='color:{color};font-size:0.75rem;'>● {name}</span>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: ALPHA CENTER — Loosened filters + enriched cards
+# PAGE: ALPHA CENTER — Bottleneck + Front-Run + Quad Rotation
 # ═══════════════════════════════════════════════════════════════════
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
@@ -891,61 +1148,126 @@ def page_alpha():
 
     st.divider()
 
-    tab1, tab2, tab3 = st.tabs(["🏆 Top Picks", "📊 Vol & Squeeze", "🔮 Discovery"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🏆 Top Picks", "🔮 Front-Run", "📊 Vol & Squeeze", "🧠 Discovery"])
 
     with tab1:
+        # Alpha Center basis: bottleneck + quad rotation + asymmetry
         alpha_candidates = []
-        comp_signals = snap.get("composite_signals", {}) or {}
-        if isinstance(comp_signals, dict):
-            for ticker, sig in comp_signals.items():
-                if not isinstance(sig, dict): continue
-                if sig.get("direction") in ("NEUTRAL", "AVOID"): continue
-                if sig.get("confidence", 0) < 0.15: continue
-                thesis = (snap.get("thought_process", {}) or {}).get(ticker, {})
-                if not isinstance(thesis, dict): thesis = {}
-                if thesis.get("thesis_score", 0) < 20: continue
-                rr_all = (snap.get("risk_ranges", {}) or {}).get("asset_ranges", {})
-                rr_t = rr_all.get(ticker, {}) if isinstance(rr_all, dict) else {}
-                if not isinstance(rr_t, dict): continue
-                if rr_t.get("quality") not in ("A+", "A", "B", None): continue
-                sm = ((snap.get("smart_money", {}) or {}).get("per_ticker", {}) or {}).get(ticker, {})
-                if not isinstance(sm, dict): sm = {}
-                sm_boost = 10 if sm.get("smart_money_held") else 0
-                alpha_candidates.append({
-                    "ticker": ticker, "direction": sig.get("direction"), "confidence": sig.get("confidence", 0),
-                    "thesis_score": thesis.get("thesis_score", 0), "primary_role": thesis.get("primary_role", "—"),
-                    "alpha_score": sig.get("confidence", 0) * 30 + thesis.get("thesis_score", 0) * 0.4 + sm_boost,
-                    "rr": rr_t,
-                })
-        alpha_candidates.sort(key=lambda x: x.get("alpha_score", 0), reverse=True)
-        top_alpha = [c for c in alpha_candidates if c.get("alpha_score", 0) >= 40][:25]
+
+        # 1. Bottleneck candidates
+        bottleneck = snap.get("bottleneck_v3", {}) or {}
+        if isinstance(bottleneck, dict):
+            for item in bottleneck.get("active_bottlenecks", []) or []:
+                if not isinstance(item, dict): continue
+                for t in item.get("beneficiaries", [])[:5]:
+                    alpha_candidates.append({
+                        "ticker": t, "source": "bottleneck", "score": 85,
+                        "thesis": f"Bottleneck: {item.get('name','').replace('_',' ').title()}",
+                        "direction": "LONG",
+                    })
+
+        # 2. Front-run candidates
+        fr = snap.get("front_run_candidates", []) or []
+        for item in fr[:15]:
+            if not isinstance(item, dict): continue
+            alpha_candidates.append({
+                "ticker": item.get("ticker",""), "source": "front_run", "score": 75,
+                "thesis": item.get("why_front_run", "")[:80],
+                "direction": "LONG",
+                "options": item.get("options", {}),
+            })
+
+        # 3. Leopold asymmetry setups
+        leopold = snap.get("leopold_scan", {}) or {}
+        if isinstance(leopold, dict):
+            for t in leopold.get("asymmetry_setups", []) or []:
+                if isinstance(t, dict):
+                    alpha_candidates.append({
+                        "ticker": t.get("ticker",""), "source": "leopold", "score": 80,
+                        "thesis": t.get("thesis", "Asymmetry setup"),
+                        "direction": t.get("direction", "LONG"),
+                    })
+
+        # 4. Karsan squeeze setups
+        karsan = snap.get("karsan_scanner", {}) or {}
+        if isinstance(karsan, dict):
+            for t in karsan.get("squeeze_setups", []) or []:
+                if isinstance(t, dict):
+                    alpha_candidates.append({
+                        "ticker": t.get("ticker",""), "source": "karsan_squeeze", "score": 78,
+                        "thesis": f"Squeeze setup · Score {t.get('squeeze_score',0):.0f}",
+                        "direction": "LONG",
+                    })
+            for t in karsan.get("buy_convexity", []) or []:
+                if isinstance(t, dict):
+                    alpha_candidates.append({
+                        "ticker": t.get("ticker",""), "source": "karsan_convexity", "score": 72,
+                        "thesis": "Buy convexity — vol expansion play",
+                        "direction": "LONG",
+                    })
+
+        # 5. COATUE agentic plays
+        coatue = snap.get("coatue_scan", {}) or {}
+        if isinstance(coatue, dict):
+            for t in coatue.get("agentic_plays", []) or []:
+                if isinstance(t, dict):
+                    alpha_candidates.append({
+                        "ticker": t.get("ticker",""), "source": "coatue", "score": 70,
+                        "thesis": t.get("thesis", "Agentic play"),
+                        "direction": "LONG",
+                    })
+
+        # Deduplicate by ticker, keep highest score
+        seen = {}
+        for c in alpha_candidates:
+            t = c.get("ticker", "")
+            if not t: continue
+            if t not in seen or c.get("score", 0) > seen[t].get("score", 0):
+                seen[t] = c
+        alpha_candidates = list(seen.values())
+        alpha_candidates.sort(key=lambda x: x.get("score", 0), reverse=True)
+        top_alpha = [c for c in alpha_candidates if c.get("score", 0) >= 60][:25]
 
         if not top_alpha:
-            st.info(f"No cross-market candidates meet Alpha Center bar. Total analyzed: {len(alpha_candidates)}. Try running composite engine.")
+            st.info(f"No alpha candidates this snapshot. Total analyzed: {len(alpha_candidates)}. Run orchestrator with all engines enabled.")
         else:
-            st.markdown(f"**{len(top_alpha)} candidates** from {len(alpha_candidates)} total (bar: ≥40/100)")
+            st.markdown(f"**{len(top_alpha)} alpha candidates** from {len(alpha_candidates)} total (bar: ≥60/100)")
             for i, c in enumerate(top_alpha):
-                dir_color = "#3FB950" if c["direction"] == "LONG" else "#F85149"
-                # Enriched expander with risk range
-                with st.expander(f"#{i+1} {c['ticker']} · Score {c['alpha_score']:.0f}/100 · {c['direction']}", expanded=(i < 3)):
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("Confidence", f"{c['confidence']:.0%}")
-                    c2.metric("Thesis", f"{c['thesis_score']:.0f}/100")
-                    c3.metric("Role", c["primary_role"])
-                    c4.metric("Direction", c["direction"])
-                    rr_t = c.get("rr", {})
-                    if isinstance(rr_t, dict):
-                        px = rr_t.get("px")
-                        lrr = rr_t.get("trade", {}).get("lrr")
-                        trr = rr_t.get("trade", {}).get("trr")
-                        if px and lrr and trr:
-                            st.markdown(_risk_range_html(px, lrr, trr, width_pct=100), unsafe_allow_html=True)
-                    # Smart money detail
-                    sm = ((snap.get("smart_money", {}) or {}).get("per_ticker", {}) or {}).get(c["ticker"], {})
-                    if isinstance(sm, dict) and sm.get("smart_money_held"):
-                        st.markdown(f'<div style="font-size:0.75rem;color:#3FB950;margin-top:4px;">✅ Smart Money holding this ticker</div>', unsafe_allow_html=True)
+                dir_color = "#3FB950" if c.get("direction") == "LONG" else "#F85149"
+                source_badge = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(c.get("source"),"⚡")
+                with st.expander(f"#{i+1} {c['ticker']} · Score {c['score']}/100 · {source_badge} {c.get('source','').replace('_',' ').title()}", expanded=(i < 3)):
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("Direction", c.get("direction", "—"))
+                    c2.metric("Source", c.get("source", "—").replace("_", " ").title())
+                    c3.metric("Score", c.get("score", 0))
+                    st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;margin-top:4px;">{c.get("thesis", "—")}</div>', unsafe_allow_html=True)
+                    # If has options, show risk range
+                    if c.get("options") and isinstance(c["options"], dict):
+                        opt = c["options"]
+                        if opt.get("max_pain"):
+                            st.markdown(f'<div style="font-size:0.72rem;color:#8B949E;">Max Pain: {ff(opt["max_pain"])} · Put Wall: {ff(opt.get("put_wall"))} · Call Wall: {ff(opt.get("call_wall"))}</div>', unsafe_allow_html=True)
 
     with tab2:
+        st.markdown("### 🔮 Front-Run Candidates")
+        fr = snap.get("front_run_candidates", []) or []
+        if fr:
+            for item in fr[:10]:
+                if not isinstance(item, dict): continue
+                with st.expander(f"{item.get('ticker','—')} · {item.get('priority','MEDIUM')} · {item.get('source','')}"):
+                    st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;">{item.get("why_front_run","—")}</div>', unsafe_allow_html=True)
+                    if item.get("catalyst"):
+                        cat = item["catalyst"]
+                        st.markdown(f'<div style="font-size:0.72rem;color:#D29922;margin-top:4px;">Catalyst: {cat.get("event","—")} ({cat.get("quarter","—")})</div>', unsafe_allow_html=True)
+                    opt = item.get("options", {})
+                    if isinstance(opt, dict) and opt.get("max_pain"):
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Max Pain", ff(opt.get("max_pain")))
+                        c2.metric("Gamma", opt.get("gamma_regime", "—"))
+                        c3.metric("Conviction", opt.get("conviction", "—"))
+        else:
+            st.info("No front-run candidates this snapshot.")
+
+    with tab3:
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("### 📊 VRP Scanner")
@@ -976,7 +1298,7 @@ def page_alpha():
                 else: st.caption("No imminent squeezes")
             else: st.info("Squeeze scanner unavailable")
 
-    with tab3:
+    with tab4:
         st.markdown("### 🔮 Discovery Brain")
         disc = snap.get("discovery_brain", {}) or {}
         if isinstance(disc, dict) and disc.get("by_mode"):
@@ -1001,7 +1323,6 @@ def page_alpha():
             st.dataframe(df, use_container_width=True, hide_index=True)
         else: st.info("No sized positions yet.")
 
-        # Conviction sizing (new)
         conv = snap.get("conviction_sizing", {}) or {}
         if isinstance(conv, dict) and conv.get("positions"):
             st.markdown("### 🎯 Conviction Sizing (Soros)")
@@ -1012,11 +1333,10 @@ def page_alpha():
                             f'<span style="color:#8B949E;">{p.get("conviction","—")} · {p.get("size_pct",0):.1f}%</span></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: US STOCKS — NO REGIME COMPASS
+# PAGE: US STOCKS — With aggregate options for SPY/QQQ/IWM/GLD/TLT
 # ═══════════════════════════════════════════════════════════════════
 def page_us_stocks():
     st.markdown("## 🇺🇸 US Stocks")
-    # REMOVED render_regime_compass(snap)
 
     playbook = {
         "Q1": {"beli": ["QQQ","XLK","NVDA","AAPL","MSFT","GOOGL","META","AMD","ARKK"], "short": ["XLU","XLP","TLT","GLD"]},
@@ -1034,6 +1354,27 @@ def page_us_stocks():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
 
+    # Aggregate Options Section for key ETFs
+    st.divider()
+    st.markdown("### 📊 Index / ETF Options (SPY · QQQ · IWM · GLD · TLT)")
+    key_etfs = ["SPY", "QQQ", "IWM", "GLD", "TLT"]
+    for etf in key_etfs:
+        opt = _get_options_data(etf, snap)
+        if opt.get("max_pain") or opt.get("gamma_regime"):
+            with st.expander(f"{etf} · Gamma: {opt.get('gamma_regime','—')} · Max Pain: {ff(opt.get('max_pain'))}", expanded=False):
+                c1, c2, c3, c4, c5 = st.columns(5)
+                c1.metric("Max Pain", ff(opt.get("max_pain")))
+                c2.metric("Put Wall", ff(opt.get("put_wall")))
+                c3.metric("Call Wall", ff(opt.get("call_wall")))
+                c4.metric("GEX", f"{opt.get('gex',0):+.2f}" if opt.get('gex') is not None else "-")
+                c5.metric("Vanna", str(opt.get("vanna","-"))[:8])
+                # Skew curve
+                if opt.get("skew_30d") is not None or opt.get("skew_60d") is not None:
+                    st.markdown(_skew_curve_proxy_html(etf, opt, width=280, height=90), unsafe_allow_html=True)
+                # MM recommendation
+                if opt.get("mm_recommendation"):
+                    st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
+
     st.divider()
 
     us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
@@ -1042,21 +1383,19 @@ def page_us_stocks():
     if not us_tickers: us_tickers = FALLBACK_US
     us_tickers = list(dict.fromkeys(us_tickers))
 
-    rows = build_ticker_rows(us_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar)
+    rows = build_ticker_rows(us_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
 
     st.markdown(f"**{len(rows)} setups** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l: render_ticker_cards_v3(longs)
-    with tab_s: render_ticker_cards_v3(shorts)
+    with tab_l: render_ticker_cards_v4(longs)
+    with tab_s: render_ticker_cards_v4(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: FOREX — NO REGIME COMPASS
+# PAGE: FOREX
 # ═══════════════════════════════════════════════════════════════════
 def page_forex():
     st.markdown("## 💱 Forex")
-    # REMOVED render_regime_compass(snap)
-
     playbook = {
         "Q1": {"beli": ["EURUSD","AUDUSD","EM FX"], "short": ["DXY/UUP"]},
         "Q2": {"beli": ["GBPUSD","CADUSD"], "short": ["JPY"]},
@@ -1064,7 +1403,6 @@ def page_forex():
         "Q4": {"beli": ["JPY","CHF"], "short": ["AUDUSD","EM FX"]},
     }
     pb = playbook.get(sq, playbook["Q3"])
-
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
@@ -1072,8 +1410,6 @@ def page_forex():
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"]) + "</div>", unsafe_allow_html=True)
-
-    # DXY Correlation detail (new)
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
         st.divider()
@@ -1091,25 +1427,20 @@ def page_forex():
             for t, data in neg:
                 if isinstance(data, dict):
                     st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
-
     st.divider()
-
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
-    rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar)
+    rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
-
     st.markdown(f"**{len(rows)} pairs** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l: render_ticker_cards_v3(longs)
-    with tab_s: render_ticker_cards_v3(shorts)
+    with tab_l: render_ticker_cards_v4(longs)
+    with tab_s: render_ticker_cards_v4(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: COMMODITIES — NO REGIME COMPASS
+# PAGE: COMMODITIES
 # ═══════════════════════════════════════════════════════════════════
 def page_commodities():
     st.markdown("## 🛢️ Commodities")
-    # REMOVED render_regime_compass(snap)
-
     playbook = {
         "Q1": {"beli": ["Copper","Industrial Metals"], "short": ["Gold (counter-trend)"]},
         "Q2": {"beli": ["CL=F","USO","XLE","Energy"], "short": []},
@@ -1117,7 +1448,6 @@ def page_commodities():
         "Q4": {"beli": ["GLD","TLT"], "short": ["CL=F","Industrial metals"]},
     }
     pb = playbook.get(sq, playbook["Q3"])
-
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
@@ -1125,25 +1455,20 @@ def page_commodities():
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
-
     st.divider()
-
     comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
-    rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar)
+    rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
-
     st.markdown(f"**{len(rows)} commodities** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l: render_ticker_cards_v3(longs)
-    with tab_s: render_ticker_cards_v3(shorts)
+    with tab_l: render_ticker_cards_v4(longs)
+    with tab_s: render_ticker_cards_v4(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: CRYPTO — NO REGIME COMPASS + crypto_center
+# PAGE: CRYPTO
 # ═══════════════════════════════════════════════════════════════════
 def page_crypto():
     st.markdown("## ₿ Crypto")
-    # REMOVED render_regime_compass(snap)
-
     playbook = {
         "Q1": {"beli": ["BTC","ETH","SOL","alts"], "short": []},
         "Q2": {"beli": ["BTC","MSTR","CORZ","IREN"], "short": []},
@@ -1151,7 +1476,6 @@ def page_crypto():
         "Q4": {"beli": ["BTC (hedge ONLY)"], "short": ["alts","ETH","memecoin"]},
     }
     pb = playbook.get(sq, playbook["Q3"])
-
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
@@ -1159,8 +1483,6 @@ def page_crypto():
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
-
-    # Crypto Center detail (new)
     cc = snap.get("crypto_center", {}) or {}
     if isinstance(cc, dict) and (cc.get("capital_flows") or cc.get("market_structure")):
         st.divider()
@@ -1180,28 +1502,22 @@ def page_crypto():
         if isinstance(narrative_crypto, dict) and narrative_crypto.get("fear_greed"):
             fg = narrative_crypto.get("fear_greed", {})
             st.markdown(f'<div style="margin-top:6px;font-size:0.78rem;color:#8B949E;">Fear & Greed: <span style="color:#E6EDF3;font-weight:700;">{fg.get("value",50)}</span> ({fg.get("label","Neutral")})</div>', unsafe_allow_html=True)
-
     st.divider()
-
     crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
-    rows = build_ticker_rows(crypto_tickers, "crypto", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar)
+    rows = build_ticker_rows(crypto_tickers, "crypto", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
-
     st.markdown(f"**{len(rows)} coins** · 🟢 {len(longs)} Long · 🔴 {len(shorts)} Short")
     tab_l, tab_s = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)}))"])
-    with tab_l: render_ticker_cards_v3(longs)
-    with tab_s: render_ticker_cards_v3(shorts)
+    with tab_l: render_ticker_cards_v4(longs)
+    with tab_s: render_ticker_cards_v4(shorts)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: GLOBAL & EM — NO REGIME COMPASS
+# PAGE: GLOBAL & EM
 # ═══════════════════════════════════════════════════════════════════
 def page_global():
     st.markdown("## 🌍 Global & EM")
-    # REMOVED render_regime_compass(snap)
-
     global_ = snap.get("global", {}) or {}
     country_list = global_.get("country_list", []) if isinstance(global_, dict) else []
-
     if not country_list:
         base_map = {
             "Q1": ["USA","Japan","India","Taiwan","South Korea","Vietnam","Mexico","Singapore","Philippines","Malaysia","UAE","Israel","Poland","Czech Republic","Romania"],
@@ -1212,39 +1528,31 @@ def page_global():
         country_list = []
         for q, countries in base_map.items():
             for c in countries: country_list.append({"country": c, "quad": q, "regime_name": _quad_name(q)})
-
     st.markdown("### 🗺️ Country Regime Map")
     st.markdown(_heatmap_grid_html(country_list[:16], key_label="country", key_quad="quad"), unsafe_allow_html=True)
     if len(country_list) > 16: st.markdown(_heatmap_grid_html(country_list[16:32], key_label="country", key_quad="quad"), unsafe_allow_html=True)
-
     st.divider()
-
     st.markdown("### 🇮🇩 IHSG Report")
     ihsg_tickers = list(IHSG_UNIVERSE.keys()) if IHSG_UNIVERSE else FALLBACK_IHSG
-    ihsg_rows = build_ticker_rows(ihsg_tickers, "ihsg", vix_now, prices=prices, ar=ar)
-
+    ihsg_rows = build_ticker_rows(ihsg_tickers, "ihsg", vix_now, prices=prices, ar=ar, snap=snap)
     by_sector = {}
     for r in ihsg_rows: by_sector.setdefault(IHSG_SECTOR_MAP.get(r.get("ticker"), "Other"), []).append(r)
-
     if by_sector:
         sectors = list(by_sector.keys()); counts = [len(v) for v in by_sector.values()]
         colors = [_ret_color(sum(x.get("r1m",0) or 0 for x in by_sector[s])/max(len(by_sector[s]),1)) for s in sectors]
         fig = go.Figure(go.Bar(y=sectors, x=counts, orientation="h", marker_color=colors, text=[str(c) for c in counts], textposition="outside", textfont=dict(size=11, color="#E6EDF3")))
         fig.update_layout(height=max(250, len(sectors)*35), margin=dict(l=120,r=40,t=20,b=20), paper_bgcolor="#0D1117", plot_bgcolor="#0D1117", font=dict(color="#E6EDF3", size=11, family="Inter"), xaxis=dict(showgrid=True, gridcolor="#21262D"), yaxis=dict(showgrid=False))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="ihsg_sector_bar_v3")
-
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="ihsg_sector_bar_v4")
     st.markdown(f"**{len(ihsg_rows)} stocks** · Sectors: {', '.join(by_sector.keys())}")
     for sector, items in by_sector.items():
         with st.expander(f"**{sector}** ({len(items)} stocks)", expanded=False):
-            render_ticker_cards_v3(items, max_rows=10)
+            render_ticker_cards_v4(items, max_rows=10)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: THEMES — NO REGIME COMPASS + enriched
+# PAGE: THEMES
 # ═══════════════════════════════════════════════════════════════════
 def page_themes():
     st.markdown("## 📖 Themes & Playbook")
-    # REMOVED render_regime_compass(snap)
-
     allocation = {
         "Q1": {"long": 75, "short": 5, "cash": 20, "style": "Tech 30% | Growth 20% | Crypto 15% | EM 5% | Defensives 5%"},
         "Q2": {"long": 70, "short": 10, "cash": 20, "style": "Cyclicals 25% | Financials 15% | Energy 15% | Materials 10% | Small Caps 5%"},
@@ -1252,21 +1560,16 @@ def page_themes():
         "Q4": {"long": 50, "short": 20, "cash": 30, "style": "TLT 15% | Gold 10% | Utilities 10% | Staples 10% | Healthcare 5%"},
     }
     alloc = allocation.get(sq, allocation["Q3"])
-
     st.markdown("### 💼 Portfolio Allocation")
     st.markdown(_stacked_bar_html(alloc["long"], alloc["short"], alloc["cash"]), unsafe_allow_html=True)
     st.markdown(f"<div style='font-size:0.78rem; color:#8B949E; margin-top:6px;'>**Style:** {alloc['style']}</div>", unsafe_allow_html=True)
-
     st.divider()
-
-    # Reflexivity + Boom-Bust (new visual)
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("### 🌀 Boom-Bust Stage")
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
         st.markdown(_timeline_html(stage), unsafe_allow_html=True)
-        # Reflexivity score
         reflex = snap.get("reflexivity", {}) or {}
         if isinstance(reflex, dict):
             score = reflex.get("super_bubble_score", 0)
@@ -1282,11 +1585,8 @@ def page_themes():
             color = "#F85149" if level in ("HIGH", "CRITICAL") else "#D29922" if level == "MEDIUM" else "#3FB950"
             st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
             st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
-        else:
-            st.caption("Behavioral macro unavailable")
-
+        else: st.caption("Behavioral macro unavailable")
     st.divider()
-
     st.markdown("### 🚧 Active Bottlenecks")
     bottlenecks = ((snap.get("narrative", {}) or {}).get("active_bottlenecks", []) or []) if isinstance(snap.get("narrative"), dict) else []
     if bottlenecks:
@@ -1297,9 +1597,7 @@ def page_themes():
                         f'<div style="font-size:0.82rem;font-weight:700;color:#E6EDF3;">{str(b.get("name","")).replace("_"," ").title()}</div>'
                         f'<div style="font-size:0.72rem;color:#8B949E;margin-top:3px;">Beneficiaries: {beneficiaries}</div></div>', unsafe_allow_html=True)
     else: st.info("No active bottlenecks detected.")
-
     st.divider()
-
     st.markdown("### ⚡ Cem Karsan / 0DTE")
     odte = snap.get("odte_monitor", {}) or {}
     if isinstance(odte, dict) and odte.get("tickers"):
@@ -1324,23 +1622,17 @@ def page_themes():
                         f'{_gauge_html(50, max_val=100, color="#30363D", height=9, label_left="0", label_right="100")}</div>'
                         f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Vanna ➡</div>'
                         f'<div style="font-size:0.75rem;color:#8B949E;font-weight:700;">Charm ➡</div></div>', unsafe_allow_html=True)
-
     st.divider()
-
-    # Stress Test (new)
     st.markdown("### 🧪 Stress Test")
     stress = snap.get("stress_test", []) or []
     if stress:
         for s in stress[:3]:
             if not isinstance(s, dict): continue
-            severity_color = "#F85149" if s.get("severity") == "EXTREME" else "#D29922"
             with st.expander(f"{s.get('scenario','—')} · DD {s.get('portfolio_dd',0):.0%}"):
                 st.markdown(f'<div style="font-size:0.78rem;color:#8B949E;">Worst: <span style="color:#F85149;font-weight:700;">{s.get("worst_asset","—")} {s.get("worst_dd",0):.0%}</span> · Best: <span style="color:#3FB950;font-weight:700;">{s.get("best_asset","—")} {s.get("best_dd",0):.0%}</span></div>', unsafe_allow_html=True)
                 st.markdown(f'<div style="font-size:0.78rem;color:#8B949E;margin-top:4px;">Hedge: <span style="color:#E6EDF3;">{s.get("hedge","—")}</span></div>', unsafe_allow_html=True)
     else: st.caption("Stress test unavailable")
-
     st.divider()
-
     st.markdown("### 🧠 Methodology Lens")
     methodologies = [
         ("🏗️ Leopold", "Bottleneck layers + asymmetry setups", snap.get("leopold_scan")),
@@ -1371,4 +1663,4 @@ elif page == "📖 Themes": page_themes()
 
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v31.1 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v32.0 VISUAL · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
