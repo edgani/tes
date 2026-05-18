@@ -1,4 +1,4 @@
-"""app.py - MacroRegime Pro v32.1 FIX
+"""app.py - MacroRegime Pro v32.2 FIX
 Major rewrite:
 - Dashboard: regime + narrative + metrics + boom-bust + behavioral + allocation + scenarios + bottlenecks + asset pulse + deep technical
 - Alpha Center: bottleneck + front-run + quad rotation candidates
@@ -722,6 +722,33 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             news_headline = (tn.get("headlines") or [""])[0] if tn else ""
             news_sentiment = tn.get("sentiment_score", 0) or 0
 
+    # ── Extra context ──
+    trend_strength = None; volume_proxy = None; markov_ctx = None; behavioral_flag = None
+    if s is not None and len(s) >= 22:
+        try:
+            s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+            if len(s_clean) >= 22:
+                returns = s_clean.pct_change().dropna()
+                # ATR proxy as trend strength
+                atr = float((s_clean.diff().abs().tail(14).mean()) / s_clean.tail(14).mean()) if len(s_clean) >= 14 else None
+                if atr is not None and math.isfinite(atr):
+                    trend_strength = min(100, max(0, atr * 500))
+                # Volume proxy from swing magnitude
+                vol_proxy = float(returns.tail(20).abs().mean() * 100) if len(returns) >= 20 else None
+                if vol_proxy is not None and math.isfinite(vol_proxy):
+                    volume_proxy = vol_proxy
+        except Exception: pass
+    if snap:
+        m = snap.get("markov_v3", {}) if isinstance(snap.get("markov_v3"), dict) else {}
+        if m.get("current_regime"):
+            markov_ctx = {"regime": m.get("current_regime"), "confidence": m.get("confidence", 0)}
+        yv2 = snap.get("yves_v2", {}) if isinstance(snap.get("yves_v2"), dict) else {}
+        if yv2.get("alerts") and isinstance(yv2["alerts"], list):
+            for a in yv2["alerts"]:
+                if isinstance(a, dict) and a.get("ticker") == ticker:
+                    behavioral_flag = a.get("level", "MEDIUM")
+                    break
+
     return {
         "ticker": ticker, "price": px, "entry": entry, "target_1": tp1, "target_2": tp2,
         "stop": stop, "rr": rr, "direction": "LONG" if side == "long" else "SHORT", "grade": grade,
@@ -731,6 +758,8 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "options": options,
         "mm_positioning": mm_pos, "mm_recommendation": mm_rec,
         "news_signal": news_signal, "news_headline": news_headline, "news_sentiment": news_sentiment,
+        "trend_strength": trend_strength, "volume_proxy": volume_proxy,
+        "markov_ctx": markov_ctx, "behavioral_flag": behavioral_flag,
     }
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
@@ -743,6 +772,10 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
     if r1m > 0.05: row["recommendation"] = f"Strong momentum +{r1m:.1%} — {sector} play"
     elif r1m < -0.05: row["recommendation"] = f"Weak momentum {r1m:.1%} — avoid {sector}"
     else: row["recommendation"] = f"{sector} — range bound, wait breakout"
+    # Strip options/greeks/MM from IHSG — no options market
+    row["options"] = {}
+    row["mm_positioning"] = ""
+    row["mm_recommendation"] = ""
     return row
 
 def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None, snap=None):
@@ -761,6 +794,98 @@ def split_long_short(rows):
 # ═══════════════════════════════════════════════════════════════════
 # VISUAL RENDERERS v4
 # ═══════════════════════════════════════════════════════════════════
+def _interpret_gamma(gamma_regime, px, max_pain):
+    if not gamma_regime: return ""
+    mp_dist = ((px - max_pain) / max_pain * 100) if max_pain else 0
+    if gamma_regime in ("DEEP_POSITIVE", "POSITIVE"):
+        return f"🟢 Positive gamma — dealers long. Pin risk to max pain ({mp_dist:+.1f}%). Rallies face call-wall resistance. Sell into strength."
+    elif gamma_regime in ("DEEP_NEGATIVE", "NEGATIVE"):
+        return f"🔴 Negative gamma — dealers short. Acceleration risk on break. Dips get bought at put wall. Buy weakness."
+    else:
+        return f"🟡 Transition gamma — directional play valid. Watch for vanna/charm shift."
+
+def _interpret_gex(gex):
+    if gex is None: return ""
+    if gex > 0.5: return f"🟢 GEX +{gex:.2f}: Dealer long gamma → mean-reversion, sell rallies."
+    elif gex < -0.5: return f"🔴 GEX {gex:.2f}: Dealer short gamma → trend acceleration, buy dips."
+    else: return f"🟡 GEX {gex:.2f}: Neutral — watch breakout direction."
+
+def _interpret_vanna(vanna):
+    if vanna is None: return ""
+    try: v = float(vanna)
+    except: return ""
+    if v > 0.5: return f"🟢 Vanna +{v:.2f}: Rally = vol crush (bearish vol). Sell premium into strength."
+    elif v < -0.5: return f"🔴 Vanna {v:.2f}: Rally = vol expansion (bullish vol). Buy premium on breakouts."
+    else: return f"🟡 Vanna {v:.2f}: Neutral spot-vol correlation."
+
+def _interpret_charm(charm):
+    if charm is None: return ""
+    try: c = float(charm)
+    except: return ""
+    if c > 0.5: return f"🟢 Charm +{c:.2f}: Put support strengthening over time."
+    elif c < -0.5: return f"🔴 Charm {c:.2f}: Put support eroding — downside acceleration risk."
+    else: return f"🟡 Charm {c:.2f}: Minimal theta-driven delta shift."
+
+def _interpret_skew(skew_30d):
+    if skew_30d is None: return ""
+    s = float(skew_30d)
+    if s > 0.05: return f"🔴 Skew {s:+.2f}: OTM puts rich — fear priced in. Potential reversal if fear fades."
+    elif s < -0.05: return f"🟢 Skew {s:+.2f}: OTM calls rich — greed/fomo. Potential pullback if euphoria breaks."
+    else: return f"🟡 Skew {s:+.2f}: Fair — balanced risk pricing."
+
+def _interpret_mm(mm_pos, mp_dist):
+    if not mm_pos or mm_pos == "UNKNOWN": return ""
+    if mm_pos == "PINNED":
+        return f"📍 PINNED (dist {mp_dist:+.1f}%): MM trapped near max pain. Range-bound until expiry. Sell straddles or wait breakout."
+    elif mm_pos == "CALL_WALL":
+        return f"📈 CALL WALL (dist +{mp_dist:.1f}%): Price above max pain + positive gamma. MM sells into rallies. Fade strength."
+    elif mm_pos == "PUT_WALL":
+        return f"📉 PUT WALL (dist {mp_dist:.1f}%): Price below max pain + negative gamma. MM buys dips. Support holds."
+    elif mm_pos == "TRANSITION":
+        return f"🔄 TRANSITION: Between walls — directional play valid. Watch vanna/charm for momentum shift."
+    return ""
+
+def _get_smart_money_badge(ticker, snap):
+    sm = snap.get("smart_money", {}) if isinstance(snap.get("smart_money"), dict) else {}
+    consensus = sm.get("consensus_picks", []) if isinstance(sm.get("consensus_picks"), list) else []
+    for c in consensus:
+        if isinstance(c, dict) and c.get("ticker") == ticker:
+            return f"🐋 Smart${c.get('n_funds', 0)}"
+    return ""
+
+def _get_capital_rotation_role(ticker, snap):
+    cr = snap.get("capital_rotation", {}) if isinstance(snap.get("capital_rotation"), dict) else {}
+    roles = cr.get("ticker_roles", {}) if isinstance(cr.get("ticker_roles"), dict) else {}
+    return roles.get(ticker, "")
+
+def _get_vrp_score(ticker, snap):
+    vrp = snap.get("vrp_scanner", {}) if isinstance(snap.get("vrp_scanner"), dict) else {}
+    if vrp.get("ok"):
+        for item in vrp.get("high_vrp_sell_premium", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                return item.get("vrp_pct", 0)
+        for item in vrp.get("low_vrp_buy_premium", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                return -item.get("vrp_pct", 0)
+    return 0
+
+def _get_squeeze_score(ticker, snap):
+    sq = snap.get("squeeze_scanner", {}) if isinstance(snap.get("squeeze_scanner"), dict) else {}
+    if sq.get("ok"):
+        for item in sq.get("imminent_squeezes", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                return item.get("squeeze_score", 0)
+        for item in sq.get("strong_candidates", []):
+            if isinstance(item, dict) and item.get("ticker") == ticker:
+                return item.get("squeeze_score", 0)
+    return 0
+
+def _get_markov_confidence(ticker, snap):
+    m = snap.get("markov_v3", {}) if isinstance(snap.get("markov_v3"), dict) else {}
+    probs = m.get("regime_probabilities", {}) if isinstance(m.get("regime_probabilities"), dict) else {}
+    # Try to match ticker to regime — simplified
+    return m.get("confidence", 0)
+
 def render_ticker_card_v4(row, expanded=False):
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
@@ -778,8 +903,9 @@ def render_ticker_card_v4(row, expanded=False):
     mm_pos = row.get("mm_positioning", "")
     options = row.get("options", {})
     prices_series = None
-    if st.session_state.snap is not None:
-        prices_series = st.session_state.snap.get("prices", {}).get(ticker)
+    snap_local = st.session_state.snap
+    if snap_local is not None:
+        prices_series = snap_local.get("prices", {}).get(ticker)
 
     dir_kind = "long" if "LONG" in direction else "short" if "SHORT" in direction else "neut"
     dir_label = "LONG" if "LONG" in direction else "SHORT"
@@ -797,16 +923,42 @@ def render_ticker_card_v4(row, expanded=False):
         badges += _badge_html(f"{src_emoji} {alpha_src.replace('_',' ').title()}", "mm")
     if alpha_score:
         badges += _badge_html(f"α{alpha_score}", "a" if alpha_score >= 80 else "b" if alpha_score >= 70 else "c")
+    # Extra badges
+    if snap_local:
+        sm_badge = _get_smart_money_badge(ticker, snap_local)
+        if sm_badge: badges += _badge_html(sm_badge, "news")
+        vrp = _get_vrp_score(ticker, snap_local)
+        if vrp > 10: badges += _badge_html(f"VRP+{vrp:.0f}%", "short")
+        elif vrp < -10: badges += _badge_html(f"VRP{vrp:.0f}%", "long")
+        sq = _get_squeeze_score(ticker, snap_local)
+        if sq > 60: badges += _badge_html(f"Squeeze {sq:.0f}", "news")
+        cr_role = _get_capital_rotation_role(ticker, snap_local)
+        if cr_role: badges += _badge_html(cr_role.replace("_"," ")[:12], "neut")
 
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
+
+    # Build extra meta tags
+    extra_meta = ""
+    ts = row.get("trend_strength")
+    if ts is not None:
+        extra_meta += f'<div title="Trend Strength">📈 {ts:.0f}</div>'
+    vp = row.get("volume_proxy")
+    if vp is not None:
+        extra_meta += f'<div title="Volume Proxy">💨 {vp:.1f}%</div>'
+    mk = row.get("markov_ctx")
+    if mk and mk.get("confidence", 0) > 0.3:
+        extra_meta += f'<div title="Markov {mk.get("regime","—")}">🔮 {mk.get("confidence",0):.0%}</div>'
+    bf = row.get("behavioral_flag")
+    if bf:
+        extra_meta += f'<div title="Behavioral Alert" style="color:#F85149;">🧠 {bf}</div>'
 
     card_html = (
         f'<div class="ticker-card-v4">'
         f'<div class="tc-v4-left"><div class="tc-v4-symbol">{ticker}</div><div class="tc-v4-price">{ff(px)}</div><div class="tc-v4-badges">{badges}</div></div>'
         f'{spark}'
         f'<div class="tc-v4-rr">{rr_html}</div>'
-        f'<div class="tc-v4-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div></div>'
+        f'<div class="tc-v4-meta"><div>Entry {ff(entry)}</div><div>RR {ff(rr_val)}x</div><div>1M {fp(r1m)}</div>{extra_meta}</div>'
         f'</div>'
     )
     st.markdown(card_html, unsafe_allow_html=True)
@@ -871,6 +1023,31 @@ def render_ticker_card_v4(row, expanded=False):
                     unsafe_allow_html=True
                 )
 
+        # Supply Chain / Bottleneck context
+        if snap_local:
+            btk_v3 = snap_local.get("bottleneck_v3", {}) if isinstance(snap_local.get("bottleneck_v3"), dict) else {}
+            active_btk = btk_v3.get("active_bottlenecks", []) if isinstance(btk_v3.get("active_bottlenecks"), list) else []
+            for b in active_btk:
+                if isinstance(b, dict) and ticker in b.get("beneficiaries", []):
+                    btk_name = str(b.get("name","")).replace("_"," ").title()
+                    st.markdown(
+                        f'<div style="background:#161B22;border-left:3px solid #F85149;border-radius:6px;padding:6px 10px;margin:4px 0;">'
+                        f'<div style="font-size:0.72rem;color:#E6EDF3;font-weight:600;">🚧 Bottleneck Play: {btk_name}</div>'
+                        f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">{b.get("summary","")[:120]}</div></div>',
+                        unsafe_allow_html=True
+                    )
+            # Catalyst from front_run_candidates
+            fr_list = snap_local.get("front_run_candidates", []) or []
+            for fr_item in fr_list:
+                if isinstance(fr_item, dict) and fr_item.get("ticker") == ticker and fr_item.get("catalyst"):
+                    cat = fr_item["catalyst"]
+                    st.markdown(
+                        f'<div style="background:#161B22;border-left:3px solid #D29922;border-radius:6px;padding:6px 10px;margin:4px 0;">'
+                        f'<div style="font-size:0.72rem;color:#E6EDF3;font-weight:600;">🔮 Catalyst: {cat.get("event","—")}</div>'
+                        f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">Quarter: {cat.get("quarter","—")} · Priority: {cat.get("priority","—")}</div></div>',
+                        unsafe_allow_html=True
+                    )
+
         # Options detail columns
         if show_options and (options.get("gamma_regime") or options.get("max_pain")):
             o1, o2, o3, o4, o5 = st.columns(5)
@@ -878,12 +1055,20 @@ def render_ticker_card_v4(row, expanded=False):
             o2.metric("Max Pain", ff(options.get("max_pain")))
             o3.metric("Put Wall", ff(options.get("put_wall")))
             o4.metric("Call Wall", ff(options.get("call_wall")))
+            o5.metric("Exp Move", f"{options.get('expected_move_pct',0):.1%}" if options.get('expected_move_pct') else "—")
+
+            # Second row of options metrics
+            o6, o7, o8, o9, o10 = st.columns(5)
+            o6.metric("IV Rank", f"{options.get('iv_rank',0):.0f}" if options.get('iv_rank') is not None else "—")
+            o7.metric("PC Ratio", f"{options.get('pc_ratio',0):.2f}" if options.get('pc_ratio') is not None else "—")
+            o8.metric("OI Call", f"{options.get('oi_call',0)/1e6:.1f}M" if options.get('oi_call') else "—")
+            o9.metric("OI Put", f"{options.get('oi_put',0)/1e6:.1f}M" if options.get('oi_put') else "—")
             expiry_text = f"{options.get('days_to_expiry','—')}D" if options.get('days_to_expiry') else "—"
             expiry_date = options.get("next_expiry", "")
             if expiry_date and options.get("days_to_expiry"):
-                o5.metric("Expiry", f"{expiry_date} ({expiry_text})")
+                o10.metric("Expiry", f"{expiry_date} ({expiry_text})")
             else:
-                o5.metric("Expiry", expiry_text)
+                o10.metric("Expiry", expiry_text)
 
         # Skew Curve Proxy
         if show_options and (options.get("skew_30d") is not None or options.get("skew_60d") is not None):
@@ -981,7 +1166,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v32.1 FIX | Deep Options")
+    st.caption("v32.2 FIX | Deep Options")
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
@@ -1399,19 +1584,23 @@ def page_alpha():
         st.markdown("### 🔮 Front-Run Candidates")
         fr = snap.get("front_run_candidates", []) or []
         if fr:
-            for item in fr[:10]:
-                if not isinstance(item, dict): continue
-                with st.expander(f"{item.get('ticker','—')} · {item.get('priority','MEDIUM')} · {item.get('source','')}"):
-                    st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;">{item.get("why_front_run","—")}</div>', unsafe_allow_html=True)
-                    if item.get("catalyst"):
-                        cat = item["catalyst"]
-                        st.markdown(f'<div style="font-size:0.72rem;color:#D29922;margin-top:4px;">Catalyst: {cat.get("event","—")} ({cat.get("quarter","—")})</div>', unsafe_allow_html=True)
-                    opt = item.get("options", {})
-                    if isinstance(opt, dict) and opt.get("max_pain"):
-                        c1, c2, c3 = st.columns(3)
-                        c1.metric("Max Pain", ff(opt.get("max_pain")))
-                        c2.metric("Gamma", opt.get("gamma_regime", "—"))
-                        c3.metric("Conviction", opt.get("conviction", "—"))
+            fr_tickers = [item.get("ticker","") for item in fr if isinstance(item, dict) and item.get("ticker")]
+            fr_rows = build_ticker_rows(fr_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
+            for row in fr_rows:
+                item = next((x for x in fr if isinstance(x, dict) and x.get("ticker") == row.get("ticker")), {})
+                row["alpha_source"] = item.get("source", "front_run")
+                row["alpha_score"] = 75 if item.get("priority") == "TOP" else 70 if item.get("priority") == "HIGH" else 65
+                row["alpha_thesis"] = item.get("why_front_run", "")[:120]
+                if item.get("catalyst"):
+                    cat = item["catalyst"]
+                    row["alpha_thesis"] += f" | Catalyst: {cat.get('event','')} ({cat.get('quarter','')})"
+            fr_longs, fr_shorts = split_long_short(fr_rows)
+            if fr_longs:
+                st.markdown(f"<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🟢 Front-Run Long ({len(fr_longs)})</div>", unsafe_allow_html=True)
+                render_ticker_cards_v4(fr_longs, max_rows=15)
+            if fr_shorts:
+                st.markdown(f"<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🔴 Front-Run Short ({len(fr_shorts)})</div>", unsafe_allow_html=True)
+                render_ticker_cards_v4(fr_shorts, max_rows=15)
         else:
             st.info("No front-run candidates this snapshot.")
 
@@ -1420,31 +1609,81 @@ def page_alpha():
         with col1:
             st.markdown("### 📊 VRP Scanner")
             vrp = snap.get("vrp_scanner", {}) or {}
+            sell = []; buy = []
             if isinstance(vrp, dict) and vrp.get("ok"):
                 sell = vrp.get("high_vrp_sell_premium", [])
                 buy = vrp.get("low_vrp_buy_premium", [])
-                st.metric("Sell Premium", len(sell))
-                st.metric("Buy Premium", len(buy))
-                if sell:
-                    for item in sell[:5]:
-                        if isinstance(item, dict):
-                            st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
-                else: st.caption("No sell premium setups")
-            else: st.info("VRP scanner unavailable")
+            # ── Proxy fallback ──
+            if not sell and not buy:
+                proxy_vrp = []
+                for t in ["SPY","QQQ","IWM","GLD","TLT","VIXY","UVXY","HYG","LQD","EEM","TLT","IEF"]:
+                    s = prices.get(t)
+                    if s is None or len(s) < 60: continue
+                    try:
+                        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+                        if len(s_clean) < 60: continue
+                        ret_20 = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else 0
+                        vol_20 = float(s_clean.tail(20).pct_change().dropna().std() * math.sqrt(252))
+                        vol_60 = float(s_clean.tail(60).pct_change().dropna().std() * math.sqrt(252)) if len(s_clean) >= 60 else vol_20
+                        iv_rank = min(100, max(0, (vol_20 / max(vol_60, 0.001) * 50)))
+                        vrp_pct = (vol_20 / max(vol_60, 0.001) - 1) * 100
+                        if vrp_pct > 15:
+                            proxy_vrp.append({"ticker": t, "vrp_pct": round(vrp_pct, 0), "iv_rank": round(iv_rank, 0), "direction": "SELL"})
+                        elif vrp_pct < -15:
+                            buy.append({"ticker": t, "vrp_pct": round(abs(vrp_pct), 0), "iv_rank": round(iv_rank, 0), "direction": "BUY"})
+                    except Exception: pass
+                sell = proxy_vrp
+            st.metric("Sell Premium", len(sell))
+            st.metric("Buy Premium", len(buy))
+            if sell:
+                for item in sell[:8]:
+                    if isinstance(item, dict):
+                        st.markdown(f"• **{item.get('ticker')}** · VRP +{item.get('vrp_pct', 0):.0f}% · IV Rank {item.get('iv_rank', '—')}")
+            else: st.caption("No sell premium setups")
+            if buy:
+                st.markdown("<div style='font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-top:8px;'>Buy Convexity</div>", unsafe_allow_html=True)
+                for item in buy[:5]:
+                    if isinstance(item, dict):
+                        st.markdown(f"• **{item.get('ticker')}** · VRP {item.get('vrp_pct', 0):.0f}% cheap · IV Rank {item.get('iv_rank', '—')}")
         with col2:
             st.markdown("### 🔥 Squeeze Scanner")
             sq_scan = snap.get("squeeze_scanner", {}) or {}
+            imm = []; strong = []
             if isinstance(sq_scan, dict) and sq_scan.get("ok"):
                 imm = sq_scan.get("imminent_squeezes", [])
                 strong = sq_scan.get("strong_candidates", [])
-                st.metric("Imminent", len(imm))
-                st.metric("Strong", len(strong))
-                if imm:
-                    for item in imm[:5]:
-                        if isinstance(item, dict):
-                            st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 · {item.get('tier', '—')}")
-                else: st.caption("No imminent squeezes")
-            else: st.info("Squeeze scanner unavailable")
+            # ── Proxy fallback ──
+            if not imm and not strong:
+                proxy_sq = []
+                for t in list(prices.keys())[:80]:
+                    s = prices.get(t)
+                    if s is None or len(s) < 40: continue
+                    try:
+                        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+                        if len(s_clean) < 40: continue
+                        bb_upper = float(s_clean.tail(20).mean()) + 2 * float(s_clean.tail(20).std())
+                        bb_lower = float(s_clean.tail(20).mean()) - 2 * float(s_clean.tail(20).std())
+                        px = float(s_clean.iloc[-1])
+                        if bb_upper == bb_lower: continue
+                        pct_b = (px - bb_lower) / (bb_upper - bb_lower)
+                        vol_20 = float(s_clean.tail(20).pct_change().dropna().std())
+                        vol_5 = float(s_clean.tail(5).pct_change().dropna().std()) if len(s_clean) >= 5 else vol_20
+                        vol_contracting = vol_5 < vol_20 * 0.6
+                        near_mid = 0.35 < pct_b < 0.65
+                        if vol_contracting and near_mid:
+                            score = min(100, int(50 + (1 - vol_5/vol_20) * 50))
+                            proxy_sq.append({"ticker": t, "squeeze_score": score, "tier": "PROXY"})
+                    except Exception: pass
+                proxy_sq.sort(key=lambda x: x["squeeze_score"], reverse=True)
+                imm = proxy_sq[:8]
+            st.metric("Imminent", len(imm))
+            st.metric("Strong", len(strong))
+            if imm:
+                for item in imm[:8]:
+                    if isinstance(item, dict):
+                        tier_badge = "🟡 PROXY" if item.get("tier") == "PROXY" else f"🔥 {item.get('tier','—')}"
+                        st.markdown(f"• **{item.get('ticker')}** · Score {item.get('squeeze_score', 0):.0f}/100 {tier_badge}")
+            else: st.caption("No imminent squeezes")
 
     with tab4:
         st.markdown("### 🔮 Discovery Brain")
@@ -1785,4 +2024,4 @@ elif page == "📖 Themes": page_themes()
 
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v32.1 FIX · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v32.2 FIX · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
