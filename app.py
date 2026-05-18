@@ -2933,13 +2933,33 @@ if page == "🏠 Dashboard":
     health_snap = snap.get("market_health", {}) or {}
     breadth = snap.get("breadth", {}) or {}
 
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 22 FIX: SINGLE SOURCE OF TRUTH for Quad regime
+    # Top Bar MUST match Regime Card (Quarterly Structural) — was inconsistent
+    # Priority: GIP structural_quad > Markov current_regime (fallback)
+    # ═══════════════════════════════════════════════════════════════════
+    gip_snap = snap.get("gip", {}) or {}
+    # Normalize quad string to "Q1_GOLDILOCKS" format
+    _struc_raw = gip_snap.get("structural_quad") or gip_snap.get("quad") or ""
+    _struc_norm = ""
+    if _struc_raw:
+        _s = str(_struc_raw).upper()
+        if "Q1" in _s or "GOLDILOCKS" in _s: _struc_norm = "Q1_GOLDILOCKS"
+        elif "Q2" in _s or "REFLA" in _s: _struc_norm = "Q2_REFLATION"
+        elif "Q3" in _s or "STAGFLA" in _s: _struc_norm = "Q3_STAGFLATION"
+        elif "Q4" in _s or "DEFLAT" in _s: _struc_norm = "Q4_DEFLATION"
+        elif "Q5" in _s or "CRASH" in _s: _struc_norm = "Q5_CRASH"
+
+    # Prefer GIP structural, fallback to Markov
+    _quad_for_topbar = _struc_norm or markov.get("current_regime") or "Q3_STAGFLATION"
+
     quad_label_id = {
         "Q1_GOLDILOCKS": ("🟢 GOLDILOCKS", "Pertumbuhan ↑ Inflasi ↓", "#22c55e"),
         "Q2_REFLATION":  ("🟠 REFLASI",    "Pertumbuhan ↑ Inflasi ↑", "#f97316"),
         "Q3_STAGFLATION":("🟡 STAGFLASI",  "Pertumbuhan ↓ Inflasi ↑", "#eab308"),
         "Q4_DEFLATION":  ("🔴 DEFLASI",    "Pertumbuhan ↓ Inflasi ↓", "#ef4444"),
         "Q5_CRASH":      ("⚫ CRASH",      "Risk-off ekstrem",         "#000000"),
-    }.get(markov.get("current_regime"), ("⚪ UNKNOWN", "—", "#9ca3af"))
+    }.get(_quad_for_topbar, ("⚪ UNKNOWN", "—", "#9ca3af"))
 
     # ═══════════════════════════════════════════════════════════════════
     # TOP BAR (Persistent context strip)
@@ -3044,22 +3064,31 @@ if page == "🏠 Dashboard":
             f"Hedgeye-style: monthly leads quarterly. Watch for transition trigger."
         )
 
-    # Narrative as BULLETS (not dense paragraph)
-    st.markdown("**📰 Cerita Hari Ini:**")
-    if macro_nar.get("narrative"):
-        narrative_text = macro_nar["narrative"]
-        # Split into sentences/bullets
-        import re as _re
-        sentences = _re.split(r'(?<=[.!?])\s+', narrative_text)
-        for s in sentences[:5]:
-            if s.strip():
-                st.markdown(f"  • {s.strip()}")
+    # ═══════════════════════════════════════════════════════════════════
+    # SPRINT 22 FIX: Cerita + Path Dependencies side-by-side (was full-width
+    # left only — created empty space on right per Edward's screenshot)
+    # ═══════════════════════════════════════════════════════════════════
+    crt1, crt2 = st.columns(2)
+    with crt1:
+        st.markdown("**📰 Cerita Hari Ini:**")
+        if macro_nar.get("narrative"):
+            narrative_text = macro_nar["narrative"]
+            import re as _re
+            sentences = _re.split(r'(?<=[.!?])\s+', narrative_text)
+            for s in sentences[:5]:
+                if s.strip():
+                    st.markdown(f"  • {s.strip()}")
+        else:
+            st.caption("Tidak ada narrative aktif")
 
-    # Path Dependencies as bullets
-    if quad_seq.get("path_dependencies"):
-        st.markdown("**🛤️ Path Dependencies (Trigger Transisi):**")
-        for p in quad_seq["path_dependencies"][:4]:
-            st.markdown(f"  • {p}")
+    with crt2:
+        if quad_seq.get("path_dependencies"):
+            st.markdown("**🛤️ Path Dependencies (Trigger Transisi):**")
+            for p in quad_seq["path_dependencies"][:4]:
+                st.markdown(f"  • {p}")
+        else:
+            st.markdown("**🎯 Status Regime:**")
+            st.caption(f"Quarterly: **{structural_quad}** ({structural_conf:.0%}) · Monthly: **{monthly_quad}** ({monthly_conf:.0%})")
 
     # Stag-on-a-Lag warning (separate, prominent)
     if quad_seq.get("stag_on_a_lag"):
@@ -3270,68 +3299,10 @@ if page == "🏠 Dashboard":
     if rotation_spread.get("interpretation"):
         st.caption(f"🔄 COATUE: {rotation_spread['interpretation']}")
 
-    st.markdown("---")
-    # TOP BAR — 4 KPIs ONLY (was 6+4=10, now 4 essential)
-    # ═══════════════════════════════════════════════════════════════════
-    vix_val = (health.get("vix_bucket", {}).get("vix_last", 18) if isinstance(health, dict) else 18)
-    vb = (health.get("vix_bucket",{}) if isinstance(health, dict) else {}).get("bucket","-")
-    dxy_val = None
-    if prices.get("DX-Y.NYB") is not None:
-        try:
-            dxy_s = pd.to_numeric(prices["DX-Y.NYB"], errors="coerce").dropna()
-            if len(dxy_s) > 0: dxy_val = float(dxy_s.iloc[-1])
-        except: pass
-    gold_val = None
-    if prices.get("GC=F") is not None:
-        try:
-            gold_s = pd.to_numeric(prices["GC=F"], errors="coerce").dropna()
-            if len(gold_s) > 0: gold_val = float(gold_s.iloc[-1])
-        except: pass
+    # KPI strip + Regime Transition removed from main view
+    # Already shown in Top Bar + Heatmap Asset Class
+    # Technical Markov transition available in "🔬 Detail Teknis" expander
 
-    tb1, tb2, tb3, tb4, tb5, tb6 = st.columns(6)
-    with tb1:
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">REGIME</div>
-          <div style="font-size:14px;font-weight:700;color:{qc(sq)};">{sq}·{mq}</div>
-          <div style="font-size:9px;color:var(--text-muted);">{qn(sq)}</div>
-        </div>""", unsafe_allow_html=True)
-    with tb2:
-        vix_color = "var(--long)" if vix_val < 18 else "var(--neutral)" if vix_val < 25 else "var(--short)"
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid {vix_color};border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">VIX</div>
-          <div style="font-size:14px;font-weight:700;color:{vix_color};">{vix_val:.1f}</div>
-          <div style="font-size:9px;color:var(--text-muted);">{vb}</div>
-        </div>""", unsafe_allow_html=True)
-    with tb3:
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">DXY</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);">{f"{dxy_val:.2f}" if dxy_val else "—"}</div>
-        </div>""", unsafe_allow_html=True)
-    with tb4:
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">GOLD</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);">{f"{gold_val:.1f}" if gold_val else "—"}</div>
-        </div>""", unsafe_allow_html=True)
-    with tb5:
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">ASSETS</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);">{snap.get("prices_loaded",0)}</div>
-          <div style="font-size:9px;color:var(--text-muted);">{len(ar)} rng</div>
-        </div>""", unsafe_allow_html=True)
-    with tb6:
-        news_count = news_narratives.get("analyzed_count",0) if news_narratives else 0
-        st.markdown(f"""<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;text-align:center;">
-          <div style="font-size:9px;color:var(--text-secondary);text-transform:uppercase;">NEWS</div>
-          <div style="font-size:14px;font-weight:700;color:var(--text-primary);">{news_count}</div>
-          <div style="font-size:9px;color:var(--text-muted);">headlines</div>
-        </div>""", unsafe_allow_html=True)
-
-    # ═══════════════════════════════════════════════════════════════════
-    # ROW 0: REGIME TRANSITION (compact bar)
-    # ═══════════════════════════════════════════════════════════════════
-    if regime_transition and regime_transition.get("transitions"):
-        _render_regime_transition()
-        st.divider()
 
     # ═══════════════════════════════════════════════════════════════════
     # SPRINT 21: BACKGROUND SECTIONS — Collapsed by default (orang awam ga perlu liat)
@@ -4491,7 +4462,7 @@ elif page == "⚡ Alpha Center":
     if interconnect and interconnect.get("scenarios"):
         active_scenarios = [s for s in interconnect["scenarios"] if s.get("active")]
         if active_scenarios:
-            st.markdown("### 🔗 Active Cascade(s)")
+            st.markdown("### 🔗 Cascade — Aktif & Watch")
             for scenario in active_scenarios[:3]:
                 sc_name = scenario.get("scenario", "").replace("_", " ").title()
                 sc_trigger = scenario.get("trigger", "")
@@ -4527,7 +4498,7 @@ elif page == "⚡ Alpha Center":
         else:
             watch = interconnect.get("watch_scenarios", [])
             if watch:
-                st.markdown("### 🔗 Cascade Watch")
+                st.markdown("**🔍 Watch List (belum aktif):**")
                 for w in watch[:2]:
                     chain = w.replace("_", " ").title() if isinstance(w, str) else w.get("scenario", "").replace("_", " ").title()
                     st.info(f"👀 Monitoring: {chain} — no active trigger yet")
@@ -5817,7 +5788,7 @@ elif page == "🌍 Global & EM":
                 st.markdown(f'<div style="background:var(--bg-card);border:1px solid var(--border-default);border-radius:6px;padding:6px;margin-top:6px;font-size:11px;"><b>EM Signal:</b> <span style="color:var(--text-secondary);">{trigger} (conf: {conf:.0%})</span></div>', unsafe_allow_html=True)
 
         with c2:
-            st.markdown("### 🌍 60-Country Regime Map")
+            st.markdown("**🌍 60-Country Detail (klik filter untuk zoom):**")
             st.caption(f"DM: {dm_count} | EM: {em_count} | Total: {len(country_list)}")
 
             # Group by quad
