@@ -5559,6 +5559,46 @@ elif page == "🌍 Global & EM":
 
     st.markdown(f"### 🩺 Kesehatan EM — {em_emoji} {em_label} ({em_health:.0f}/100)")
     st.caption("DXY naik = tekanan EM | LatAm (EWZ, EWW) memimpin | China (FXI) lemah")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # HEATMAP NEGARA/REGION (Kimi blueprint v3 — Country ETF 3M momentum)
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown("### 🗺️ Heatmap Negara/Region")
+    country_proxies = {
+        "🇺🇸 US": "SPY", "🇨🇳 China": "FXI", "🇧🇷 Brazil": "EWZ", "🇮🇳 India": "INDA",
+        "🇯🇵 Japan": "EWJ", "🇮🇩 Indonesia": "EIDO", "🇹🇷 Turkey": "TUR", "🇲🇽 Mexico": "EWW",
+    }
+    chm_html = '<div style="display:grid; grid-template-columns:repeat(8, 1fr); gap:6px; margin-bottom:8px;">'
+    for label, ticker in country_proxies.items():
+        try:
+            s = prices.get(ticker)
+            if s is not None:
+                ser = pd.to_numeric(s, errors="coerce").dropna()
+                if len(ser) >= 64:
+                    ret_3m = float(ser.iloc[-1] / ser.iloc[-64] - 1)
+                    if ret_3m > 0.05:
+                        emoji, color, status = "🟢", "#22c55e", "KUAT"
+                    elif ret_3m > 0:
+                        emoji, color, status = "🟡", "#eab308", "CUKUP"
+                    elif ret_3m > -0.05:
+                        emoji, color, status = "🟠", "#f97316", "LEMAH"
+                    else:
+                        emoji, color, status = "🔴", "#ef4444", "SAKIT"
+                    chm_html += f"""<div style='background:{color}1f; border:1px solid {color}66; border-radius:6px; padding:6px 4px; text-align:center;'>
+                      <div style='font-size:10px; opacity:0.8;'>{label}</div>
+                      <div style='font-size:11px; font-weight:700; color:{color}; margin-top:2px;'>{emoji} {status}</div>
+                      <div style='font-size:9px; opacity:0.55; margin-top:1px;'>{ret_3m*100:+.1f}% 3M</div>
+                    </div>"""
+                else:
+                    chm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+            else:
+                chm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+        except Exception:
+            chm_html += f"<div style='background:rgba(255,255,255,0.03); border-radius:6px; padding:6px; text-align:center; font-size:10px; opacity:0.4;'>{label}<br>—</div>"
+    chm_html += '</div>'
+    st.markdown(_html(chm_html), unsafe_allow_html=True)
+    st.caption("Hijau = KUAT (>+5% 3M) | Kuning = CUKUP | Oranye = LEMAH | Merah = SAKIT (<-5%)")
+
     st.markdown("---")
 
     st.caption("60-country regime map + Indonesia IHSG Report")
