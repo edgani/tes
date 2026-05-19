@@ -1000,6 +1000,77 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "chase_status": chase_status, "chase_color": chase_color, "chase_text": chase_text,
     }
 
+
+# ═══════════════════════════════════════════════════════════════════
+# BROKER PROXY (IHSG manipulation detection)
+# ═══════════════════════════════════════════════════════════════════
+def _get_broker_proxy(ticker, prices):
+    """
+    AUDITED v32.4 — Proxy broker summary for IHSG with manipulation detection.
+    Detects crossing (wash trading) vs real accumulation/distribution.
+
+    FORMULAS:
+    ── Real Accumulation ──
+    IF r5d > +3% AND r20d > +5% AND NOT crossing → Real Accumulation
+    Confidence = min(100, 50 + |r5d| × 500)
+
+    ── Real Distribution ──
+    IF r5d < −3% AND r20d < −5% AND NOT crossing → Real Distribution
+    Confidence = min(100, 50 + |r5d| × 500)
+
+    ── Crossing Detection (Wash Trading) ──
+    IF vol_5 / vol_20 > 1.5 AND range_5 / range_20 < 0.15 → Crossing
+    High activity but price goes nowhere = manipulation proxy.
+    """
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 30):
+        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 30: return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+
+        px = float(s_clean.iloc[-1])
+        r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
+        r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
+
+        vol_5 = float(s_clean.tail(5).std())
+        vol_20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else vol_5
+        mean_20 = float(s_clean.tail(20).mean())
+
+        range_5 = float(s_clean.tail(5).max() - s_clean.tail(5).min())
+        range_20 = float(s_clean.tail(20).max() - s_clean.tail(20).min()) if len(s_clean) >= 20 else range_5
+
+        # Crossing detection: high activity (volatility spike) but price goes nowhere
+        crossing = False
+        if vol_20 > 0 and vol_5 / vol_20 > 1.5 and range_5 / max(range_20, 0.001) < 0.15:
+            crossing = True
+
+        real_acc = False
+        if r5d > 0.03 and r20d > 0.05 and not crossing:
+            real_acc = True
+
+        real_dist = False
+        if r5d < -0.03 and r20d < -0.05 and not crossing:
+            real_dist = True
+
+        conf = 0
+        if real_acc: conf = min(100, int(50 + abs(r5d)*500))
+        elif real_dist: conf = min(100, int(50 + abs(r5d)*500))
+        elif crossing: conf = 70
+
+        return {
+            "real_accumulation": real_acc,
+            "real_distribution": real_dist,
+            "crossing_detected": crossing,
+            "confidence": conf,
+            "r5d": round(r5d, 4),
+            "r20d": round(r20d, 4),
+            "vol_ratio": round(vol_5/vol_20, 2) if vol_20 > 0 else 1.0,
+            "range_ratio": round(range_5/max(range_20, 0.001), 2),
+        }
+    except Exception:
+        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
     row = _build_row(ticker, prices, ar, market_type="ihsg", **kwargs)
     if not row: return None
@@ -2175,7 +2246,7 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
 
-    # ── Bull/Bear/Base Scenario Bar (MOVED below structural compass) ──
+    # ── Bull/Bear/Base compact text below structural compass ──
     narrative = snap.get("narrative", {}) or {}
     scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
     if scenarios:
@@ -2183,23 +2254,12 @@ def page_dashboard():
         bull_p = scenarios.get("bull", {}).get("probability", 0) if isinstance(scenarios.get("bull"), dict) else 0
         base_p = scenarios.get("base", {}).get("probability", 0) if isinstance(scenarios.get("base"), dict) else 0
         bear_p = scenarios.get("bear", {}).get("probability", 0) if isinstance(scenarios.get("bear"), dict) else 0
-        total_p = bull_p + base_p + bear_p
-        if total_p > 0:
-            bull_pct = bull_p / total_p * 100
-            base_pct = base_p / total_p * 100
-            bear_pct = bear_p / total_p * 100
-        else:
-            bull_pct = base_pct = bear_pct = 33.3
-
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin:6px 0;">'
-            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:6px;">🔮 Scenario Probabilities · Dominant: {dom.title()}</div>'
-            f'{_scenario_bar_html(bull_pct, base_pct, bear_pct)}'
-            f'<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#8B949E;margin-top:4px;">'
-            f'<span style="color:#3FB950;">🐂 Bull {bull_p:.0%}</span>'
-            f'<span style="color:#D29922;">⚖ Base {base_p:.0%}</span>'
-            f'<span style="color:#F85149;">🐻 Bear {bear_p:.0%}</span>'
-            f'</div></div>', unsafe_allow_html=True)
+            f'<div style="font-size:0.65rem;color:#8B949E;text-align:center;margin:4px 0;padding:4px 8px;background:#0D1117;border-radius:4px;">'
+            f'<span style="color:#3FB950;font-weight:700;">🐂 Bull {bull_p:.0%}</span> · '
+            f'<span style="color:#D29922;font-weight:700;">⚖ Base {base_p:.0%}</span> · '
+            f'<span style="color:#F85149;font-weight:700;">🐻 Bear {bear_p:.0%}</span> · '
+            f'Dominant: <b>{dom.title()}</b></div>', unsafe_allow_html=True)
 
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
@@ -2646,6 +2706,9 @@ def page_us_stocks():
     for bucket in ["Growth","Quality","Defensives","Semis","Energy","Industrials","Financials","AI_Infra","PreciousMetals"]:
         us_tickers += US_BUCKETS.get(bucket, []) if US_BUCKETS else []
     if not us_tickers: us_tickers = FALLBACK_US
+    # Filter out key ETFs that already shown above
+    key_etfs_set = {"SPY", "QQQ", "IWM", "GLD", "TLT"}
+    us_tickers = [t for t in us_tickers if t not in key_etfs_set]
     us_tickers = list(dict.fromkeys(us_tickers))
 
     rows = build_ticker_rows(us_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
