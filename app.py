@@ -1488,7 +1488,14 @@ def render_ticker_card_v4(row, expanded=False):
             rec = _get_single_recommendation(options, direction=row.get("direction", "LONG"), 
                                               market_type=market_type, cot_data=cot_data, 
                                               onchain_data=onchain_data, ticker=ticker)
-                    # Build context lines
+            rec_color = {"BELI SPOT / AKUMULASI": "#3FB950", "AKUMULASI SPOT": "#3FB950", "BELI CALL / LONG SPOT": "#3FB950",
+                         "BELI SPOT + JUAL PUT": "#2EA043", "BELI SPOT": "#3FB950",
+                         "JUAL COVERED CALL": "#D29922", "JUAL PUT PROTEKTIF": "#F85149",
+                         "JUAL / REDUKSI": "#F85149", "HEDGE POSISI": "#F85149",
+                         "HOLD + JUAL PREMIUM": "#D29922", "WASPADA / TUNGGU": "#D29922",
+                         "HOLD / TUNGGU": "#8B949E", "HOLD": "#8B949E"}.get(rec["action"], "#58A6FF")
+
+        # Build context lines
         ctx_lines = []
         if row.get("entry_note"):
             ctx_lines.append(row["entry_note"])
@@ -2070,8 +2077,8 @@ def page_dashboard():
 
     st.divider()
 
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c1:
+    left, right = st.columns([1, 1.2])
+    with left:
         st.markdown("### 🌀 Boom-Bust Stage")
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
@@ -2081,7 +2088,6 @@ def page_dashboard():
         st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
         st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
 
-    with c2:
         st.markdown("### 🧠 Behavioral Macro (Yves)")
         behavioral = snap.get("behavioral_macro", {}) or {}
         yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
@@ -2125,10 +2131,10 @@ def page_dashboard():
         else:
             st.caption("Behavioral macro unavailable")
 
-    with c3:
+    with right:
         st.markdown("### 🚨 Crash Meter v3")
-        st.markdown("<div style='font-size:0.6rem;color:#8B949E;margin-bottom:6px;'>Yield Curve + Credit + Valuasi · Tomhardi</div>", unsafe_allow_html=True)
-        st.markdown(_render_crash_meter_compact(snap), unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
+        st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
     # Scenarios as small text line below
     narrative = snap.get("narrative", {}) or {}
