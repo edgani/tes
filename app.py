@@ -700,6 +700,26 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     gf_up = options.get("gamma_flip_up")
     gf_down = options.get("gamma_flip_down")
 
+    # ── CONFLUENCE DETECTION ──
+    # Find levels that cluster together (within 2% of each other) = high conviction zone
+    def _cluster_levels(levels, threshold_pct=0.02):
+        """Find clusters of levels within threshold_pct of each other."""
+        valid = [float(v) for v in levels if v is not None and v > 0 and math.isfinite(float(v))]
+        if len(valid) < 2: return []
+        valid.sort()
+        clusters = []
+        for i in range(len(valid)):
+            cluster = [valid[i]]
+            for j in range(i+1, len(valid)):
+                if abs(valid[j] - valid[i]) / valid[i] <= threshold_pct:
+                    cluster.append(valid[j])
+            if len(cluster) >= 2:
+                clusters.append({"levels": cluster, "center": round(sum(cluster)/len(cluster), 2), "count": len(cluster)})
+        # Return highest-count cluster
+        return sorted(clusters, key=lambda x: x["count"], reverse=True)
+
+    confluence = {"entry": [], "target": [], "entry_cluster": None, "target_cluster": None}
+
     if side == "long":
         # Buy-and-hold sync: if price below LRR, it's oversold — buy at current price (discount)
         if px < lrr:
@@ -707,18 +727,44 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             stop = round(lrr - spread * 0.15, 2)
             note = "📉 Price below LRR — DISCOUNTED entry. Ideal for accumulation."
         else:
-            entry_candidates = [lrr]
-            if pw and pw > lrr: entry_candidates.append(pw)
-            if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
-            entry = round(min(entry_candidates), 2)
-            stop_candidates = [round(lrr - spread * 0.25, 2)]
+            # Detect confluence cluster for LONG entry (LRR + put_wall + gamma_flip_down)
+            long_entry_levels = [lrr]
+            if pw: long_entry_levels.append(pw)
+            if gf_down: long_entry_levels.append(gf_down)
+            clusters = _cluster_levels(long_entry_levels, 0.02)
+            if clusters:
+                best = clusters[0]
+                entry = best["center"]
+                confluence["entry"] = [("LRR", lrr), ("Put Wall", pw), ("Gamma Flip ↓", gf_down)]
+                confluence["entry_cluster"] = best
+                note = f"🔥 CONFLUENCE: {best['count']} levels aligned at {ff(entry)} — high conviction entry zone."
+            else:
+                entry_candidates = [lrr]
+                if pw and pw > lrr: entry_candidates.append(pw)
+                if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
+                entry = round(min(entry_candidates), 2)
+                note = ""
+            stop_candidates = [round(entry - spread * 0.25, 2)]
             if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
             stop = round(min(stop_candidates), 2)
-            note = ""
-        tp1_candidates = [round(entry + abs(entry - stop) * 2, 2)]
-        if mp and mp > entry: tp1_candidates.append(round(mp, 2))
-        if gf_up and gf_up > entry: tp1_candidates.append(round(gf_up, 2))
-        tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(entry + spread * 0.3, 2)), 2)
+
+        # Target confluence: TRR + call_wall + gamma_flip_up + max_pain
+        long_target_levels = [trr]
+        if cw: long_target_levels.append(cw)
+        if gf_up: long_target_levels.append(gf_up)
+        if mp: long_target_levels.append(mp)
+        t_clusters = _cluster_levels(long_target_levels, 0.02)
+        if t_clusters:
+            best_t = t_clusters[0]
+            tp1 = best_t["center"]
+            confluence["target"] = [("TRR", trr), ("Call Wall", cw), ("Gamma Flip ↑", gf_up), ("Max Pain", mp)]
+            confluence["target_cluster"] = best_t
+        else:
+            tp1_candidates = [round(entry + abs(entry - stop) * 2, 2)]
+            if mp and mp > entry: tp1_candidates.append(round(mp, 2))
+            if gf_up and gf_up > entry: tp1_candidates.append(round(gf_up, 2))
+            tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(entry + spread * 0.3, 2)), 2)
+
         tp2_candidates = [trr]
         if cw: tp2_candidates.append(cw)
         if gf_up: tp2_candidates.append(gf_up)
@@ -731,18 +777,44 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             stop = round(trr + spread * 0.15, 2)
             note = "📈 Price above TRR — OVERBOUGHT entry. Fade the rally."
         else:
-            entry_candidates = [trr]
-            if cw and cw < trr: entry_candidates.append(cw)
-            if gf_up and gf_up < trr: entry_candidates.append(gf_up)
-            entry = round(max(entry_candidates), 2)
-            stop_candidates = [round(trr + spread * 0.25, 2)]
+            # Detect confluence cluster for SHORT entry (TRR + call_wall + gamma_flip_up)
+            short_entry_levels = [trr]
+            if cw: short_entry_levels.append(cw)
+            if gf_up: short_entry_levels.append(gf_up)
+            clusters = _cluster_levels(short_entry_levels, 0.02)
+            if clusters:
+                best = clusters[0]
+                entry = best["center"]
+                confluence["entry"] = [("TRR", trr), ("Call Wall", cw), ("Gamma Flip ↑", gf_up)]
+                confluence["entry_cluster"] = best
+                note = f"🔥 CONFLUENCE: {best['count']} levels aligned at {ff(entry)} — high conviction entry zone."
+            else:
+                entry_candidates = [trr]
+                if cw and cw < trr: entry_candidates.append(cw)
+                if gf_up and gf_up < trr: entry_candidates.append(gf_up)
+                entry = round(max(entry_candidates), 2)
+                note = ""
+            stop_candidates = [round(entry + spread * 0.25, 2)]
             if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
             stop = round(max(stop_candidates), 2)
-            note = ""
-        tp1_candidates = [round(entry - abs(entry - stop) * 2, 2)]
-        if mp and mp < entry: tp1_candidates.append(round(mp, 2))
-        if gf_down and gf_down < entry: tp1_candidates.append(round(gf_down, 2))
-        tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(entry - spread * 0.3, 2)), 2)
+
+        # Target confluence: LRR + put_wall + gamma_flip_down + max_pain
+        short_target_levels = [lrr]
+        if pw: short_target_levels.append(pw)
+        if gf_down: short_target_levels.append(gf_down)
+        if mp: short_target_levels.append(mp)
+        t_clusters = _cluster_levels(short_target_levels, 0.02)
+        if t_clusters:
+            best_t = t_clusters[0]
+            tp1 = best_t["center"]
+            confluence["target"] = [("LRR", lrr), ("Put Wall", pw), ("Gamma Flip ↓", gf_down), ("Max Pain", mp)]
+            confluence["target_cluster"] = best_t
+        else:
+            tp1_candidates = [round(entry - abs(entry - stop) * 2, 2)]
+            if mp and mp < entry: tp1_candidates.append(round(mp, 2))
+            if gf_down and gf_down < entry: tp1_candidates.append(round(gf_down, 2))
+            tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(entry - spread * 0.3, 2)), 2)
+
         tp2_candidates = [lrr]
         if pw: tp2_candidates.append(pw)
         if gf_down: tp2_candidates.append(gf_down)
@@ -808,6 +880,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "trend_strength": trend_strength, "volume_proxy": volume_proxy,
         "markov_ctx": markov_ctx, "behavioral_flag": behavioral_flag,
         "entry_note": note if 'note' in locals() else "",
+        "confluence": confluence,
     }
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
@@ -1157,6 +1230,10 @@ def render_ticker_card_v4(row, expanded=False):
     if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
     if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
     if mm_pos and mm_pos != "UNKNOWN": badges += _badge_html(mm_pos, "mm")
+    # Confluence badge
+    confluence = row.get("confluence", {})
+    if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
+        badges += _badge_html(f"🔥 Confluence x{confluence['entry_cluster']['count']}", "a")
     alpha_src = row.get("alpha_source", "")
     alpha_score = row.get("alpha_score", 0)
     if alpha_src:
@@ -1227,9 +1304,34 @@ def render_ticker_card_v4(row, expanded=False):
         note_html = ""
         if row.get("entry_note"):
             note_html = f'<div style="margin-bottom:6px;padding:4px 8px;background:#D2992215;border-left:2px solid #D29922;border-radius:4px;font-size:0.7rem;color:#D29922;">{row["entry_note"]}</div>'
+        # Confluence detail box
+        confluence = row.get("confluence", {})
+        confluence_html = ""
+        if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
+            levels = confluence.get("entry", [])
+            levels_str = " · ".join([f"{name} {ff(val)}" for name, val in levels if val is not None])
+            confluence_html = (
+                f'<div style="margin-bottom:6px;padding:6px 10px;background:#3FB95012;border:1px solid #3FB95040;border-radius:6px;">'
+                f'<div style="font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
+                f'🔥 Entry Confluence x{confluence["entry_cluster"]["count"]}</div>'
+                f'<div style="font-size:0.7rem;color:#E6EDF3;">{levels_str}</div>'
+                f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
+                f'Multiple support levels clustered = high conviction zone. Ideal for accumulation.</div></div>'
+            )
+        if confluence.get("target_cluster") and confluence["target_cluster"].get("count", 0) >= 2:
+            t_levels = confluence.get("target", [])
+            t_str = " · ".join([f"{name} {ff(val)}" for name, val in t_levels if val is not None])
+            confluence_html += (
+                f'<div style="margin-bottom:6px;padding:6px 10px;background:#F8514912;border:1px solid #F8514940;border-radius:6px;">'
+                f'<div style="font-size:0.65rem;color:#F85149;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
+                f'🎯 Target Confluence x{confluence["target_cluster"]["count"]}</div>'
+                f'<div style="font-size:0.7rem;color:#E6EDF3;">{t_str}</div>'
+                f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
+                f'Multiple resistance levels clustered = strong profit-taking zone.</div></div>'
+            )
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-            f'{note_html}'
+            f'{confluence_html}{note_html}'
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;">'
             f'<div>📍 <b>Entry:</b> {ff(entry)}</div><div>🎯 <b>Target 1:</b> {ff(t1)}</div>'
             f'<div>🎯 <b>Target 2:</b> {ff(t2)}</div><div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>'
