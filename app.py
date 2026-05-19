@@ -708,60 +708,93 @@ def _get_dark_pool_for_ticker(ticker, snap):
 # ═══════════════════════════════════════════════════════════════════
 def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None, snap=None):
     """
-    AUDITED FORMULAS (v32.4):
-    ─────────────────────────
-    LRR = SMA(20) - 1.5 × STD(20)          [Lower Risk Range — support]
-    TRR = SMA(20) + 1.5 × STD(20)          [Take Risk Range — resistance]
-    Spread = TRR - LRR
-    PositionInRange = (Price - LRR) / Spread
+    AUDITED FORMULAS v32.4.1 — TREND FILTER + MINIMUM STOP DISTANCE
+    ─────────────────────────────────────────────────────────────────
 
-    LONG ENTRY:
-      IF Price < LRR (oversold/discounted):
-        Entry = Price (chase current discount)
-        Stop = LRR - Spread × 0.15
-      ELSE:
-        Entry = MIN(LRR, PutWall, GammaFlipDown)  ← lowest support confluence
-        Stop = MIN(Entry - Spread×0.25, PutWall - Spread×0.1)
-      TP1 = MAX(Entry + 2×Risk, TRR, CallWall, GammaFlipUp, MaxPain)
-      TP2 = MAX(TP1, TRR, CallWall, GammaFlipUp)
+    [1] RISK RANGE (Price Action)
+        LRR = SMA(20) − 1.5 × STD(20)          [Support]
+        TRR = SMA(20) + 1.5 × STD(20)          [Resistance]
+        Spread = TRR − LRR
+        PosInRange = (Price − LRR) / Spread
 
-    SHORT ENTRY:
-      IF Price > TRR (overbought/premium):
-        Entry = Price (fade current premium)
-        Stop = TRR + Spread × 0.15
-      ELSE:
-        Entry = MAX(TRR, CallWall, GammaFlipUp)  ← highest resistance confluence
-        Stop = MAX(Entry + Spread×0.25, CallWall + Spread×0.1)
-      TP1 = MIN(Entry - 2×Risk, LRR, PutWall, GammaFlipDown, MaxPain)
-      TP2 = MIN(TP1, LRR, PutWall, GammaFlipDown)
+    [2] TREND FILTER (NEW — prevents false signals)
+        SMA(50) = 50-day simple moving average
+        r20d    = 20-day return
+        r5d     = 5-day return
 
-    RISK/REWARD = |TP1 - Entry| / max(|Entry - Stop|, 0.01)
-    Grade A = NearEntry AND RR ≥ 2.0
-    Grade B = NearEntry
-    Grade C = Everything else
+        Trend = BULLISH if Price > SMA(50) AND r20d > +3%
+        Trend = BEARISH if Price < SMA(50) AND r20d < −3%
+        Trend = NEUTRAL otherwise
 
-    CHASE vs WAIT LOGIC (NEW v32.4):
-      IF Price ≤ Entry × 1.02  → "CHASE / ENTER NOW" (price at or near entry)
-      IF Price > Entry × 1.05 AND Price > Stop  → "WAIT FOR PULLBACK" (missed entry)
-      IF Price < Stop  → "STOP HIT / AVOID" (setup invalidated)
-      IF RR ≥ 3.0  → "TARGET JAUH — HIGH CONVICTION" (asymmetric reward)
-      IF RR < 1.5  → "TARGET DEKAT — RISK/REWARD TIDAK IDEAL" (poor R/R)
+        DIRECTION OVERRIDE:
+        • If composite says LONG but Trend = BEARISH → NEUTRAL/AVOID
+          (Don't catch falling knives)
+        • If composite says SHORT but Trend = BULLISH → NEUTRAL/AVOID
+          (Don't fight the trend)
+        • If r20d > +10% (parabolic) → reduce position size (bubble risk)
+        • If r20d < −10% (capitulation) → wait for bounce confirmation
+
+    [3] ENTRY / STOP / TARGET
+        LONG:
+          IF Price < LRR (oversold):
+            Entry = Price
+            Stop  = MAX(LRR − Spread×0.15, Entry×0.995)  [min 0.5% distance]
+          ELSE:
+            Entry = MIN(LRR, PutWall, GammaFlipDown)
+            Stop  = MIN(Entry − Spread×0.25, PutWall − Spread×0.1)
+            Stop  = MAX(Stop, Entry×0.995)                [min 0.5% distance]
+          TP1 = MAX(Entry + 2×Risk, TRR, CallWall, GammaFlipUp, MaxPain)
+          TP2 = MAX(TP1, TRR, CallWall, GammaFlipUp)
+
+        SHORT:
+          IF Price > TRR (overbought):
+            Entry = Price
+            Stop  = MIN(TRR + Spread×0.15, Entry×1.005)  [min 0.5% distance]
+          ELSE:
+            Entry = MAX(TRR, CallWall, GammaFlipUp)
+            Stop  = MAX(Entry + Spread×0.25, CallWall + Spread×0.1)
+            Stop  = MIN(Stop, Entry×1.005)               [min 0.5% distance]
+          TP1 = MIN(Entry − 2×Risk, LRR, PutWall, GammaFlipDown, MaxPain)
+          TP2 = MIN(TP1, LRR, PutWall, GammaFlipDown)
+
+    [4] RISK/REWARD
+        Risk = |Entry − Stop|
+        IF Risk < Entry×0.005 → INVALID SETUP (stop too tight)
+        RR = |TP1 − Entry| / max(Risk, 0.0001)
+
+        Grade A = NearEntry AND RR ≥ 2.0 AND Risk ≥ Entry×0.005
+        Grade B = NearEntry AND RR ≥ 1.5 AND Risk ≥ Entry×0.005
+        Grade C = Everything else OR Risk < Entry×0.005
+
+    [5] CHASE / WAIT / AVOID
+        CHASE  = Price ≤ Entry×1.02 AND Risk ≥ Entry×0.005
+        WAIT   = Price > Entry×1.05 AND > Stop
+        AVOID  = Price < Stop OR Risk < Entry×0.005
     """
     v = ar.get(ticker, {}) if ar else {}
     s = prices.get(ticker)
-    if not v and (s is None or len(s) < 15): return None
+    if not v and (s is None or len(s) < 50):  # Need 50 days for SMA(50)
+        return None
+
+    # ── Price & Basic Risk Range ──
     if not v and s is not None:
         try:
             s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-        except: return None
-        if len(s_clean) < 15: return None
+        except: 
+            return None
+        if len(s_clean) < 50: 
+            return None
         px = float(s_clean.iloc[-1])
-        sma20 = float(s_clean.tail(20).mean()) if len(s_clean) >= 20 else float(s_clean.mean())
-        std20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else float(s_clean.std())
+        sma20 = float(s_clean.tail(20).mean())
+        std20 = float(s_clean.tail(20).std())
+        sma50 = float(s_clean.tail(50).mean()) if len(s_clean) >= 50 else sma20
         if not all(math.isfinite(v) for v in [px, sma20, std20]) or std20 == 0:
-            lrr = round(px * 0.95, 2); trr = round(px * 1.05, 2); comp = "neutral"
+            lrr = round(px * 0.95, 4)
+            trr = round(px * 1.05, 4)
+            comp = "neutral"
         else:
-            lrr = round(sma20 - 1.5 * std20, 4); trr = round(sma20 + 1.5 * std20, 4)
+            lrr = round(sma20 - 1.5 * std20, 4)
+            trr = round(sma20 + 1.5 * std20, 4)
             comp = "bullish" if px < lrr else "bearish" if px > trr else "neutral"
         if comp == "neutral":
             r5 = _price_ret(ticker, prices, 5) or 0
@@ -769,11 +802,73 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         v = {"px": px, "trade": {"lrr": lrr, "trr": trr}, "composite": comp, "quality": "B", "market": market_type}
 
     tr = v.get("trade", {})
-    px = _safe_float(v.get("px")); lrr = _safe_float(tr.get("lrr")); trr = _safe_float(tr.get("trr"))
-    if not px or not lrr or not trr: return None
+    px = _safe_float(v.get("px"))
+    lrr = _safe_float(tr.get("lrr"))
+    trr = _safe_float(tr.get("trr"))
+    if not px or not lrr or not trr:
+        return None
 
+    # ── TREND ANALYSIS (NEW v32.4.1) ──
+    trend = "NEUTRAL"
+    trend_note = ""
+    r20d = _price_ret(ticker, prices, 21) or 0
+    r5d = _price_ret(ticker, prices, 5) or 0
+    sma50 = None
+    if s is not None and len(s) >= 50:
+        try:
+            s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+            if len(s_clean) >= 50:
+                sma50 = float(s_clean.tail(50).mean())
+        except:
+            pass
+
+    if sma50 is not None and math.isfinite(sma50):
+        if px > sma50 and r20d > 0.03:
+            trend = "BULLISH"
+        elif px < sma50 and r20d < -0.03:
+            trend = "BEARISH"
+        elif px > sma50:
+            trend = "BULLISH_BIAS"
+        elif px < sma50:
+            trend = "BEARISH_BIAS"
+
+    # Parabolic / Capitulation detection
+    bubble_risk = False
+    capitulation = False
+    if r20d > 0.15:
+        bubble_risk = True
+        trend_note = f"⚠️ PARABOLIC +{r20d:.1%} 20D — Bubble risk, tighten stops"
+    elif r20d < -0.15:
+        capitulation = True
+        trend_note = f"🔨 CAPITULATION {r20d:.1%} 20D — Wait for bounce, don't knife-catch"
+    elif trend == "BEARISH":
+        trend_note = f"📉 DOWNTREND — Price < SMA(50) and −{abs(r20d):.1%} 20D"
+    elif trend == "BULLISH":
+        trend_note = f"📈 UPTREND — Price > SMA(50) and +{r20d:.1%} 20D"
+    elif trend == "BEARISH_BIAS":
+        trend_note = f"➡️ Price below SMA(50) — cautious"
+    elif trend == "BULLISH_BIAS":
+        trend_note = f"➡️ Price above SMA(50) — favorable"
+
+    # ── DIRECTION with Trend Filter ──
     composite = v.get("composite", "neutral")
     side = "long" if composite == "bullish" else "short"
+
+    # TREND OVERRIDE (NEW v32.4.1)
+    # Don't fight the trend — if strong trend opposes signal, neutralize
+    direction_override = False
+    override_reason = ""
+    if side == "long" and trend == "BEARISH":
+        direction_override = True
+        override_reason = f"🚫 AVOID LONG — Strong downtrend ({r20d:.1%} 20D). Price < LRR is catching a falling knife. Wait for trend reversal or SMA(50) reclaim."
+    elif side == "short" and trend == "BULLISH":
+        direction_override = True
+        override_reason = f"🚫 AVOID SHORT — Strong uptrend (+{r20d:.1%} 20D). Price > TRR is fighting the trend. Wait for breakdown."
+    elif side == "long" and bubble_risk:
+        override_reason = f"⚠️ LONG with caution — Parabolic +{r20d:.1%}. Tighten stop, reduce size."
+    elif side == "short" and capitulation:
+        override_reason = f"⚠️ SHORT with caution — Capitulation {r20d:.1%}. Cover on bounce, don't press."
+
     spread = trr - lrr
     pos = (px - lrr) / spread if spread > 0 else 0.5
 
@@ -783,6 +878,11 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     cw = options.get("call_wall")
     gf_up = options.get("gamma_flip_up")
     gf_down = options.get("gamma_flip_down")
+
+    # ── MINIMUM STOP DISTANCE (NEW v32.4.1) ──
+    # For forex/crypto with low prices, spread*0.25 can round to 0
+    # Enforce minimum 0.5% stop distance
+    min_stop_dist = px * 0.005  # 0.5% of price
 
     # ── CONFLUENCE DETECTION ──
     def _cluster_levels(levels, threshold_pct=0.02):
@@ -796,16 +896,21 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                 if abs(valid[j] - valid[i]) / valid[i] <= threshold_pct:
                     cluster.append(valid[j])
             if len(cluster) >= 2:
-                clusters.append({"levels": cluster, "center": round(sum(cluster)/len(cluster), 2), "count": len(cluster)})
+                clusters.append({"levels": cluster, "center": round(sum(cluster)/len(cluster), 4), "count": len(cluster)})
         return sorted(clusters, key=lambda x: x["count"], reverse=True)
 
     confluence = {"entry": [], "target": [], "entry_cluster": None, "target_cluster": None}
 
+    # ── ENTRY / STOP / TARGET CALCULATION ──
     if side == "long":
         if px < lrr:
-            entry = round(px, 2)
-            stop = round(lrr - spread * 0.15, 2)
-            note = "📉 Price below LRR — DISCOUNTED entry. Ideal for accumulation."
+            # Oversold — buy at discount
+            entry = round(px, 4)
+            raw_stop = lrr - spread * 0.15
+            stop = max(raw_stop, entry - min_stop_dist)  # MINIMUM STOP DISTANCE
+            note = f"📉 Price {px} < LRR {lrr} — DISCOUNTED entry."
+            if trend == "BEARISH":
+                note += f" BUT downtrend {r20d:.1%} — high risk knife-catch."
         else:
             long_entry_levels = [lrr]
             if market_type != "ihsg":
@@ -817,17 +922,19 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                 entry = best["center"]
                 confluence["entry"] = [("LRR", lrr), ("Put Wall", pw), ("Gamma Flip ↓", gf_down)]
                 confluence["entry_cluster"] = best
-                note = f"🔥 CONFLUENCE: {best['count']} levels aligned at {ff(entry)} — high conviction entry zone."
+                note = f"🔥 CONFLUENCE x{best['count']}: entry at {ff(entry)}"
             else:
                 entry_candidates = [lrr]
                 if pw and pw > lrr: entry_candidates.append(pw)
                 if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
-                entry = round(min(entry_candidates), 2)
-                note = ""
-            stop_candidates = [round(entry - spread * 0.25, 2)]
-            if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
-            stop = round(min(stop_candidates), 2)
+                entry = round(min(entry_candidates), 4)
+                note = f"📍 Entry at support {ff(entry)}"
 
+            raw_stop = entry - spread * 0.25
+            if pw: raw_stop = min(raw_stop, pw - spread * 0.1)
+            stop = max(raw_stop, entry - min_stop_dist)  # MINIMUM STOP DISTANCE
+
+        # Target
         long_target_levels = [trr]
         if market_type != "ihsg":
             if cw: long_target_levels.append(cw)
@@ -840,21 +947,26 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             confluence["target"] = [("TRR", trr), ("Call Wall", cw), ("Gamma Flip ↑", gf_up), ("Max Pain", mp)]
             confluence["target_cluster"] = best_t
         else:
-            tp1_candidates = [round(entry + abs(entry - stop) * 2, 2)]
-            if mp and mp > entry: tp1_candidates.append(round(mp, 2))
-            if gf_up and gf_up > entry: tp1_candidates.append(round(gf_up, 2))
-            tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(entry + spread * 0.3, 2)), 2)
+            risk = abs(entry - stop)
+            tp1_candidates = [round(entry + risk * 2, 4)]
+            if mp and mp > entry: tp1_candidates.append(round(mp, 4))
+            if gf_up and gf_up > entry: tp1_candidates.append(round(gf_up, 4))
+            tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(entry + spread * 0.3, 4)), 4)
 
         tp2_candidates = [trr]
         if cw: tp2_candidates.append(cw)
         if gf_up: tp2_candidates.append(gf_up)
-        tp2 = round(max(tp2_candidates), 2)
+        tp2 = round(max(tp2_candidates), 4)
         near_entry = pos <= 0.35 or px < lrr
-    else:
+
+    else:  # short
         if px > trr:
-            entry = round(px, 2)
-            stop = round(trr + spread * 0.15, 2)
-            note = "📈 Price above TRR — OVERBOUGHT entry. Fade the rally."
+            entry = round(px, 4)
+            raw_stop = trr + spread * 0.15
+            stop = min(raw_stop, entry + min_stop_dist)
+            note = f"📈 Price {px} > TRR {trr} — OVERBOUGHT entry."
+            if trend == "BULLISH":
+                note += f" BUT uptrend +{r20d:.1%} — high risk fade."
         else:
             short_entry_levels = [trr]
             if market_type != "ihsg":
@@ -866,16 +978,17 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                 entry = best["center"]
                 confluence["entry"] = [("TRR", trr), ("Call Wall", cw), ("Gamma Flip ↑", gf_up)]
                 confluence["entry_cluster"] = best
-                note = f"🔥 CONFLUENCE: {best['count']} levels aligned at {ff(entry)} — high conviction entry zone."
+                note = f"🔥 CONFLUENCE x{best['count']}: entry at {ff(entry)}"
             else:
                 entry_candidates = [trr]
                 if cw and cw < trr: entry_candidates.append(cw)
                 if gf_up and gf_up < trr: entry_candidates.append(gf_up)
-                entry = round(max(entry_candidates), 2)
-                note = ""
-            stop_candidates = [round(entry + spread * 0.25, 2)]
-            if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
-            stop = round(max(stop_candidates), 2)
+                entry = round(max(entry_candidates), 4)
+                note = f"📍 Entry at resistance {ff(entry)}"
+
+            raw_stop = entry + spread * 0.25
+            if cw: raw_stop = max(raw_stop, cw + spread * 0.1)
+            stop = min(raw_stop, entry + min_stop_dist)
 
         short_target_levels = [lrr]
         if market_type != "ihsg":
@@ -889,59 +1002,84 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             confluence["target"] = [("LRR", lrr), ("Put Wall", pw), ("Gamma Flip ↓", gf_down), ("Max Pain", mp)]
             confluence["target_cluster"] = best_t
         else:
-            tp1_candidates = [round(entry - abs(entry - stop) * 2, 2)]
-            if mp and mp < entry: tp1_candidates.append(round(mp, 2))
-            if gf_down and gf_down < entry: tp1_candidates.append(round(gf_down, 2))
-            tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(entry - spread * 0.3, 2)), 2)
+            risk = abs(entry - stop)
+            tp1_candidates = [round(entry - risk * 2, 4)]
+            if mp and mp < entry: tp1_candidates.append(round(mp, 4))
+            if gf_down and gf_down < entry: tp1_candidates.append(round(gf_down, 4))
+            tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(entry - spread * 0.3, 4)), 4)
 
         tp2_candidates = [lrr]
         if pw: tp2_candidates.append(pw)
         if gf_down: tp2_candidates.append(gf_down)
-        tp2 = round(min(tp2_candidates), 2)
+        tp2 = round(min(tp2_candidates), 4)
         near_entry = pos >= 0.65 or px > trr
 
-    rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
-    grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
+    # ── RISK/REWARD with validation ──
+    risk = abs(entry - stop)
+    min_risk = px * 0.005  # 0.5% minimum risk
 
-    # ── CHASE vs WAIT vs AVOID (NEW v32.4) ──
+    if risk < min_risk:
+        # Stop too tight — invalid setup
+        rr = 0.0
+        grade = "C"
+        setup_valid = False
+        setup_note = f"🚫 INVALID — Stop {ff(stop)} too close to entry {ff(entry)} (risk {risk/px:.2%} < 0.5% min)."
+    else:
+        rr = round(abs(tp1 - entry) / risk, 2)
+        grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry and rr >= 1.5 else "C"
+        setup_valid = True
+        setup_note = ""
+
+    # ── CHASE/WAIT/AVOID (with setup validation) ──
     chase_status = "NEUTRAL"
     chase_color = "#8B949E"
     chase_text = "—"
-    if side == "long":
-        if px <= entry * 1.02:
-            chase_status = "CHASE"
-            chase_color = "#3FB950"
-            chase_text = "🟢 CHASE / ENTER NOW — Price at/near entry"
-        elif px > entry * 1.05 and px > stop:
-            chase_status = "WAIT"
-            chase_color = "#D29922"
-            chase_text = "🟡 WAIT FOR PULLBACK — Price above entry zone"
-        elif px < stop:
-            chase_status = "AVOID"
-            chase_color = "#F85149"
-            chase_text = "🔴 STOP HIT / AVOID — Setup invalidated"
-        elif rr >= 3.0:
-            chase_text += " | 🎯 TARGET JAUH — High conviction"
-        elif rr < 1.5:
-            chase_text += " | ⚠️ TARGET DEKAT — Poor R/R"
-    else:  # short
-        if px >= entry * 0.98:
-            chase_status = "CHASE"
-            chase_color = "#3FB950"
-            chase_text = "🟢 CHASE / ENTER NOW — Price at/near entry"
-        elif px < entry * 0.95 and px < stop:
-            chase_status = "WAIT"
-            chase_color = "#D29922"
-            chase_text = "🟡 WAIT FOR PULLBACK — Price below entry zone"
-        elif px > stop:
-            chase_status = "AVOID"
-            chase_color = "#F85149"
-            chase_text = "🔴 STOP HIT / AVOID — Setup invalidated"
-        elif rr >= 3.0:
-            chase_text += " | 🎯 TARGET JAUH — High conviction"
-        elif rr < 1.5:
-            chase_text += " | ⚠️ TARGET DEKAT — Poor R/R"
 
+    if not setup_valid:
+        chase_status = "AVOID"
+        chase_color = "#F85149"
+        chase_text = f"🚫 AVOID — {setup_note}"
+    elif direction_override:
+        chase_status = "AVOID"
+        chase_color = "#F85149"
+        chase_text = override_reason
+    else:
+        if side == "long":
+            if px <= entry * 1.02:
+                chase_status = "CHASE"
+                chase_color = "#3FB950"
+                chase_text = f"🟢 CHASE — Price at/near entry {ff(entry)}. Risk: {risk/px:.2%}."
+            elif px > entry * 1.05 and px > stop:
+                chase_status = "WAIT"
+                chase_color = "#D29922"
+                chase_text = f"🟡 WAIT — Price {ff(px)} above entry {ff(entry)}. Wait pullback to {ff(entry)}-{ff(stop)} zone."
+            elif px < stop:
+                chase_status = "AVOID"
+                chase_color = "#F85149"
+                chase_text = f"🔴 STOP HIT — Price {ff(px)} below stop {ff(stop)}. Setup invalidated."
+            elif rr >= 3.0:
+                chase_text += f" | 🎯 HIGH CONVICTION RR {rr:.1f}x"
+            elif rr < 1.5:
+                chase_text += f" | ⚠️ POOR RR {rr:.1f}x — skip or wait better entry"
+        else:  # short
+            if px >= entry * 0.98:
+                chase_status = "CHASE"
+                chase_color = "#3FB950"
+                chase_text = f"🟢 CHASE — Price at/near entry {ff(entry)}. Risk: {risk/px:.2%}."
+            elif px < entry * 0.95 and px < stop:
+                chase_status = "WAIT"
+                chase_color = "#D29922"
+                chase_text = f"🟡 WAIT — Price {ff(px)} below entry {ff(entry)}. Wait pullback to {ff(entry)}-{ff(stop)} zone."
+            elif px > stop:
+                chase_status = "AVOID"
+                chase_color = "#F85149"
+                chase_text = f"🔴 STOP HIT — Price {ff(px)} above stop {ff(stop)}. Setup invalidated."
+            elif rr >= 3.0:
+                chase_text += f" | 🎯 HIGH CONVICTION RR {rr:.1f}x"
+            elif rr < 1.5:
+                chase_text += f" | ⚠️ POOR RR {rr:.1f}x — skip or wait better entry"
+
+    # ── MM Positioning ──
     mm_rec = options.get("mm_recommendation", "—")
     mm_pos = options.get("mm_positioning", "UNKNOWN")
     if mm_pos == "CALL_WALL" and side == "long":
@@ -951,6 +1089,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     elif mm_pos == "PINNED":
         mm_rec += " 🔄 Pinned — directional edge low. Prefer range strategies."
 
+    # ── News ──
     news_signal = ""; news_headline = ""; news_sentiment = 0
     if news and isinstance(news, dict) and news.get("ticker_specific"):
         tn = news["ticker_specific"].get(ticker, {})
@@ -972,7 +1111,8 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                 vol_proxy = float(returns.tail(20).abs().mean() * 100) if len(returns) >= 20 else None
                 if vol_proxy is not None and math.isfinite(vol_proxy):
                     volume_proxy = vol_proxy
-        except Exception: pass
+        except Exception: 
+            pass
     if snap:
         m = snap.get("markov_v3", {}) if isinstance(snap.get("markov_v3"), dict) else {}
         if m.get("current_regime"):
@@ -986,16 +1126,20 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
 
     return {
         "ticker": ticker, "price": px, "entry": entry, "target_1": tp1, "target_2": tp2,
-        "stop": stop, "rr": rr, "direction": "LONG" if side == "long" else "SHORT", "grade": grade,
+        "stop": stop, "rr": rr, "risk_pct": round(risk/px*100, 2) if px else 0,
+        "direction": "LONG" if side == "long" else "SHORT",
+        "grade": grade, "setup_valid": setup_valid,
         "near_entry": near_entry, "pos_in_range": round(pos, 2), "side": side,
-        "trade_l": lrr, "trade_r": trr, "r1m": _price_ret(ticker, prices, 21), "r3m": _price_ret(ticker, prices, 63),
+        "trade_l": lrr, "trade_r": trr, "r1m": r20d, "r5d": r5d, "r3m": _price_ret(ticker, prices, 63),
         "composite": composite, "market_type": market_type,
+        "trend": trend, "trend_note": trend_note, "sma50": sma50,
+        "direction_override": direction_override, "override_reason": override_reason,
         "options": options,
         "mm_positioning": mm_pos, "mm_recommendation": mm_rec,
         "news_signal": news_signal, "news_headline": news_headline, "news_sentiment": news_sentiment,
         "trend_strength": trend_strength, "volume_proxy": volume_proxy,
         "markov_ctx": markov_ctx, "behavioral_flag": behavioral_flag,
-        "entry_note": note if 'note' in locals() else "",
+        "entry_note": note, "setup_note": setup_note,
         "confluence": confluence,
         "chase_status": chase_status, "chase_color": chase_color, "chase_text": chase_text,
     }
@@ -1006,7 +1150,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
 # ═══════════════════════════════════════════════════════════════════
 def _get_broker_proxy(ticker, prices):
     """
-    AUDITED v32.4 — Proxy broker summary for IHSG with manipulation detection.
+    AUDITED v32.4.1 — Proxy broker summary for IHSG with manipulation detection.
     Detects crossing (wash trading) vs real accumulation/distribution.
 
     FORMULAS:
@@ -1073,17 +1217,24 @@ def _get_broker_proxy(ticker, prices):
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
     row = _build_row(ticker, prices, ar, market_type="ihsg", **kwargs)
-    if not row: return None
-    row["direction"] = "LONG"
-    sector = IHSG_SECTOR_MAP.get(ticker, "Indonesia")
-    row["sector"] = sector
-    r1m = row.get("r1m", 0) or 0
-    if r1m > 0.05: row["recommendation"] = f"Strong momentum +{r1m:.1%} — {sector} play"
-    elif r1m < -0.05: row["recommendation"] = f"Weak momentum {r1m:.1%} — avoid {sector}"
-    else: row["recommendation"] = f"{sector} — range bound, wait breakout"
+    if not row: 
+        return None
+    # IHSG: no options, strip them
     row["options"] = {}
     row["mm_positioning"] = ""
     row["mm_recommendation"] = ""
+    # Keep trend data
+    sector = IHSG_SECTOR_MAP.get(ticker, "Indonesia")
+    row["sector"] = sector
+    r1m = row.get("r1m", 0) or 0
+    if not row.get("setup_valid", True):
+        row["recommendation"] = f"AVOID — {row.get('setup_note', 'Invalid setup')}"
+    elif r1m > 0.05: 
+        row["recommendation"] = f"Strong momentum +{r1m:.1%} — {sector} play"
+    elif r1m < -0.05: 
+        row["recommendation"] = f"Weak momentum {r1m:.1%} — avoid {sector}"
+    else: 
+        row["recommendation"] = f"{sector} — range bound, wait breakout"
     broker = _get_broker_proxy(ticker, prices)
     row["broker"] = broker
     return row
@@ -1359,6 +1510,29 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
             scores.append(("HOLD", 15))
             reasons.append(("⚠️ RR {:.1f}x — poor risk/reward. Skip or wait for better entry.".format(rr_val), 15))
 
+    # ── SETUP VALIDATION (NEW v32.4.1) ──
+    if row and not row.get("setup_valid", True):
+        return {
+            "action": "HOLD / TUNGGU",
+            "strategy": "Setup invalid — stop too close to entry or risk < 0.5%",
+            "rationale": f"• 🚫 Stop {ff(row.get('stop'))} too close to entry {ff(row.get('entry'))} (risk {row.get('risk_pct',0):.2f}% < 0.5% minimum).<br>• Wait for better entry or wider risk range.",
+            "raw_action": "HOLD",
+            "confidence": 0,
+            "factors": 0,
+            "source": "VALIDATION",
+        }
+
+    if row and row.get("direction_override"):
+        return {
+            "action": "HOLD / TUNGGU",
+            "strategy": "Trend opposes signal — don't fight the trend",
+            "rationale": f"• {row.get('override_reason', 'Trend filter override')}<br>• Wait for trend alignment before entering.",
+            "raw_action": "HOLD",
+            "confidence": 0,
+            "factors": 0,
+            "source": "TREND_FILTER",
+        }
+
     # ── AGGREGATE TO ONE RECOMMENDATION ──
     action_weights = {}
     for action, weight in scores:
@@ -1520,7 +1694,7 @@ def _get_ticker_behavioral_score(ticker, prices, options, snap):
 
 
 def render_ticker_card_v4(row, expanded=False):
-    """AUDITED v32.4: Removed duplicate Greeks panels. Consolidated to ONE clean options panel."""
+    """AUDITED v32.4.1 — Trend info + clear basis + setup validation."""
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
     direction = row.get("direction", "NEUTRAL")
@@ -1543,17 +1717,43 @@ def render_ticker_card_v4(row, expanded=False):
     if snap_local is not None:
         prices_series = snap_local.get("prices", {}).get(ticker)
 
+    # Trend data (NEW v32.4.1)
+    trend = row.get("trend", "NEUTRAL")
+    trend_note = row.get("trend_note", "")
+    setup_valid = row.get("setup_valid", True)
+    direction_override = row.get("direction_override", False)
+    override_reason = row.get("override_reason", "")
+    risk_pct = row.get("risk_pct", 0)
+
     dir_kind = "long" if "LONG" in direction else "short" if "SHORT" in direction else "neut"
     dir_label = "LONG" if "LONG" in direction else "SHORT"
     grade_kind = grade.lower().replace("+", "")
 
     badges = _badge_html(dir_label, dir_kind) + _badge_html(grade, grade_kind)
-    if rr_val and rr_val >= 2: badges += _badge_html(f"RR {rr_val}x", "news")
-    if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
-    if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
-    if mm_pos and mm_pos != "UNKNOWN": badges += _badge_html(mm_pos, "mm")
 
-    # Chase/Wait badge (NEW v32.4)
+    # Trend badge (NEW)
+    if trend == "BULLISH":
+        badges += _badge_html("📈 Trend", "long")
+    elif trend == "BEARISH":
+        badges += _badge_html("📉 Trend", "short")
+    elif trend == "BULLISH_BIAS":
+        badges += _badge_html("➡️ >SMA50", "neut")
+    elif trend == "BEARISH_BIAS":
+        badges += _badge_html("➡️ <SMA50", "neut")
+
+    if not setup_valid or direction_override:
+        badges += _badge_html("🚫 INVALID", "short")
+
+    if rr_val and rr_val >= 2: 
+        badges += _badge_html(f"RR {rr_val}x", "news")
+    if news_sig and "BULLISH" in str(news_sig): 
+        badges += _badge_html("NEWS+", "news")
+    if news_sig and "BEARISH" in str(news_sig): 
+        badges += _badge_html("NEWS-", "news")
+    if mm_pos and mm_pos != "UNKNOWN": 
+        badges += _badge_html(mm_pos, "mm")
+
+    # Chase/Wait badge
     chase_status = row.get("chase_status", "NEUTRAL")
     if chase_status == "CHASE":
         badges += _badge_html("🏃 CHASE", "chase")
@@ -1565,6 +1765,7 @@ def render_ticker_card_v4(row, expanded=False):
     confluence = row.get("confluence", {})
     if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
         badges += _badge_html(f"🔥 Confluence x{confluence['entry_cluster']['count']}", "a")
+
     alpha_src = row.get("alpha_source", "")
     alpha_score = row.get("alpha_score", 0)
     if alpha_src:
@@ -1575,14 +1776,19 @@ def render_ticker_card_v4(row, expanded=False):
 
     if snap_local:
         sm_badge = _get_smart_money_badge(ticker, snap_local)
-        if sm_badge: badges += _badge_html(sm_badge, "news")
+        if sm_badge: 
+            badges += _badge_html(sm_badge, "news")
         vrp = _get_vrp_score(ticker, snap_local)
-        if vrp > 10: badges += _badge_html(f"VRP+{vrp:.0f}%", "short")
-        elif vrp < -10: badges += _badge_html(f"VRP{vrp:.0f}%", "long")
+        if vrp > 10: 
+            badges += _badge_html(f"VRP+{vrp:.0f}%", "short")
+        elif vrp < -10: 
+            badges += _badge_html(f"VRP{vrp:.0f}%", "long")
         sq = _get_squeeze_score(ticker, snap_local)
-        if sq > 60: badges += _badge_html(f"Squeeze {sq:.0f}", "news")
+        if sq > 60: 
+            badges += _badge_html(f"Squeeze {sq:.0f}", "news")
         cr_role = _get_capital_rotation_role(ticker, snap_local)
-        if cr_role: badges += _badge_html(cr_role.replace("_"," ")[:12], "neut")
+        if cr_role: 
+            badges += _badge_html(cr_role.replace("_"," ")[:12], "neut")
 
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
@@ -1600,6 +1806,10 @@ def render_ticker_card_v4(row, expanded=False):
     bf = row.get("behavioral_flag")
     if bf:
         extra_meta += f'<div title="Behavioral Alert" style="color:#F85149;">🧠 {bf}</div>'
+
+    # Risk pct display
+    if risk_pct > 0:
+        extra_meta += f'<div title="Risk %">🛑 {risk_pct:.1f}%</div>'
 
     card_html = (
         f'<div class="ticker-card-v4">'
@@ -1619,20 +1829,39 @@ def render_ticker_card_v4(row, expanded=False):
             src_emoji = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(alpha_src,"⚡")
             st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;margin-bottom:6px;padding:6px 8px;background:#161B22;border-left:3px solid #A855F7;border-radius:4px;"><b>{src_emoji} {alpha_src.replace("_"," ").title()} Thesis:</b> {alpha_thesis}</div>', unsafe_allow_html=True)
 
-        # Basis explanation
+        # ── BASIS EXPLANATION (AUDITED v32.4.1) ──
         basis_html = '<div style="font-size:0.7rem;color:#8B949E;margin-bottom:8px;">'
         basis_parts = []
-        if options.get("max_pain"): basis_parts.append(f"Max Pain {ff(options['max_pain'])}")
-        if options.get("put_wall"): basis_parts.append(f"Put Wall {ff(options['put_wall'])}")
-        if options.get("call_wall"): basis_parts.append(f"Call Wall {ff(options['call_wall'])}")
-        if row.get("trade_l"): basis_parts.append(f"LRR {ff(row['trade_l'])}")
-        if row.get("trade_r"): basis_parts.append(f"TRR {ff(row['trade_r'])}")
+        if row.get("trade_l"): 
+            basis_parts.append(f"LRR {ff(row['trade_l'])}")
+        if row.get("trade_r"): 
+            basis_parts.append(f"TRR {ff(row['trade_r'])}")
+        if options.get("max_pain"): 
+            basis_parts.append(f"Max Pain {ff(options['max_pain'])}")
+        if options.get("put_wall"): 
+            basis_parts.append(f"Put Wall {ff(options['put_wall'])}")
+        if options.get("call_wall"): 
+            basis_parts.append(f"Call Wall {ff(options['call_wall'])}")
         if basis_parts:
             basis_html += "Basis: " + " · ".join(basis_parts)
+
+        # Trend basis (NEW)
+        if trend_note:
+            basis_html += f'<br><span style="color:#D29922;">{trend_note}</span>'
+
+        # Direction override reason
+        if override_reason:
+            basis_html += f'<br><span style="color:#F85149;font-weight:600;">{override_reason}</span>'
+
+        # Setup validation
+        if not setup_valid:
+            setup_note = row.get("setup_note", "")
+            basis_html += f'<br><span style="color:#F85149;font-weight:700;">🚫 {setup_note}</span>'
+
         basis_html += '</div>'
         st.markdown(basis_html, unsafe_allow_html=True)
 
-        # CHASE/WAIT badge (NEW v32.4)
+        # CHASE/WAIT badge
         chase_text = row.get("chase_text", "")
         chase_color = row.get("chase_color", "#8B949E")
         if chase_text:
@@ -1640,7 +1869,7 @@ def render_ticker_card_v4(row, expanded=False):
                 f'<div style="background:{chase_color}15;border:1px solid {chase_color}50;border-radius:6px;padding:6px 10px;margin:6px 0;font-size:0.75rem;color:{chase_color};font-weight:600;">'
                 f'{chase_text}</div>', unsafe_allow_html=True)
 
-        # ── Build comprehensive single recommendation ──
+        # ── Recommendation ──
         confluence = row.get("confluence", {})
 
         if market_type == "ihsg":
@@ -1650,18 +1879,18 @@ def render_ticker_card_v4(row, expanded=False):
                 dist = broker.get("real_distribution", False)
                 cross = broker.get("crossing_detected", False)
                 conf = broker.get("confidence", 0)
-                r5d = broker.get("r5d", 0)
+                r5d_b = broker.get("r5d", 0)
 
                 if acc:
                     broker_color = "#3FB950"
                     broker_action = "AKUMULASI REAL"
                     broker_strategy = "Genuine buying detected — tambah posisi"
-                    broker_rationale = f"📈 Price +{r5d:.1%} 5D dengan trend consistency. Broker accumulation {conf}% confidence."
+                    broker_rationale = f"📈 Price +{r5d_b:.1%} 5D dengan trend consistency. Broker accumulation {conf}% confidence."
                 elif dist:
                     broker_color = "#F85149"
                     broker_action = "DISTRIBUSI REAL"
                     broker_strategy = "Genuine selling detected — kurangi posisi"
-                    broker_rationale = f"📉 Price {r5d:.1%} 5D. Broker distribution {conf}% confidence."
+                    broker_rationale = f"📉 Price {r5d_b:.1%} 5D. Broker distribution {conf}% confidence."
                 elif cross:
                     broker_color = "#D29922"
                     broker_action = "WASPADA CROSSING"
@@ -1747,16 +1976,14 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'<div>📍 <b style="color:#E6EDF3;">Entry:</b> {ff(entry)}</div>'
         rec_html += f'<div>🎯 <b style="color:#E6EDF3;">Target 1:</b> {ff(t1)}</div>'
         rec_html += f'<div>🎯 <b style="color:#E6EDF3;">Target 2:</b> {ff(t2)}</div>'
-        rec_html += f'<div>🛑 <b style="color:#E6EDF3;">Stop:</b> {ff(stop)}</div>'
+        rec_html += f'<div>🛑 <b style="color:#E6EDF3;">Stop:</b> {ff(stop)} ({risk_pct:.1f}% risk)</div>'
         rec_html += f'</div>'
 
-        # ── SINGLE CONSOLIDATED OPTIONS PANEL (v32.4: removed duplicate) ──
+        # ── SINGLE CONSOLIDATED OPTIONS PANEL ──
         if show_options and options.get("gamma_regime"):
             rec_html += f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:8px;padding:6px;background:#0D1117;border-radius:6px;">'
-            # Gamma
             g_color = "#3FB950" if "POS" in str(options.get("gamma_regime","")) else "#F85149" if "NEG" in str(options.get("gamma_regime","")) else "#D29922"
             rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Gamma</div><div style="font-size:0.7rem;color:{g_color};font-weight:700;">{options.get("gamma_regime","—")[:8]}</div></div>'
-            # GEX
             gex_v = options.get("gex")
             try:
                 gex_f = float(gex_v)
@@ -1764,7 +1991,6 @@ def render_ticker_card_v4(row, expanded=False):
                     gex_c = "#3FB950" if gex_f > 0 else "#F85149"
                     rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">GEX</div><div style="font-size:0.7rem;color:{gex_c};font-weight:700;">{gex_f:+.2f}</div></div>'
             except (TypeError, ValueError): pass
-            # Vanna
             van_v = options.get("vanna")
             try:
                 van_f = float(van_v)
@@ -1772,7 +1998,6 @@ def render_ticker_card_v4(row, expanded=False):
                     van_c = "#3FB950" if van_f > 0 else "#F85149"
                     rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Vanna</div><div style="font-size:0.7rem;color:{van_c};font-weight:700;">{van_f:+.2f}</div></div>'
             except (TypeError, ValueError): pass
-            # IV Rank
             iv_v = options.get("iv_rank")
             try:
                 iv_f = float(iv_v)
@@ -1780,7 +2005,6 @@ def render_ticker_card_v4(row, expanded=False):
                     iv_c = "#3FB950" if iv_f < 40 else "#D29922" if iv_f < 60 else "#F85149"
                     rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">IV Rank</div><div style="font-size:0.7rem;color:{iv_c};font-weight:700;">{iv_f:.0f}</div></div>'
             except (TypeError, ValueError): pass
-            # PC Ratio
             pc_v = options.get("pc_ratio")
             try:
                 pc_f = float(pc_v)
@@ -1799,7 +2023,7 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'</div>'
         st.markdown(rec_html, unsafe_allow_html=True)
 
-        # ── OI Heatmap Visual ──
+        # OI Heatmap
         if show_options and options.get("max_pain"):
             mp = options.get("max_pain")
             pw = options.get("put_wall")
@@ -1829,7 +2053,7 @@ def render_ticker_card_v4(row, expanded=False):
         if show_options and options.get("gamma_regime"):
             st.markdown(_skew_curve_proxy_html(ticker, options, width=320, height=110), unsafe_allow_html=True)
 
-        # Boom-Bust + Behavioral (mini)
+        # Boom-Bust + Behavioral mini
         if market_type == "us_equity":
             bb = _get_ticker_boombust_score(ticker, prices, snap_local)
             beh = _get_ticker_behavioral_score(ticker, prices, options, snap_local)
@@ -1901,6 +2125,20 @@ def render_regime_compass(snap):
             f'{_gauge_html(markov_conf*100, max_val=100, color=markov_color, height=10, label_left="0%", label_right="100%")}'
             f'</div>', unsafe_allow_html=True
         )
+        # ── Scenario probabilities below compass ──
+        narrative_local = snap.get("narrative", {}) or {}
+        scenarios_local = (narrative_local.get("scenarios") or {}) if isinstance(narrative_local, dict) else {}
+        if scenarios_local:
+            dom_local = scenarios_local.get("dominant_scenario", "base") if isinstance(scenarios_local, dict) else "base"
+            bull_p_local = scenarios_local.get("bull", {}).get("probability", 0) if isinstance(scenarios_local.get("bull"), dict) else 0
+            base_p_local = scenarios_local.get("base", {}).get("probability", 0) if isinstance(scenarios_local.get("base"), dict) else 0
+            bear_p_local = scenarios_local.get("bear", {}).get("probability", 0) if isinstance(scenarios_local.get("bear"), dict) else 0
+            st.markdown(
+                f'<div style="font-size:0.6rem;color:#8B949E;text-align:center;margin:6px 0 0;padding:4px 6px;background:#0D1117;border-radius:4px;">'
+                f'<span style="color:#3FB950;font-weight:700;">🐂 {bull_p_local:.0%}</span> · '
+                f'<span style="color:#D29922;font-weight:700;">⚖ {base_p_local:.0%}</span> · '
+                f'<span style="color:#F85149;font-weight:700;">🐻 {bear_p_local:.0%}</span> · '
+                f'Dom: <b>{dom_local.title()}</b></div>', unsafe_allow_html=True)
     with c2:
         fig = go.Figure()
         quads = ["Q1","Q2","Q3","Q4"]; colors = [_quad_color(q) for q in quads]
@@ -2245,21 +2483,6 @@ if _vix_raw is not None:
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
-
-    # ── Bull/Bear/Base compact text below structural compass ──
-    narrative = snap.get("narrative", {}) or {}
-    scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
-    if scenarios:
-        dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
-        bull_p = scenarios.get("bull", {}).get("probability", 0) if isinstance(scenarios.get("bull"), dict) else 0
-        base_p = scenarios.get("base", {}).get("probability", 0) if isinstance(scenarios.get("base"), dict) else 0
-        bear_p = scenarios.get("bear", {}).get("probability", 0) if isinstance(scenarios.get("bear"), dict) else 0
-        st.markdown(
-            f'<div style="font-size:0.65rem;color:#8B949E;text-align:center;margin:4px 0;padding:4px 8px;background:#0D1117;border-radius:4px;">'
-            f'<span style="color:#3FB950;font-weight:700;">🐂 Bull {bull_p:.0%}</span> · '
-            f'<span style="color:#D29922;font-weight:700;">⚖ Base {base_p:.0%}</span> · '
-            f'<span style="color:#F85149;font-weight:700;">🐻 Bear {bear_p:.0%}</span> · '
-            f'Dominant: <b>{dom.title()}</b></div>', unsafe_allow_html=True)
 
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
