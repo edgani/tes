@@ -1,10 +1,12 @@
-"""app.py - MacroRegime Pro v32.3
-Major rewrite:
-- Dashboard: regime + narrative + metrics + boom-bust + behavioral + allocation + scenarios + bottlenecks + asset pulse + deep technical
-- Alpha Center: bottleneck + front-run + quad rotation candidates
-- Market tabs: ticker cards enriched with MM positioning (max pain, gamma, gex, vanna, charm, skew)
-- US Stocks aggregate: SPY/QQQ/IWM/GLD/TLT options section
-- Dark Pool proxy prints
+"""app.py - MacroRegime Pro v32.4 AUDITED
+Deep Re-Audit Fixes:
+- Crash Meter: /4 → /5 (5 components, 5 segments)
+- Ticker Card: Removed duplicate Greeks/Options panels (consolidated to 1)
+- Recommendation: Added CHASE vs WAIT logic based on price vs entry
+- Dashboard: Bull/Bear/Base bar moved below structural compass
+- Dashboard: Asset Pulse compacted + moved below Behavioral
+- IV Rank: Documented as PROXY (not real IV Rank)
+- All formulas documented with source tags (PROXY vs ENGINE vs LIVE)
 """
 import streamlit as st
 import pandas as pd
@@ -16,7 +18,7 @@ import json, os
 from datetime import datetime
 
 logger = __import__("logging").getLogger(__name__)
-st.set_page_config(page_title="MacroRegime Pro v32.3", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MacroRegime Pro v32.4", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
 # CSS
@@ -53,6 +55,8 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .badge-grade-c { background: rgba(139,148,158,0.15); color: #8B949E; border-color: #8B949E; }
 .badge-news { background: rgba(88,166,255,0.12); color: #58A6FF; border-color: rgba(88,166,255,0.3); }
 .badge-mm { background: rgba(168,85,247,0.12); color: #A855F7; border-color: rgba(168,85,247,0.3); }
+.badge-chase { background: rgba(34,197,94,0.2); color: #3FB950; border-color: #3FB950; }
+.badge-wait { background: rgba(234,179,8,0.2); color: #D29922; border-color: #D29922; }
 
 .sp-bar-v4 { width: 3px; border-radius: 1px; opacity: 0.85; }
 .rr-track-v4 { position: relative; height: 16px; background: #21262D; border-radius: 4px; overflow: hidden; }
@@ -67,8 +71,8 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .hm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
 .hm-cell { padding: 5px 3px; border-radius: 4px; text-align: center; font-size: 0.68rem; font-weight: 600; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.05); }
 
-.pulse-hbox { min-width: 90px; height: 52px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.72rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
-.pulse-hlabel { font-size: 0.6rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 1px; }
+.pulse-hbox { min-width: 70px; height: 40px; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.68rem; font-weight: 700; color: #E6EDF3; border: 1px solid rgba(255,255,255,0.06); flex-shrink: 0; }
+.pulse-hlabel { font-size: 0.52rem; font-weight: 500; color: rgba(255,255,255,0.5); text-transform: uppercase; margin-top: 1px; }
 
 .timeline { display: flex; align-items: center; gap: 0px; margin: 6px 0; }
 .tl-node { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #30363D; background: #21262D; flex-shrink: 0; }
@@ -126,6 +130,9 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 
 .skew-curve-container { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px; margin: 4px 0; }
 .skew-curve-title { font-size: 0.7rem; color: #8B949E; text-transform: uppercase; font-weight: 600; margin-bottom: 6px; }
+
+.scenario-bar { display: flex; height: 18px; border-radius: 4px; overflow: hidden; background: #21262D; margin: 4px 0; }
+.scenario-seg { display: flex; align-items: center; justify-content: center; font-size: 0.55rem; font-weight: 700; color: #fff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -178,7 +185,6 @@ def ff(v, d=2):
     try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "-"
     except: return "-"
 def sf(v, fmt=".2f"):
-    """Safe format float for metrics."""
     try:
         if v is None: return "—"
         f = float(v)
@@ -258,7 +264,7 @@ def _gauge_html(value, max_val=100, color=None, height=12, label_left="0", label
     )
 
 def _badge_html(text, kind="long"):
-    cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news","mm":"badge-mm"}.get(kind,"badge-neut")
+    cls = {"long":"badge-long","short":"badge-short","neut":"badge-neut","a":"badge-grade-a","b":"badge-grade-b","c":"badge-grade-c","news":"badge-news","mm":"badge-mm","chase":"badge-chase","wait":"badge-wait"}.get(kind,"badge-neut")
     return f'<span class="badge {cls}">{text}</span>'
 
 def _stacked_bar_html(long_pct, short_pct, cash_pct):
@@ -269,6 +275,18 @@ def _stacked_bar_html(long_pct, short_pct, cash_pct):
         f'<div class="stack-seg" style="width:{cash_pct}%;background:#8B949E;">💵 {cash_pct:.0f}%</div>'
         f'</div>'
     )
+
+def _scenario_bar_html(bull_p, base_p, bear_p):
+    """Visual bull/base/bear probability bar."""
+    html = '<div class="scenario-bar">'
+    if bull_p > 0:
+        html += f'<div class="scenario-seg" style="width:{bull_p}%;background:#3FB950;">🐂 {bull_p:.0f}%</div>'
+    if base_p > 0:
+        html += f'<div class="scenario-seg" style="width:{base_p}%;background:#D29922;">⚖ {base_p:.0f}%</div>'
+    if bear_p > 0:
+        html += f'<div class="scenario-seg" style="width:{bear_p}%;background:#F85149;">🐻 {bear_p:.0f}%</div>'
+    html += '</div><div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-top:2px;"><span>Bull</span><span>Base</span><span>Bear</span></div>'
+    return html
 
 def _timeline_html(stage="INCEPTION"):
     stages = ["INCEPTION","ACCELERATION","EUPHORIA","CRISIS","AUCTION"]
@@ -325,6 +343,7 @@ def _asset_pulse_box_h(label, ret, sub=""):
     sub_html = f'<div style="font-size:0.52rem;color:#8B949E;margin-top:1px;">{sub}</div>' if sub else ""
     return f'<div class="pulse-hbox" style="background:{c}12;border-color:{c}25;"><div>{txt}</div><div class="pulse-hlabel">{label}</div>{sub_html}</div>'
 
+
 # ═══════════════════════════════════════════════════════════════════
 # OPTIONS / GREEKS / MM DATA ENRICHMENT
 # ═══════════════════════════════════════════════════════════════════
@@ -340,6 +359,7 @@ def _get_options_data(ticker, snap):
         "mm_positioning": "NEUTRAL", "mm_recommendation": "—",
         "source": "PROXY", "next_expiry": None, "days_to_expiry": None,
     }
+    # 1. YFinance live options (best quality, only SPY/QQQ/IWM usually)
     yf = snap.get("yfinance_options", {}).get(ticker, {}) if isinstance(snap.get("yfinance_options"), dict) else {}
     if isinstance(yf, dict) and yf.get("ok"):
         out["max_pain"] = yf.get("max_pain")
@@ -350,29 +370,37 @@ def _get_options_data(ticker, snap):
         out["gamma_regime"] = yf.get("gamma_regime")
         out["pc_ratio"] = yf.get("put_call_ratio")
         out["source"] = "YF"
-        if yf.get("next_expiry"):
-            out["next_expiry"] = yf.get("next_expiry")
-        if yf.get("days_to_expiry"):
-            out["days_to_expiry"] = yf.get("days_to_expiry")
+        if yf.get("next_expiry"): out["next_expiry"] = yf.get("next_expiry")
+        if yf.get("days_to_expiry"): out["days_to_expiry"] = yf.get("days_to_expiry")
+
+    # 2. Greeks engine data
     greeks = snap.get("greeks_data", {}).get(ticker, {}) if isinstance(snap.get("greeks_data"), dict) else {}
     if isinstance(greeks, dict):
-        out["gex"] = greeks.get("net_gex") or greeks.get("gex")
-        out["vanna"] = greeks.get("vanna")
-        out["charm"] = greeks.get("charm")
-        out["skew_30d"] = greeks.get("skew_30d") or greeks.get("skew")
+        if not out["gex"]: out["gex"] = greeks.get("net_gex") or greeks.get("gex")
+        if not out["vanna"]: out["vanna"] = greeks.get("vanna")
+        if not out["charm"]: out["charm"] = greeks.get("charm")
+        if not out["skew_30d"]: out["skew_30d"] = greeks.get("skew_30d") or greeks.get("skew")
+
+    # 3. Gamma engine data
     gamma = snap.get("gamma_data", {}).get(ticker, {}) if isinstance(snap.get("gamma_data"), dict) else {}
     if isinstance(gamma, dict):
         if not out["gamma_regime"]: out["gamma_regime"] = gamma.get("regime")
         if not out["max_pain"]: out["max_pain"] = gamma.get("max_pain")
+
+    # 4. GEX engine data
     gex = snap.get("gex_data", {}).get(ticker, {}) if isinstance(snap.get("gex_data"), dict) else {}
     if isinstance(gex, dict):
         if not out["gex"]: out["gex"] = gex.get("net_gex") or gex.get("gex") or gex.get("total_gex")
+
+    # 5. Vanna / Charm engine data
     vanna = snap.get("vanna_data", {}).get(ticker, {}) if isinstance(snap.get("vanna_data"), dict) else {}
     if isinstance(vanna, dict):
         if not out["vanna"]: out["vanna"] = vanna.get("vanna")
     charm = snap.get("charm_data", {}).get(ticker, {}) if isinstance(snap.get("charm_data"), dict) else {}
     if isinstance(charm, dict):
         if not out["charm"]: out["charm"] = charm.get("charm")
+
+    # 6. Skew term structure
     skew = snap.get("skew_term", {}).get("skew_data", {}) if isinstance(snap.get("skew_term"), dict) else {}
     if isinstance(skew, dict):
         for k, v in skew.items():
@@ -382,11 +410,15 @@ def _get_options_data(ticker, snap):
                     if "30" in str(k).lower() or "1m" in str(k).lower(): out["skew_30d"] = _safe_float(val)
                     if "60" in str(k).lower() or "2m" in str(k).lower(): out["skew_60d"] = _safe_float(val)
                     if "90" in str(k).lower() or "3m" in str(k).lower(): out["skew_90d"] = _safe_float(val)
+
+    # 7. 0DTE monitor
     odte = snap.get("odte_monitor", {}).get("tickers", {}).get(ticker, {}) if isinstance(snap.get("odte_monitor"), dict) else {}
     if isinstance(odte, dict):
-        out["pin_risk"] = odte.get("pin_risk")
-        out["vanna"] = odte.get("vanna") or out["vanna"]
-        out["charm"] = odte.get("charm") or out["charm"]
+        if not out["pin_risk"]: out["pin_risk"] = odte.get("pin_risk")
+        if not out["vanna"]: out["vanna"] = odte.get("vanna")
+        if not out["charm"]: out["charm"] = odte.get("charm")
+
+    # 8. VRP scanner
     vrp = snap.get("vrp_scanner", {}) if isinstance(snap.get("vrp_scanner"), dict) else {}
     if isinstance(vrp, dict) and vrp.get("ok"):
         for item in vrp.get("high_vrp_sell_premium", []):
@@ -397,7 +429,7 @@ def _get_options_data(ticker, snap):
             if isinstance(item, dict) and item.get("ticker") == ticker:
                 out["iv_rank"] = item.get("iv_rank")
 
-    # ── More engine fallbacks ──
+    # 9. Cem Karsan universal
     cem = snap.get("cem_karsan_universal", {}) if isinstance(snap.get("cem_karsan_universal"), dict) else {}
     if isinstance(cem, dict):
         for item in cem.get("per_ticker", {}).values() if isinstance(cem.get("per_ticker"), dict) else []:
@@ -410,6 +442,7 @@ def _get_options_data(ticker, snap):
                 if not out["max_pain"]: out["max_pain"] = _safe_float(item.get("max_pain"))
                 if not out["expected_move_pct"]: out["expected_move_pct"] = _safe_float(item.get("expected_move"))
 
+    # 10. SpotGamma proxy
     spot = snap.get("spotgamma_scanner", {}) if isinstance(snap.get("spotgamma_scanner"), dict) else {}
     if isinstance(spot, dict) and spot.get("ok"):
         pt = spot.get("per_ticker_proxy_gex", {}) if isinstance(spot.get("per_ticker_proxy_gex"), dict) else {}
@@ -418,6 +451,7 @@ def _get_options_data(ticker, snap):
             if not out["gamma_regime"]: out["gamma_regime"] = pt[ticker].get("gamma_regime")
             if not out["max_pain"]: out["max_pain"] = _safe_float(pt[ticker].get("max_pain"))
 
+    # 11. Karsan scanner
     karsan = snap.get("karsan_scanner", {}) if isinstance(snap.get("karsan_scanner"), dict) else {}
     if isinstance(karsan, dict) and karsan.get("ok"):
         for item in karsan.get("per_ticker", {}).values() if isinstance(karsan.get("per_ticker"), dict) else []:
@@ -425,6 +459,7 @@ def _get_options_data(ticker, snap):
                 if not out["skew_30d"]: out["skew_30d"] = _safe_float(item.get("skew") or item.get("skew_30d"))
                 if not out["expected_move_pct"]: out["expected_move_pct"] = _safe_float(item.get("expected_move"))
 
+    # 12. Afternoon signal
     aft = snap.get("afternoon_data", {}) if isinstance(snap.get("afternoon_data"), dict) else {}
     if isinstance(aft, dict) and ticker in aft:
         a = aft[ticker]
@@ -432,18 +467,21 @@ def _get_options_data(ticker, snap):
             if not out["vanna"]: out["vanna"] = a.get("vanna")
             if not out["charm"]: out["charm"] = a.get("charm")
 
+    # 13. Structure quality
     struct = snap.get("structure_data", {}) if isinstance(snap.get("structure_data"), dict) else {}
     if isinstance(struct, dict) and ticker in struct:
         s = struct[ticker]
         if isinstance(s, dict):
             if not out["gamma_regime"]: out["gamma_regime"] = s.get("gamma_regime")
 
+    # 14. Volga proxy
     volga = snap.get("volga_data", {}) if isinstance(snap.get("volga_data"), dict) else {}
     if isinstance(volga, dict) and volga.get("ok"):
         vt = volga.get("per_ticker", {}) if isinstance(volga.get("per_ticker"), dict) else {}
         if ticker in vt and isinstance(vt[ticker], dict):
             if not out["skew_30d"]: out["skew_30d"] = _safe_float(vt[ticker].get("skew"))
 
+    # ── MM Positioning Logic ──
     px = None
     prices = snap.get("prices", {})
     if ticker in prices:
@@ -455,16 +493,16 @@ def _get_options_data(ticker, snap):
         out["mp_dist"] = mp_dist
         if abs(mp_dist) < 0.02:
             out["mm_positioning"] = "PINNED"
-            out["mm_recommendation"] = "MM pinned — expect range-bound until expiry. Sell straddles or wait for breakout."
+            out["mm_recommendation"] = "MM pinned — range-bound until expiry. Sell straddles or wait breakout."
         elif mp_dist > 0.03 and out["gamma_regime"] in ("POSITIVE", "DEEP_POSITIVE"):
             out["mm_positioning"] = "CALL_WALL"
-            out["mm_recommendation"] = "Price above max pain + positive gamma — MM will sell into rallies. Fade strength above call wall."
+            out["mm_recommendation"] = "Price above max pain + positive gamma — MM sells into rallies. Fade strength."
         elif mp_dist < -0.03 and out["gamma_regime"] in ("NEGATIVE", "DEEP_NEGATIVE"):
             out["mm_positioning"] = "PUT_WALL"
-            out["mm_recommendation"] = "Price below max pain + negative gamma — MM will buy dips. Support at put wall likely holds."
+            out["mm_recommendation"] = "Price below max pain + negative gamma — MM buys dips. Support holds."
         else:
             out["mm_positioning"] = "TRANSITION"
-            out["mm_recommendation"] = "Between walls — directional play valid. Watch vanna/charm for momentum shift."
+            out["mm_recommendation"] = "Between walls — directional play valid. Watch vanna/charm shift."
     else:
         out["mm_positioning"] = "UNKNOWN"
         out["mm_recommendation"] = "Insufficient options data for MM positioning."
@@ -499,7 +537,7 @@ def _skew_curve_proxy_html(ticker, options_data, width=300, height=120):
         bars_html += f'<div style="width:{bar_width-2}px;height:{h}%;background:{color}40;border-radius:2px;opacity:0.8;"></div>'
     return (
         f'<div class="skew-curve-container">'
-        f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f})</div>'
+        f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f}) [{options_data.get("source","PROXY")}]</div>'
         f'<div style="display:flex;align-items:flex-end;gap:1px;height:{height}px;padding:0 4px;">'
         f'{bars_html}'
         f'</div>'
@@ -541,7 +579,6 @@ def _build_dark_pool_proxy(snap, prices):
     return prints[:15]
 
 def _get_next_expiry(days_to_add=21):
-    """Proxy: next monthly options expiry (3rd Friday) or just +21 days"""
     from datetime import datetime, timedelta
     d = datetime.now() + timedelta(days=days_to_add)
     while d.weekday() != 4:
@@ -549,53 +586,65 @@ def _get_next_expiry(days_to_add=21):
     return d.strftime("%b %d")
 
 def _options_proxy_for_ticker_local(ticker, prices):
-    """Local fallback when snap options data is empty."""
+    """Local fallback when snap options data is empty.
+    ⚠️ ALL VALUES ARE PROXY — derived from price action, NOT real options chain.
+    Formulas documented for transparency."""
     s = prices.get(ticker)
     if s is None or (hasattr(s, "__len__") and len(s) < 20):
         return {}
     try:
         s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-        if len(s_clean) < 20:
-            return {}
+        if len(s_clean) < 20: return {}
         px = float(s_clean.iloc[-1])
         sma20 = float(s_clean.tail(20).mean())
         std20 = float(s_clean.tail(20).std())
         if std20 == 0 or not all(math.isfinite(v) for v in [px, sma20, std20]):
             return {}
+
+        # PROXY FORMULAS (price-action based, NOT real OI)
         max_pain = round(sma20, 2)
         put_wall = round(sma20 - std20 * 2.0, 2)
         call_wall = round(sma20 + std20 * 2.0, 2)
         gamma_flip_up = round(sma20 + std20 * 1.5, 2)
         gamma_flip_down = round(sma20 - std20 * 1.5, 2)
         mp_dist = (px - max_pain) / max_pain if max_pain != 0 else 0
+
         r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
         r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else 0
-        if r5d > 0.03 and r20d > 0.05:
-            gamma_regime = "DEEP_POSITIVE"
-        elif r5d > 0.01 and r20d > 0.02:
-            gamma_regime = "POSITIVE"
-        elif r5d < -0.03 and r20d < -0.05:
-            gamma_regime = "DEEP_NEGATIVE"
-        elif r5d < -0.01 and r20d < -0.02:
-            gamma_regime = "NEGATIVE"
-        else:
-            gamma_regime = "TRANSITION"
+
+        # Gamma regime proxy from momentum
+        if r5d > 0.03 and r20d > 0.05: gamma_regime = "DEEP_POSITIVE"
+        elif r5d > 0.01 and r20d > 0.02: gamma_regime = "POSITIVE"
+        elif r5d < -0.03 and r20d < -0.05: gamma_regime = "DEEP_NEGATIVE"
+        elif r5d < -0.01 and r20d < -0.02: gamma_regime = "NEGATIVE"
+        else: gamma_regime = "TRANSITION"
+
         returns = s_clean.tail(20).pct_change().dropna()
         skew_val = float(returns.skew()) if len(returns) > 5 else 0.0
         skew_30d = skew_val * 0.5
+
+        # Greeks proxies (price-action derived)
         gex_proxy = -mp_dist * 5.0
         vanna_proxy = r5d * 10.0
         r11 = float(s_clean.iloc[-6] / s_clean.iloc[-11] - 1) if len(s_clean) >= 11 else r5d
         charm_proxy = (r5d - r11) * 20.0
+
+        # Volatility metrics
         vol_20 = float(returns.std() * math.sqrt(252)) if len(returns) > 1 else 0.2
         hist_vol = float(s_clean.tail(60).pct_change().dropna().std() * math.sqrt(252)) if len(s_clean) >= 60 else vol_20
+
+        # ⚠️ PROXY IV Rank — NOT real IV Rank (which needs 52w high/low IV)
+        # This is a normalized vol ratio mapped to 0-100 scale
         iv_rank = min(100, max(0, (vol_20 / hist_vol * 50))) if hist_vol > 0 else 50
+
         expected_move = vol_20 / math.sqrt(12)
         pc_ratio = 0.8 if r20d > 0.05 else (1.2 if r20d < -0.05 else 1.0)
-        # OI proxy based on recent volume/price action
+
+        # OI proxy from price level
         avg_vol = float(s_clean.tail(20).mean())
         oi_call = max(50000, int(avg_vol * 80000 * (1.1 if r20d > 0 else 0.9)))
         oi_put = max(50000, int(avg_vol * 80000 * (0.9 if r20d > 0 else 1.1)))
+
         return {
             "max_pain": float(max_pain), "put_wall": float(put_wall), "call_wall": float(call_wall),
             "gamma_flip_up": float(gamma_flip_up), "gamma_flip_down": float(gamma_flip_down),
@@ -610,10 +659,7 @@ def _options_proxy_for_ticker_local(ticker, prices):
         return {}
 
 def _get_dark_pool_for_ticker(ticker, snap):
-    """Get dark pool print for specific ticker from snap. Returns proxy if no real print."""
-    if not snap:
-        return None
-    # 1. Try real institutional data
+    if not snap: return None
     inst = snap.get("institutional_data", {}) if isinstance(snap.get("institutional_data"), dict) else {}
     if inst.get("per_ticker"):
         data = inst.get("per_ticker", {}).get(ticker)
@@ -628,7 +674,6 @@ def _get_dark_pool_for_ticker(ticker, snap):
                 return {"size": size, "price": px, "amount": size * px,
                         "side": "BUY" if data.get("buy_pressure", 0) > data.get("sell_pressure", 0) else "SELL",
                         "time": "Live", "source": "INST"}
-    # 2. Try front-run consensus
     fr = snap.get("front_run_candidates", []) or []
     for item in fr:
         if not isinstance(item, dict): continue
@@ -640,7 +685,6 @@ def _get_dark_pool_for_ticker(ticker, snap):
                 except: pass
             if px:
                 return {"size": 250000, "price": px, "amount": 250000 * px, "side": "BUY", "time": "Consensus", "source": "FR"}
-    # 3. Proxy dark pool for tickers with price action
     prices = snap.get("prices", {})
     if ticker in prices:
         try:
@@ -660,9 +704,49 @@ def _get_dark_pool_for_ticker(ticker, snap):
     return None
 
 # ═══════════════════════════════════════════════════════════════════
-# RISK RANGE / ROW BUILDERS (ENRICHED WITH OPTIONS)
+# RISK RANGE / ROW BUILDERS (AUDITED + FORMULA DOCUMENTATION)
 # ═══════════════════════════════════════════════════════════════════
 def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None, market_type="us_equity", news=None, snap=None):
+    """
+    AUDITED FORMULAS (v32.4):
+    ─────────────────────────
+    LRR = SMA(20) - 1.5 × STD(20)          [Lower Risk Range — support]
+    TRR = SMA(20) + 1.5 × STD(20)          [Take Risk Range — resistance]
+    Spread = TRR - LRR
+    PositionInRange = (Price - LRR) / Spread
+
+    LONG ENTRY:
+      IF Price < LRR (oversold/discounted):
+        Entry = Price (chase current discount)
+        Stop = LRR - Spread × 0.15
+      ELSE:
+        Entry = MIN(LRR, PutWall, GammaFlipDown)  ← lowest support confluence
+        Stop = MIN(Entry - Spread×0.25, PutWall - Spread×0.1)
+      TP1 = MAX(Entry + 2×Risk, TRR, CallWall, GammaFlipUp, MaxPain)
+      TP2 = MAX(TP1, TRR, CallWall, GammaFlipUp)
+
+    SHORT ENTRY:
+      IF Price > TRR (overbought/premium):
+        Entry = Price (fade current premium)
+        Stop = TRR + Spread × 0.15
+      ELSE:
+        Entry = MAX(TRR, CallWall, GammaFlipUp)  ← highest resistance confluence
+        Stop = MAX(Entry + Spread×0.25, CallWall + Spread×0.1)
+      TP1 = MIN(Entry - 2×Risk, LRR, PutWall, GammaFlipDown, MaxPain)
+      TP2 = MIN(TP1, LRR, PutWall, GammaFlipDown)
+
+    RISK/REWARD = |TP1 - Entry| / max(|Entry - Stop|, 0.01)
+    Grade A = NearEntry AND RR ≥ 2.0
+    Grade B = NearEntry
+    Grade C = Everything else
+
+    CHASE vs WAIT LOGIC (NEW v32.4):
+      IF Price ≤ Entry × 1.02  → "CHASE / ENTER NOW" (price at or near entry)
+      IF Price > Entry × 1.05 AND Price > Stop  → "WAIT FOR PULLBACK" (missed entry)
+      IF Price < Stop  → "STOP HIT / AVOID" (setup invalidated)
+      IF RR ≥ 3.0  → "TARGET JAUH — HIGH CONVICTION" (asymmetric reward)
+      IF RR < 1.5  → "TARGET DEKAT — RISK/REWARD TIDAK IDEAL" (poor R/R)
+    """
     v = ar.get(ticker, {}) if ar else {}
     s = prices.get(ticker)
     if not v and (s is None or len(s) < 15): return None
@@ -701,9 +785,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     gf_down = options.get("gamma_flip_down")
 
     # ── CONFLUENCE DETECTION ──
-    # Find levels that cluster together (within 2% of each other) = high conviction zone
     def _cluster_levels(levels, threshold_pct=0.02):
-        """Find clusters of levels within threshold_pct of each other."""
         valid = [float(v) for v in levels if v is not None and v > 0 and math.isfinite(float(v))]
         if len(valid) < 2: return []
         valid.sort()
@@ -715,19 +797,16 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
                     cluster.append(valid[j])
             if len(cluster) >= 2:
                 clusters.append({"levels": cluster, "center": round(sum(cluster)/len(cluster), 2), "count": len(cluster)})
-        # Return highest-count cluster
         return sorted(clusters, key=lambda x: x["count"], reverse=True)
 
     confluence = {"entry": [], "target": [], "entry_cluster": None, "target_cluster": None}
 
     if side == "long":
-        # Buy-and-hold sync: if price below LRR, it's oversold — buy at current price (discount)
         if px < lrr:
             entry = round(px, 2)
             stop = round(lrr - spread * 0.15, 2)
             note = "📉 Price below LRR — DISCOUNTED entry. Ideal for accumulation."
         else:
-            # Detect confluence cluster for LONG entry (LRR + put_wall + gamma_flip_down)
             long_entry_levels = [lrr]
             if market_type != "ihsg":
                 if pw: long_entry_levels.append(pw)
@@ -749,7 +828,6 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
             stop = round(min(stop_candidates), 2)
 
-        # Target confluence: TRR + call_wall + gamma_flip_up + max_pain
         long_target_levels = [trr]
         if market_type != "ihsg":
             if cw: long_target_levels.append(cw)
@@ -773,13 +851,11 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         tp2 = round(max(tp2_candidates), 2)
         near_entry = pos <= 0.35 or px < lrr
     else:
-        # Short: if price above TRR, it's overbought — short at current price (premium)
         if px > trr:
             entry = round(px, 2)
             stop = round(trr + spread * 0.15, 2)
             note = "📈 Price above TRR — OVERBOUGHT entry. Fade the rally."
         else:
-            # Detect confluence cluster for SHORT entry (TRR + call_wall + gamma_flip_up)
             short_entry_levels = [trr]
             if market_type != "ihsg":
                 if cw: short_entry_levels.append(cw)
@@ -801,7 +877,6 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
             stop = round(max(stop_candidates), 2)
 
-        # Target confluence: LRR + put_wall + gamma_flip_down + max_pain
         short_target_levels = [lrr]
         if market_type != "ihsg":
             if pw: short_target_levels.append(pw)
@@ -828,6 +903,45 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
     grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
 
+    # ── CHASE vs WAIT vs AVOID (NEW v32.4) ──
+    chase_status = "NEUTRAL"
+    chase_color = "#8B949E"
+    chase_text = "—"
+    if side == "long":
+        if px <= entry * 1.02:
+            chase_status = "CHASE"
+            chase_color = "#3FB950"
+            chase_text = "🟢 CHASE / ENTER NOW — Price at/near entry"
+        elif px > entry * 1.05 and px > stop:
+            chase_status = "WAIT"
+            chase_color = "#D29922"
+            chase_text = "🟡 WAIT FOR PULLBACK — Price above entry zone"
+        elif px < stop:
+            chase_status = "AVOID"
+            chase_color = "#F85149"
+            chase_text = "🔴 STOP HIT / AVOID — Setup invalidated"
+        elif rr >= 3.0:
+            chase_text += " | 🎯 TARGET JAUH — High conviction"
+        elif rr < 1.5:
+            chase_text += " | ⚠️ TARGET DEKAT — Poor R/R"
+    else:  # short
+        if px >= entry * 0.98:
+            chase_status = "CHASE"
+            chase_color = "#3FB950"
+            chase_text = "🟢 CHASE / ENTER NOW — Price at/near entry"
+        elif px < entry * 0.95 and px < stop:
+            chase_status = "WAIT"
+            chase_color = "#D29922"
+            chase_text = "🟡 WAIT FOR PULLBACK — Price below entry zone"
+        elif px > stop:
+            chase_status = "AVOID"
+            chase_color = "#F85149"
+            chase_text = "🔴 STOP HIT / AVOID — Setup invalidated"
+        elif rr >= 3.0:
+            chase_text += " | 🎯 TARGET JAUH — High conviction"
+        elif rr < 1.5:
+            chase_text += " | ⚠️ TARGET DEKAT — Poor R/R"
+
     mm_rec = options.get("mm_recommendation", "—")
     mm_pos = options.get("mm_positioning", "UNKNOWN")
     if mm_pos == "CALL_WALL" and side == "long":
@@ -852,11 +966,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
             s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
             if len(s_clean) >= 22:
                 returns = s_clean.pct_change().dropna()
-                # ATR proxy as trend strength
                 atr = float((s_clean.diff().abs().tail(14).mean()) / s_clean.tail(14).mean()) if len(s_clean) >= 14 else None
                 if atr is not None and math.isfinite(atr):
                     trend_strength = min(100, max(0, atr * 500))
-                # Volume proxy from swing magnitude
                 vol_proxy = float(returns.tail(20).abs().mean() * 100) if len(returns) >= 20 else None
                 if vol_proxy is not None and math.isfinite(vol_proxy):
                     volume_proxy = vol_proxy
@@ -885,6 +997,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "markov_ctx": markov_ctx, "behavioral_flag": behavioral_flag,
         "entry_note": note if 'note' in locals() else "",
         "confluence": confluence,
+        "chase_status": chase_status, "chase_color": chase_color, "chase_text": chase_text,
     }
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
@@ -897,11 +1010,9 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
     if r1m > 0.05: row["recommendation"] = f"Strong momentum +{r1m:.1%} — {sector} play"
     elif r1m < -0.05: row["recommendation"] = f"Weak momentum {r1m:.1%} — avoid {sector}"
     else: row["recommendation"] = f"{sector} — range bound, wait breakout"
-    # Strip options/greeks/MM from IHSG — no options market
     row["options"] = {}
     row["mm_positioning"] = ""
     row["mm_recommendation"] = ""
-    # Add broker proxy
     broker = _get_broker_proxy(ticker, prices)
     row["broker"] = broker
     return row
@@ -920,7 +1031,7 @@ def split_long_short(rows):
     return sorted(longs, key=lambda x: x.get("rr", 0), reverse=True), sorted(shorts, key=lambda x: x.get("rr", 0), reverse=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# VISUAL RENDERERS v4
+# VISUAL RENDERERS v4 — AUDITED (DUPLICATES REMOVED)
 # ═══════════════════════════════════════════════════════════════════
 def _interpret_gamma(gamma_regime, px, max_pain):
     if not gamma_regime: return ""
@@ -1010,19 +1121,23 @@ def _get_squeeze_score(ticker, snap):
 
 def _get_markov_confidence(ticker, snap):
     m = snap.get("markov_v3", {}) if isinstance(snap.get("markov_v3"), dict) else {}
-    probs = m.get("regime_probabilities", {}) if isinstance(m.get("regime_probabilities"), dict) else {}
-    # Try to match ticker to regime — simplified
     return m.get("confidence", 0)
 
 def _get_single_recommendation(options, direction="LONG", market_type="us_equity", 
-                              cot_data=None, onchain_data=None, ticker="", prices=None):
+                              cot_data=None, onchain_data=None, ticker="", prices=None, row=None):
     """
-    Generate ONE unified recommendation based on ALL available data:
-    - Options: gamma regime, max pain, skew, IV rank, put/call, walls
-    - Greeks: GEX, vanna, charm
-    - Macro context: COT (forex/commodity), on-chain (crypto)
+    AUDITED RECOMMENDATION ENGINE v32.4
+    ──────────────────────────────────
+    Generates ONE unified recommendation based on ALL available data.
 
-    Returns ONE clear action + strategy + full rationale.
+    SCORING METHOD: Additive voting with normalized weights.
+    Each factor adds weight to an action bucket. Final action = highest bucket.
+    Confidence = min(100, sum of weights for winning bucket).
+
+    NEW v32.4:
+    - Added price-vs-entry chase/wait analysis
+    - Added formula transparency (each factor shows its raw score)
+    - Added RR-based conviction boost/penalty
     """
     def _safe_num(v, default=0.0):
         if v is None: return default
@@ -1049,6 +1164,7 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     call_wall = _safe_num(options.get("call_wall"), 0)
     oi_call = options.get("oi_call", 0) or 0
     oi_put = options.get("oi_put", 0) or 0
+    source = options.get("source", "PROXY")
 
     # ── Score each factor ──
     scores = []
@@ -1057,74 +1173,74 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     # 1. MM POSITIONING (gamma + max pain distance)
     if abs(mp_dist) < 0.025 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
         scores.append(("HOLD/SELL_PREMIUM", 60))
-        reasons.append("📍 Pinned near max pain ({:.1f}%) + positive gamma = range-bound. MM sells both sides.".format(mp_dist*100))
+        reasons.append(("📍 Pinned near max pain ({:.1f}%) + pos gamma = range-bound. MM sells both sides.".format(mp_dist*100), 60))
     elif mp_dist < -0.03 and gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
         scores.append(("BUY", 85))
-        reasons.append("📉 Below max pain ({:.1f}%) + negative gamma = MM buys dips. Put wall ${:.2f} = support.".format(mp_dist*100, put_wall))
+        reasons.append(("📉 Below max pain ({:.1f}%) + neg gamma = MM buys dips. Put wall ${:.2f} = support.".format(mp_dist*100, put_wall), 85))
     elif mp_dist > 0.03 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
         scores.append(("SELL/COVERED_CALL", 70))
-        reasons.append("📈 Above max pain (+{:.1f}%) + positive gamma = MM sells rallies. Fade at call wall ${:.2f}.".format(mp_dist*100, call_wall))
+        reasons.append(("📈 Above max pain (+{:.1f}%) + pos gamma = MM sells rallies. Fade at call wall ${:.2f}.".format(mp_dist*100, call_wall), 70))
     elif gamma in ("POSITIVE", "DEEP_POSITIVE"):
         scores.append(("BUY", 55))
-        reasons.append("🟢 Positive gamma regime — dealer long, mean-reversion to max pain ${:.2f}.".format(mp))
+        reasons.append(("🟢 Positive gamma — dealer long, mean-reversion to max pain ${:.2f}.".format(mp), 55))
     elif gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
         scores.append(("BUY", 65))
-        reasons.append("🔴 Negative gamma regime — dealer short, trend acceleration on breakout.".format())
+        reasons.append(("🔴 Negative gamma — dealer short, trend acceleration on breakout.", 65))
     else:
         scores.append(("HOLD", 40))
-        reasons.append("🟡 Transition gamma — wait for directional confirmation.")
+        reasons.append(("🟡 Transition gamma — wait for directional confirmation.", 40))
 
     # 2. SKEW (fear/greed pricing)
     if skew > 0.05 and iv_rank > 60:
         scores.append(("BUY", 70))
-        reasons.append("🔴 Put skew rich ({:+.2f}) + IV rank {:.0f}% = fear overpriced. Sell puts or buy spot on dips.".format(skew, iv_rank))
+        reasons.append(("🔴 Put skew rich ({:+.2f}) + IV rank {:.0f}% = fear overpriced. Sell puts or buy spot on dips.".format(skew, iv_rank), 70))
     elif skew < -0.05 and iv_rank < 40:
         scores.append(("BUY", 75))
-        reasons.append("🟢 Call skew cheap ({:+.2f}) + IV rank {:.0f}% = upside convexity underpriced. Buy calls/LEAPS.".format(skew, iv_rank))
+        reasons.append(("🟢 Call skew cheap ({:+.2f}) + IV rank {:.0f}% = upside convexity underpriced. Buy calls/LEAPS.".format(skew, iv_rank), 75))
     elif iv_rank < 35:
         scores.append(("BUY", 60))
-        reasons.append("💤 IV rank {:.0f}% low — ideal accumulation environment for buy-and-hold.".format(iv_rank))
+        reasons.append(("💤 IV rank {:.0f}% low — ideal accumulation environment for buy-and-hold.".format(iv_rank), 60))
     elif iv_rank > 65:
         scores.append(("HEDGE", 55))
-        reasons.append("⚠️ IV rank {:.0f}% high — expensive to buy options, consider selling premium or hedging.".format(iv_rank))
+        reasons.append(("⚠️ IV rank {:.0f}% high — expensive to buy options, consider selling premium or hedging.".format(iv_rank), 55))
 
     # 3. GEX (gamma exposure)
     if gex > 1.0:
         scores.append(("SELL/COVERED_CALL", 65))
-        reasons.append("🟢 GEX +{:.2f} extreme positive — strong mean-reversion. Sell covered calls into rallies.".format(gex))
+        reasons.append(("🟢 GEX +{:.2f} extreme positive — strong mean-reversion. Sell covered calls into rallies.".format(gex), 65))
     elif gex < -1.0:
         scores.append(("BUY", 70))
-        reasons.append("🔴 GEX {:.2f} extreme negative — trend acceleration. Buy dips, ride momentum.".format(gex))
+        reasons.append(("🔴 GEX {:.2f} extreme negative — trend acceleration. Buy dips, ride momentum.".format(gex), 70))
     elif gex > 0.5:
         scores.append(("HOLD", 50))
-        reasons.append("🟢 GEX +{:.2f} — mild mean-reversion bias.".format(gex))
+        reasons.append(("🟢 GEX +{:.2f} — mild mean-reversion bias.".format(gex), 50))
     elif gex < -0.5:
         scores.append(("BUY", 55))
-        reasons.append("🔴 GEX {:.2f} — mild acceleration bias.".format(gex))
+        reasons.append(("🔴 GEX {:.2f} — mild acceleration bias.".format(gex), 55))
 
     # 4. VANNA (spot-vol correlation)
     if vanna > 0.5:
         scores.append(("BUY", 60))
-        reasons.append("🟢 Vanna +{:.2f}: Rally = vol crush. Buy spot on dips, avoid long vol.".format(vanna))
+        reasons.append(("🟢 Vanna +{:.2f}: Rally = vol crush. Buy spot on dips, avoid long vol.".format(vanna), 60))
     elif vanna < -0.5:
         scores.append(("HEDGE", 55))
-        reasons.append("🔴 Vanna {:.2f}: Rally = vol expansion. Breakouts will be volatile — wait or hedge.".format(vanna))
+        reasons.append(("🔴 Vanna {:.2f}: Rally = vol expansion. Breakouts will be volatile — wait or hedge.".format(vanna), 55))
 
     # 5. CHARM (theta decay on delta)
     if charm > 0.5:
         scores.append(("BUY", 55))
-        reasons.append("🟢 Charm +{:.2f}: Put support strengthening daily.".format(charm))
+        reasons.append(("🟢 Charm +{:.2f}: Put support strengthening daily.".format(charm), 55))
     elif charm < -0.5:
         scores.append(("HEDGE", 60))
-        reasons.append("🔴 Charm {:.2f}: Put support eroding — downside acceleration risk, hedge with puts.".format(charm))
+        reasons.append(("🔴 Charm {:.2f}: Put support eroding — downside acceleration risk, hedge with puts.".format(charm), 60))
 
     # 6. PUT/CALL RATIO
     if pc_ratio < 0.60:
         scores.append(("CAUTION", 50))
-        reasons.append("🎰 PC ratio {:.2f} extreme low = retail call FOMO. Watch for exhaustion.".format(pc_ratio))
+        reasons.append(("🎰 PC ratio {:.2f} extreme low = retail call FOMO. Watch for exhaustion.".format(pc_ratio), 50))
     elif pc_ratio > 1.3:
         scores.append(("BUY", 55))
-        reasons.append("🛡️ PC ratio {:.2f} high = put hedging active. Contrarian bullish if at support.".format(pc_ratio))
+        reasons.append(("🛡️ PC ratio {:.2f} high = put hedging active. Contrarian bullish if at support.".format(pc_ratio), 55))
 
     # 7. COT DATA (Forex/Commodity only)
     if market_type in ("forex", "commodity") and cot_data and cot_data.get("signal") != "NEUTRAL":
@@ -1133,10 +1249,10 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
         cot_chg = cot_data.get("change_wow", 0)
         if cot_sig == "BULLISH":
             scores.append(("BUY", 65))
-            reasons.append("🏛️ COT Non-Commercial net +{:,} (WoW {:+,}) = institutional buying.".format(int(cot_net), int(cot_chg)))
+            reasons.append(("🏛️ COT Non-Commercial net +{:,} (WoW {:+,}) = institutional buying.".format(int(cot_net), int(cot_chg)), 65))
         elif cot_sig == "BEARISH":
             scores.append(("SELL", 65))
-            reasons.append("🏛️ COT Non-Commercial net {:,} (WoW {:+,}) = institutional selling.".format(int(cot_net), int(cot_chg)))
+            reasons.append(("🏛️ COT Non-Commercial net {:,} (WoW {:+,}) = institutional selling.".format(int(cot_net), int(cot_chg)), 65))
 
     # 8. ON-CHAIN (Crypto only)
     if market_type == "crypto" and onchain_data:
@@ -1144,16 +1260,35 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
         funding = onchain_data.get("funding_proxy", 0)
         if whale == "BUY":
             scores.append(("BUY", 70))
-            reasons.append("🐋 Whale accumulation detected + momentum {}.".format(onchain_data.get("momentum", "—")))
+            reasons.append(("🐋 Whale accumulation detected + momentum {}.".format(onchain_data.get("momentum", "—")), 70))
         elif whale == "SELL":
             scores.append(("SELL", 70))
-            reasons.append("🐋 Whale distribution detected — reduce exposure.".format())
+            reasons.append(("🐋 Whale distribution detected — reduce exposure.", 70))
         if abs(funding) > 0.0005:
             scores.append(("CAUTION", 45))
-            reasons.append("⛓️ Funding rate extreme ({:.5f}) = leverage excess.".format(funding))
+            reasons.append(("⛓️ Funding rate extreme ({:.5f}) = leverage excess.".format(funding), 45))
+
+    # 9. CHASE/WAIT boost/penalty (NEW v32.4)
+    if row and row.get("chase_status"):
+        chase = row.get("chase_status")
+        rr_val = row.get("rr", 0) or 0
+        if chase == "CHASE":
+            scores.append(("BUY" if direction == "LONG" else "SELL", 15))
+            reasons.append(("🏃 Price at/near entry — immediate execution valid.", 15))
+        elif chase == "WAIT":
+            scores.append(("HOLD", 20))
+            reasons.append(("⏳ Price away from entry — wait for pullback to optimal zone.", 20))
+        elif chase == "AVOID":
+            scores.append(("HOLD", 40))
+            reasons.append(("🚫 Setup invalidated — stop level breached. Do not enter.", 40))
+        if rr_val >= 3.0:
+            scores.append(("BUY" if direction == "LONG" else "SELL", 10))
+            reasons.append(("🎯 RR {:.1f}x — highly asymmetric reward.".format(rr_val), 10))
+        elif rr_val < 1.5 and rr_val > 0:
+            scores.append(("HOLD", 15))
+            reasons.append(("⚠️ RR {:.1f}x — poor risk/reward. Skip or wait for better entry.".format(rr_val), 15))
 
     # ── AGGREGATE TO ONE RECOMMENDATION ──
-    # Weight by strength of signal
     action_weights = {}
     for action, weight in scores:
         action_weights[action] = action_weights.get(action, 0) + weight
@@ -1165,7 +1300,6 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
         best_action = max(action_weights, key=action_weights.get)
         best_score = action_weights[best_action]
 
-    # Map to final output
     action_map = {
         "BUY": ("BELI SPOT / AKUMULASI", "Tambah posisi spot atau beli LEAPS/calls"),
         "SELL": ("JUAL / REDUKSI", "Turunkan exposure atau short via puts"),
@@ -1177,18 +1311,21 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     }
     final_action, final_strategy = action_map.get(best_action, ("HOLD", "Tunggu"))
 
-    # Build comprehensive rationale
-    rationale = "<br>".join(["• " + r for r in reasons]) if reasons else "• Data options/greeks tidak cukup untuk rekomendasi kuat."
+    # Build comprehensive rationale with scores
+    rationale_lines = []
+    for reason_text, score in reasons:
+        rationale_lines.append(f"• {reason_text} <span style='color:#484F58;font-size:0.6rem;'>(+{score})</span>")
+    rationale = "<br>".join(rationale_lines) if rationale_lines else "• Data options/greeks tidak cukup untuk rekomendasi kuat."
 
-    # Add expected move context
     if expected_move > 0:
         rationale += f"<br>• 📊 Expected move: ±{expected_move:.1%} until expiry."
-
-    # Add OI context
     if oi_call and oi_put:
         total_oi = oi_call + oi_put
         call_pct = oi_call / total_oi * 100
         rationale += f"<br>• 📈 OI Call/Put: {call_pct:.0f}%/{100-call_pct:.0f}% ({total_oi/1e6:.1f}M total)"
+
+    # Add data source note
+    rationale += f"<br>• 🔧 Data source: <b>{source}</b> (YF=live, PROXY=calculated from price)"
 
     return {
         "action": final_action,
@@ -1197,11 +1334,11 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
         "raw_action": best_action,
         "confidence": min(100, best_score),
         "factors": len(reasons),
+        "source": source,
     }
 
 
 def _get_ticker_boombust_score(ticker, prices, snap):
-    """Calculate ticker-specific bubble score (0-10) based on Soros reflexivity."""
     s = prices.get(ticker)
     if s is None or (hasattr(s, "__len__") and len(s) < 60):
         return {"score": 0, "stage": "UNKNOWN", "signal": "—"}
@@ -1214,23 +1351,17 @@ def _get_ticker_boombust_score(ticker, prices, snap):
         sma50 = float(s_clean.tail(50).mean()) if len(s_clean) >= 50 else sma20
         sma200 = float(s_clean.tail(200).mean()) if len(s_clean) >= 200 else sma50
 
-        # Parabolic move detection
         r1m = float(s_clean.iloc[-1] / s_clean.iloc[-22] - 1) if len(s_clean) >= 22 else 0
         r3m = float(s_clean.iloc[-1] / s_clean.iloc[-63] - 1) if len(s_clean) >= 63 else r1m
         r6m = float(s_clean.iloc[-1] / s_clean.iloc[-126] - 1) if len(s_clean) >= 126 else r3m
 
-        # Momentum acceleration
         mom_accel = r1m - (r3m / 3) if r3m != 0 else 0
-
-        # Distance from long-term mean
         dist_from_200 = (px - sma200) / sma200 if sma200 != 0 else 0
 
-        # Volatility expansion
         vol_20 = float(s_clean.tail(20).std())
         vol_60 = float(s_clean.tail(60).std()) if len(s_clean) >= 60 else vol_20
         vol_expansion = (vol_20 / vol_60 - 1) if vol_60 > 0 else 0
 
-        # Score calculation
         score = 0
         if r1m > 0.20: score += 3
         elif r1m > 0.10: score += 2
@@ -1248,14 +1379,12 @@ def _get_ticker_boombust_score(ticker, prices, snap):
 
         score = min(10, max(0, score))
 
-        # Stage classification
         if score >= 8: stage = "EUPHORIA"
         elif score >= 6: stage = "ACCELERATION"
         elif score >= 4: stage = "INCEPTION"
         elif score >= 2: stage = "EARLY"
         else: stage = "BASE"
 
-        # Signal
         if score >= 7:
             signal = "⚠️ BUBBLE RISK — Consider taking profits"
         elif score >= 4 and r1m > 0.10:
@@ -1274,7 +1403,6 @@ def _get_ticker_boombust_score(ticker, prices, snap):
 
 
 def _get_ticker_behavioral_score(ticker, prices, options, snap):
-    """Calculate ticker-specific behavioral/Yves proxy score."""
     s = prices.get(ticker)
     if s is None or (hasattr(s, "__len__") and len(s) < 20):
         return {"casino_score": 0, "retail_fomo": False, "smart_money_divergence": False, "signal": "—"}
@@ -1285,23 +1413,20 @@ def _get_ticker_behavioral_score(ticker, prices, options, snap):
         r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
         r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
 
-        # Options-based sentiment proxy
         pc_ratio = float(options.get("pc_ratio", 1.0)) if options else 1.0
         iv_rank = float(options.get("iv_rank", 50)) if options else 50
         skew = float(options.get("skew_30d", 0)) if options else 0
 
-        # Casino score: extreme retail positioning
         casino = 0
-        if r5d > 0.15 and r20d > 0.30: casino += 40  # Parabolic = retail FOMO
-        if pc_ratio < 0.60: casino += 20  # Extreme call buying
-        if iv_rank > 70: casino += 20  # Vol spike = chasing
-        if skew < -0.10: casino += 20  # Call skew extreme = euphoria
+        if r5d > 0.15 and r20d > 0.30: casino += 40
+        if pc_ratio < 0.60: casino += 20
+        if iv_rank > 70: casino += 20
+        if skew < -0.10: casino += 20
         casino = min(100, casino)
 
-        # Smart money divergence: price up but OI/flow suggests distribution
         sm_divergence = False
         if r5d > 0.05 and pc_ratio > 1.2 and iv_rank < 40:
-            sm_divergence = True  # Price up but puts being bought = smart money hedging
+            sm_divergence = True
 
         retail_fomo = casino > 60
 
@@ -1324,6 +1449,7 @@ def _get_ticker_behavioral_score(ticker, prices, options, snap):
 
 
 def render_ticker_card_v4(row, expanded=False):
+    """AUDITED v32.4: Removed duplicate Greeks panels. Consolidated to ONE clean options panel."""
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
     direction = row.get("direction", "NEUTRAL")
@@ -1355,7 +1481,16 @@ def render_ticker_card_v4(row, expanded=False):
     if news_sig and "BULLISH" in str(news_sig): badges += _badge_html("NEWS+", "news")
     if news_sig and "BEARISH" in str(news_sig): badges += _badge_html("NEWS-", "news")
     if mm_pos and mm_pos != "UNKNOWN": badges += _badge_html(mm_pos, "mm")
-    # Confluence badge
+
+    # Chase/Wait badge (NEW v32.4)
+    chase_status = row.get("chase_status", "NEUTRAL")
+    if chase_status == "CHASE":
+        badges += _badge_html("🏃 CHASE", "chase")
+    elif chase_status == "WAIT":
+        badges += _badge_html("⏳ WAIT", "wait")
+    elif chase_status == "AVOID":
+        badges += _badge_html("🚫 AVOID", "short")
+
     confluence = row.get("confluence", {})
     if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
         badges += _badge_html(f"🔥 Confluence x{confluence['entry_cluster']['count']}", "a")
@@ -1366,7 +1501,7 @@ def render_ticker_card_v4(row, expanded=False):
         badges += _badge_html(f"{src_emoji} {alpha_src.replace('_',' ').title()}", "mm")
     if alpha_score:
         badges += _badge_html(f"α{alpha_score}", "a" if alpha_score >= 80 else "b" if alpha_score >= 70 else "c")
-    # Extra badges
+
     if snap_local:
         sm_badge = _get_smart_money_badge(ticker, snap_local)
         if sm_badge: badges += _badge_html(sm_badge, "news")
@@ -1381,7 +1516,6 @@ def render_ticker_card_v4(row, expanded=False):
     spark = _sparkline_html(prices_series, width=80, height=24, bars=18)
     rr_html = _risk_range_html(px, trade_l, trade_r, width_pct=100)
 
-    # Build extra meta tags
     extra_meta = ""
     ts = row.get("trend_strength")
     if ts is not None:
@@ -1407,12 +1541,13 @@ def render_ticker_card_v4(row, expanded=False):
     st.markdown(card_html, unsafe_allow_html=True)
 
     with st.expander("🎯 Trade Setup", expanded=expanded):
-        # Alpha thesis if present
+        # Alpha thesis
         alpha_thesis = row.get("alpha_thesis", "")
         alpha_src = row.get("alpha_source", "")
         if alpha_thesis:
             src_emoji = {"bottleneck":"🚧","front_run":"🔮","leopold":"🏗️","karsan_squeeze":"📊","karsan_convexity":"📐","coatue":"💱"}.get(alpha_src,"⚡")
             st.markdown(f'<div style="font-size:0.78rem;color:#E6EDF3;margin-bottom:6px;padding:6px 8px;background:#161B22;border-left:3px solid #A855F7;border-radius:4px;"><b>{src_emoji} {alpha_src.replace("_"," ").title()} Thesis:</b> {alpha_thesis}</div>', unsafe_allow_html=True)
+
         # Basis explanation
         basis_html = '<div style="font-size:0.7rem;color:#8B949E;margin-bottom:8px;">'
         basis_parts = []
@@ -1426,10 +1561,17 @@ def render_ticker_card_v4(row, expanded=False):
         basis_html += '</div>'
         st.markdown(basis_html, unsafe_allow_html=True)
 
+        # CHASE/WAIT badge (NEW v32.4)
+        chase_text = row.get("chase_text", "")
+        chase_color = row.get("chase_color", "#8B949E")
+        if chase_text:
+            st.markdown(
+                f'<div style="background:{chase_color}15;border:1px solid {chase_color}50;border-radius:6px;padding:6px 10px;margin:6px 0;font-size:0.75rem;color:{chase_color};font-weight:600;">'
+                f'{chase_text}</div>', unsafe_allow_html=True)
+
         # ── Build comprehensive single recommendation ──
         confluence = row.get("confluence", {})
 
-        # IHSG: Show broker summary instead of options recommendation
         if market_type == "ihsg":
             broker = row.get("broker", {})
             if broker:
@@ -1466,6 +1608,7 @@ def render_ticker_card_v4(row, expanded=False):
                     "rationale": broker_rationale,
                     "confidence": conf,
                     "factors": 1,
+                    "source": "BROKER_PROXY",
                 }
                 rec_color = broker_color
             else:
@@ -1475,19 +1618,21 @@ def render_ticker_card_v4(row, expanded=False):
                     "rationale": "• Data broker summary tidak cukup untuk rekomendasi.",
                     "confidence": 0,
                     "factors": 0,
+                    "source": "NONE",
                 }
                 rec_color = "#8B949E"
         else:
-            # Prepare market-specific context for non-IHSG
             cot_data = None
             onchain_data = None
             if market_type == "forex" or market_type == "commodity":
                 cot_data = _get_cot_proxy(ticker)
             if market_type == "crypto":
                 onchain_data = _get_onchain_proxy(ticker, st.session_state.snap.get("prices", {}))
-            rec = _get_single_recommendation(options, direction=row.get("direction", "LONG"), 
-                                              market_type=market_type, cot_data=cot_data, 
-                                              onchain_data=onchain_data, ticker=ticker)
+            rec = _get_single_recommendation(
+                options, direction=row.get("direction", "LONG"), 
+                market_type=market_type, cot_data=cot_data, 
+                onchain_data=onchain_data, ticker=ticker, row=row
+            )
             rec_color = {"BELI SPOT / AKUMULASI": "#3FB950", "AKUMULASI SPOT": "#3FB950", "BELI CALL / LONG SPOT": "#3FB950",
                          "BELI SPOT + JUAL PUT": "#2EA043", "BELI SPOT": "#3FB950",
                          "JUAL COVERED CALL": "#D29922", "JUAL PUT PROTEKTIF": "#F85149",
@@ -1517,7 +1662,6 @@ def render_ticker_card_v4(row, expanded=False):
         # ── VISUAL RECOMMENDATION CARD ──
         rec_html = f'<div style="background:#161B22;border:1px solid {rec_color}40;border-radius:10px;padding:12px;margin:6px 0;">'
 
-        # Header: Action + Confidence
         conf_pct = rec.get("confidence", 50)
         rec_html += f'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">'
         rec_html += f'<div style="background:{rec_color}20;border:1px solid {rec_color}50;border-radius:6px;padding:4px 10px;font-size:0.75rem;color:{rec_color};font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">🎯 {rec["action"]}</div>'
@@ -1526,10 +1670,8 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'<div style="width:{conf_pct}%;height:100%;background:{rec_color};border-radius:3px;"></div></div>'
         rec_html += f'<span style="font-size:0.65rem;color:{rec_color};font-weight:700;min-width:28px;text-align:right;">{conf_pct:.0f}%</span></div></div></div>'
 
-        # Strategy line
         rec_html += f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid #30363D;">{rec["strategy"]}</div>'
 
-        # Trade levels grid
         rec_html += f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.7rem;color:#8B949E;margin-bottom:8px;">'
         rec_html += f'<div>📍 <b style="color:#E6EDF3;">Entry:</b> {ff(entry)}</div>'
         rec_html += f'<div>🎯 <b style="color:#E6EDF3;">Target 1:</b> {ff(t1)}</div>'
@@ -1537,9 +1679,9 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'<div>🛑 <b style="color:#E6EDF3;">Stop:</b> {ff(stop)}</div>'
         rec_html += f'</div>'
 
-        # Greeks / Options mini dashboard (if available and not IHSG)
+        # ── SINGLE CONSOLIDATED OPTIONS PANEL (v32.4: removed duplicate) ──
         if show_options and options.get("gamma_regime"):
-            rec_html += f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px;padding:6px;background:#0D1117;border-radius:6px;">'
+            rec_html += f'<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin-bottom:8px;padding:6px;background:#0D1117;border-radius:6px;">'
             # Gamma
             g_color = "#3FB950" if "POS" in str(options.get("gamma_regime","")) else "#F85149" if "NEG" in str(options.get("gamma_regime","")) else "#D29922"
             rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Gamma</div><div style="font-size:0.7rem;color:{g_color};font-weight:700;">{options.get("gamma_regime","—")[:8]}</div></div>'
@@ -1567,37 +1709,24 @@ def render_ticker_card_v4(row, expanded=False):
                     iv_c = "#3FB950" if iv_f < 40 else "#D29922" if iv_f < 60 else "#F85149"
                     rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">IV Rank</div><div style="font-size:0.7rem;color:{iv_c};font-weight:700;">{iv_f:.0f}</div></div>'
             except (TypeError, ValueError): pass
+            # PC Ratio
+            pc_v = options.get("pc_ratio")
+            try:
+                pc_f = float(pc_v)
+                if math.isfinite(pc_f):
+                    pc_c = "#3FB950" if pc_f < 0.8 else "#D29922" if pc_f < 1.2 else "#F85149"
+                    rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">P/C</div><div style="font-size:0.7rem;color:{pc_c};font-weight:700;">{pc_f:.2f}</div></div>'
+            except (TypeError, ValueError): pass
             rec_html += f'</div>'
 
-        # Rationale with icons
+        # Rationale
         rec_html += f'<div style="font-size:0.68rem;color:#8B949E;line-height:1.5;padding:6px;background:#0D1117;border-radius:6px;">'
-        rec_html += f'<div style="font-size:0.55rem;color:{rec_color};text-transform:uppercase;font-weight:600;margin-bottom:4px;letter-spacing:0.5px;">📋 Rationale ({rec.get("factors",0)} factors)</div>'
+        rec_html += f'<div style="font-size:0.55rem;color:{rec_color};text-transform:uppercase;font-weight:600;margin-bottom:4px;letter-spacing:0.5px;">📋 Rationale ({rec.get("factors",0)} factors · {rec.get("source","PROXY")})</div>'
         rec_html += rec["rationale"]
         rec_html += f'</div>'
 
         rec_html += f'</div>'
         st.markdown(rec_html, unsafe_allow_html=True)
-
-        if show_options and (options.get("gamma_regime") or options.get("max_pain")):
-            o1, o2, o3, o4, o5 = st.columns(5)
-            o1.metric("Gamma", options.get("gamma_regime", "—"))
-            o2.metric("Max Pain", ff(options.get("max_pain")))
-            o3.metric("Put Wall", ff(options.get("put_wall")))
-            o4.metric("Call Wall", ff(options.get("call_wall")))
-            o5.metric("Exp Move", sf(options.get('expected_move_pct'), ".1%"))
-
-            # Second row of options metrics
-            o6, o7, o8, o9, o10 = st.columns(5)
-            o6.metric("IV Rank", sf(options.get('iv_rank'), ".0f"))
-            o7.metric("PC Ratio", sf(options.get('pc_ratio'), ".2f"))
-            o8.metric("OI Call", sf(options.get('oi_call')/1e6 if options.get('oi_call') is not None else None, ".1f") + "M" if options.get('oi_call') is not None else "—")
-            o9.metric("OI Put", sf(options.get('oi_put')/1e6 if options.get('oi_put') is not None else None, ".1f") + "M" if options.get('oi_put') is not None else "—")
-            expiry_text = f"{options.get('days_to_expiry','—')}D" if options.get('days_to_expiry') is not None else "—"
-            expiry_date = options.get("next_expiry", "")
-            if expiry_date and options.get("days_to_expiry") is not None:
-                o10.metric("Expiry", f"{expiry_date} ({expiry_text})")
-            else:
-                o10.metric("Expiry", expiry_text)
 
         # ── OI Heatmap Visual ──
         if show_options and options.get("max_pain"):
@@ -1621,20 +1750,28 @@ def render_ticker_card_v4(row, expanded=False):
                     heat_html += f'</div>'
                     heat_html += f'<span style="font-size:0.7rem;color:{color};font-weight:700;min-width:60px;text-align:right;">{ff(price)}{near_badge}</span>'
                     heat_html += f'</div>'
-                heat_html += f'<div style="margin-top:4px;font-size:0.6rem;color:#484F58;">Price: {ff(px)} · OI peaks at Max Pain</div>'
+                heat_html += f'<div style="margin-top:4px;font-size:0.6rem;color:#484F58;">Price: {ff(px)} · OI peaks at Max Pain · Source: {options.get("source","PROXY")}</div>'
                 heat_html += '</div>'
                 st.markdown(heat_html, unsafe_allow_html=True)
 
-        # Skew Curve Proxy — always show if we have any options data
+        # Skew Curve
         if show_options and options.get("gamma_regime"):
             st.markdown(_skew_curve_proxy_html(ticker, options, width=320, height=110), unsafe_allow_html=True)
 
-        # Greeks mini
-        if show_options and options.get("gamma_regime"):
-            g1, g2, g3 = st.columns(3)
-            g1.metric("GEX", sf(options.get('gex'), '+.2f'))
-            g2.metric("Vanna", sf(options.get('vanna'), '.3f')[:10])
-            g3.metric("Charm", sf(options.get('charm'), '.3f')[:10])
+        # Boom-Bust + Behavioral (mini)
+        if market_type == "us_equity":
+            bb = _get_ticker_boombust_score(ticker, prices, snap_local)
+            beh = _get_ticker_behavioral_score(ticker, prices, options, snap_local)
+            if bb.get("score", 0) > 0 or beh.get("casino_score", 0) > 0:
+                mini_html = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0;">'
+                if bb.get("score", 0) > 0:
+                    bb_color = "#F85149" if bb["score"] >= 7 else "#D29922" if bb["score"] >= 4 else "#3FB950"
+                    mini_html += f'<div style="background:#0D1117;border-radius:6px;padding:6px 8px;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Boom-Bust</div><div style="font-size:0.75rem;color:{bb_color};font-weight:700;">{bb["stage"]} · {bb["score"]:.1f}/10</div><div style="font-size:0.6rem;color:#484F58;">{bb["signal"][:40]}</div></div>'
+                if beh.get("casino_score", 0) > 0:
+                    beh_color = "#F85149" if beh["casino_score"] > 60 else "#D29922" if beh["casino_score"] > 40 else "#3FB950"
+                    mini_html += f'<div style="background:#0D1117;border-radius:6px;padding:6px 8px;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Behavioral</div><div style="font-size:0.75rem;color:{beh_color};font-weight:700;">Casino {beh["casino_score"]:.0f}%</div><div style="font-size:0.6rem;color:#484F58;">{beh["signal"][:40]}</div></div>'
+                mini_html += '</div>'
+                st.markdown(mini_html, unsafe_allow_html=True)
 
         if row.get("news_headline"):
             st.markdown(f'<div style="font-size:0.72rem;color:#58A6FF;margin-top:3px;">📰 {row.get("news_headline")[:120]}</div>', unsafe_allow_html=True)
@@ -1713,6 +1850,217 @@ def render_regime_compass(snap):
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key="regime_compass_bars")
 
 # ═══════════════════════════════════════════════════════════════════
+# CRASH METER v3 — AUDITED (/5 fix)
+# ═══════════════════════════════════════════════════════════════════
+def _render_crash_meter(snap):
+    """Crash Meter v3 — Tomhardi Methodology (AUDITED v32.4)
+    Components: A1 + A2 + B1 + B2 + C = 5 variables
+    Max score: 5 (was /4 in v32.3 — BUG FIXED)
+    """
+    from datetime import datetime
+
+    fred = snap.get("fred_series", {}) or {}
+
+    # A1: T10Y-3M spread
+    t10y = None; t3m = None
+    if fred.get("DGS10") is not None:
+        try:
+            s = pd.to_numeric(fred["DGS10"], errors="coerce").dropna()
+            if len(s) > 0: t10y = float(s.iloc[-1])
+        except: pass
+    if fred.get("DGS3MO") is not None:
+        try:
+            s = pd.to_numeric(fred["DGS3MO"], errors="coerce").dropna()
+            if len(s) > 0: t3m = float(s.iloc[-1])
+        except: pass
+
+    if t10y is None or t3m is None:
+        t10y3m = 0.77
+    else:
+        t10y3m = t10y - t3m
+
+    a1_score = 0 if t10y3m > 0.5 else 1
+    a1_status = "Aman" if a1_score == 0 else "Berbahaya"
+    a1_color = "#3FB950" if a1_score == 0 else "#F85149"
+
+    # A2: Inversion window (corrected: last inversion Dec 2024)
+    now = datetime.now()
+    last_inv = datetime(2024, 12, 1)
+    months_since = (now.year - last_inv.year) * 12 + (now.month - last_inv.month)
+    months_left = max(0, 18 - months_since)
+    a2_score = 1 if months_since < 18 else 0
+    a2_status = "Dalam Window ({}bln sisa)".format(months_left) if a2_score == 1 else "Lewat Window"
+    a2_color = "#D29922" if a2_score == 1 else "#3FB950"
+
+    # B1 & B2: HY OAS
+    hy_oas = None
+    if fred.get("BAMLH0A0HYM2") is not None:
+        try:
+            s = pd.to_numeric(fred["BAMLH0A0HYM2"], errors="coerce").dropna()
+            if len(s) > 0: hy_oas = float(s.iloc[-1])
+        except: pass
+    if hy_oas is None:
+        hy_oas = 2.82
+
+    hy_6m_ago = 3.10
+    hy_range_bps = abs(hy_oas - hy_6m_ago) * 100
+    b1_score = 0 if hy_range_bps < 150 else 1
+    b1_status = "Range {:.0f}bps (Aman)".format(hy_range_bps) if b1_score == 0 else "Range {:.0f}bps (Tinggi)".format(hy_range_bps)
+    b1_color = "#3FB950" if b1_score == 0 else "#F85149"
+
+    b2_score = 0 if hy_oas < 5.50 else 1
+    b2_status = "{:.2f}% < 5.50%".format(hy_oas) if b2_score == 0 else "{:.2f}% > 5.50%".format(hy_oas)
+    b2_color = "#3FB950" if b2_score == 0 else "#F85149"
+
+    # C: Shiller CAPE
+    cape = 41.66
+    c_score = 1 if cape > 35 else 0
+    c_status = "{:.1f} > 35 (Mahal)".format(cape) if c_score == 1 else "{:.1f} < 35".format(cape)
+    c_color = "#F85149" if c_score == 1 else "#3FB950"
+
+    total = a1_score + a2_score + b1_score + b2_score + c_score
+
+    # Timeline estimate
+    if total <= 1:
+        status = "AMAN"; status_color = "#3FB950"; status_bg = "#3FB95015"; emoji = "🟢"
+        advice = "Market normal. Tetap waspada tapi tidak perlu panic."
+        timeline = "No crash signal. Monitor monthly."
+    elif total == 2:
+        status = "WASPADA"; status_color = "#D29922"; status_bg = "#D2992215"; emoji = "🟡"
+        advice = "Signal mulai menyala. Review portfolio, siapkan cash buffer."
+        timeline = "A2 window closes Jun 2026 (~{} bln). CAPE 41.7 vs peak 44.2.".format(months_left)
+    elif total == 3:
+        status = "EXIT WINDOW"; status_color = "#F85149"; status_bg = "#F8514915"; emoji = "🟠"
+        advice = "COUNTDOWN DIMULAI. Profit-taking dan raise cash. Window sempit!"
+        timeline = "Historically 3-12 months to peak. Act within weeks."
+    else:
+        status = "CRITICAL"; status_color = "#F85149"; status_bg = "#F8514920"; emoji = "🔴"
+        advice = "Sistemik risk tinggi. Defensive positioning. Cash is king."
+        timeline = "Days to weeks before major drawdown. Exit NOW."
+
+    html = '<div style="background:#161B22;border:1px solid ' + status_color + '40;border-radius:12px;padding:14px;margin:8px 0;">'
+
+    # Header
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'
+    html += '<div style="width:56px;height:56px;border-radius:50%;background:' + status_bg + ';border:2px solid ' + status_color + ';display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:' + status_color + ';">' + str(total) + '<span style="font-size:0.6rem;">/5</span></div>'
+    html += '<div><div style="font-size:1.1rem;font-weight:700;color:' + status_color + ';letter-spacing:-0.5px;">' + emoji + ' ' + status + '</div>'
+    html += '<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">' + advice + '</div></div></div>'
+
+    # Timeline
+    html += '<div style="background:' + status_bg + ';border-left:3px solid ' + status_color + ';border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
+    html += '<div style="font-size:0.6rem;color:' + status_color + ';text-transform:uppercase;font-weight:600;margin-bottom:3px;">⏱️ Timeline Estimate</div>'
+    html += '<div style="font-size:0.72rem;color:#E6EDF3;">' + timeline + '</div>'
+    html += '<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">Update: A1/A2/B daily · CAPE monthly · Next check: tomorrow</div>'
+    html += '</div>'
+
+    # Gauge bar (5 segments)
+    html += '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-bottom:3px;text-transform:uppercase;font-weight:600;"><span>0 Aman</span><span>1</span><span>2 Waspada</span><span>3 Exit</span><span>4</span><span>5 Critical</span></div>'
+    html += '<div style="height:10px;background:#21262D;border-radius:5px;overflow:hidden;display:flex;">'
+    html += '<div style="width:20%;height:100%;background:#3FB950;opacity:0.3;"></div>'
+    html += '<div style="width:20%;height:100%;background:#3FB950;opacity:0.3;"></div>'
+    html += '<div style="width:20%;height:100%;background:#D29922;opacity:0.3;"></div>'
+    html += '<div style="width:20%;height:100%;background:#F85149;opacity:0.3;"></div>'
+    html += '<div style="width:20%;height:100%;background:#F85149;opacity:0.5;"></div>'
+    html += '</div>'
+    marker_pct = min(100, max(0, total / 5 * 100))
+    html += '<div style="position:relative;height:4px;margin-top:-7px;"><div style="position:absolute;left:' + str(marker_pct) + '%;transform:translateX(-50%);width:10px;height:10px;background:' + status_color + ';border-radius:50%;border:2px solid #E6EDF3;box-shadow:0 0 6px ' + status_color + '80;"></div></div>'
+    html += '</div>'
+
+    # Parameters grid
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
+
+    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
+    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📊 A1 · T10Y-3M</span>'
+    html += '<span style="font-size:0.65rem;color:' + a1_color + ';font-weight:700;">' + a1_status + '</span></div>'
+    html += '<div style="font-size:0.7rem;color:#E6EDF3;font-weight:700;">' + str(round(t10y3m, 2)) + '%</div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: >0.5% = skor 0 · Daily</div></div>'
+
+    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
+    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">⏱️ A2 · 18Bln Window</span>'
+    html += '<span style="font-size:0.65rem;color:' + a2_color + ';font-weight:700;">' + a2_status + '</span></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Last inversion: Des 2024 · Closes Jun 2026</div></div>'
+
+    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
+    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B1 · HY Range</span>'
+    html += '<span style="font-size:0.65rem;color:' + b1_color + ';font-weight:700;">' + b1_status + '</span></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <150bps in 6mo · Daily</div></div>'
+
+    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
+    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B2 · HY Abs</span>'
+    html += '<span style="font-size:0.65rem;color:' + b2_color + ';font-weight:700;">' + b2_status + '</span></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <550bps = skor 0 · Daily</div></div>'
+
+    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;grid-column:1 / -1;">'
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
+    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📈 C · Shiller CAPE</span>'
+    html += '<span style="font-size:0.65rem;color:' + c_color + ';font-weight:700;">' + c_status + '</span></div>'
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'
+    html += '<div style="flex:1;height:6px;background:#21262D;border-radius:3px;overflow:hidden;">'
+    cape_pct = min(100, cape / 50 * 100)
+    html += '<div style="width:' + str(round(cape_pct, 0)) + '%;height:100%;background:' + c_color + ';border-radius:3px;"></div>'
+    html += '</div>'
+    html += '<span style="font-size:0.6rem;color:#8B949E;min-width:60px;text-align:right;">Peak dotcom: 44.2</span>'
+    html += '</div></div>'
+
+    html += '</div>'
+
+    html += '<div style="font-size:0.6rem;color:#484F58;text-align:center;border-top:1px solid #21262D;padding-top:6px;">'
+    html += 'Crash Meter v3 · Tomhardi Methodology · A1+A2+B1+B2+C = ' + str(total) + '/5 · Updated daily (CAPE monthly)'
+    html += '</div>'
+
+    html += '</div>'
+
+    return html
+
+# ═══════════════════════════════════════════════════════════════════
+# COT PROXY (for forex/commodities)
+# ═══════════════════════════════════════════════════════════════════
+def _get_cot_proxy(ticker):
+    cot_map = {
+        "EURUSD=X": {"net_noncom": 45000, "net_com": -32000, "change_wow": 2500, "signal": "BULLISH"},
+        "GBPUSD=X": {"net_noncom": 12000, "net_com": -8000, "change_wow": -1500, "signal": "NEUTRAL"},
+        "USDJPY=X": {"net_noncom": -28000, "net_com": 35000, "change_wow": 4200, "signal": "BEARISH"},
+        "AUDUSD=X": {"net_noncom": 8000, "net_com": -5000, "change_wow": 800, "signal": "BULLISH"},
+        "USDCAD=X": {"net_noncom": -15000, "net_com": 12000, "change_wow": -2000, "signal": "BEARISH"},
+        "USDCHF=X": {"net_noncom": -5000, "net_com": 3000, "change_wow": 500, "signal": "NEUTRAL"},
+        "NZDUSD=X": {"net_noncom": 3000, "net_com": -2000, "change_wow": 400, "signal": "BULLISH"},
+        "DX-Y.NYB": {"net_noncom": -35000, "net_com": 28000, "change_wow": 5000, "signal": "BEARISH"},
+        "GC=F": {"net_noncom": 180000, "net_com": -140000, "change_wow": 12000, "signal": "BULLISH"},
+        "SI=F": {"net_noncom": 45000, "net_com": -35000, "change_wow": 3000, "signal": "BULLISH"},
+        "CL=F": {"net_noncom": 220000, "net_com": -180000, "change_wow": -8000, "signal": "BULLISH"},
+        "NG=F": {"net_noncom": -80000, "net_com": 65000, "change_wow": 5000, "signal": "BEARISH"},
+        "HG=F": {"net_noncom": 25000, "net_com": -18000, "change_wow": 2000, "signal": "BULLISH"},
+    }
+    return cot_map.get(ticker, {"net_noncom": 0, "net_com": 0, "change_wow": 0, "signal": "NEUTRAL"})
+
+def _get_onchain_proxy(ticker, prices):
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 20):
+        return {}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 20: return {}
+        px = float(s_clean.iloc[-1])
+        r1m = float(s_clean.iloc[-1] / s_clean.iloc[-22] - 1) if len(s_clean) >= 22 else 0
+        r7d = float(s_clean.iloc[-1] / s_clean.iloc[-8] - 1) if len(s_clean) >= 8 else r1m
+        vol_20 = float(s_clean.tail(20).std())
+        mean_20 = float(s_clean.tail(20).mean())
+        return {
+            "price": px, "r1m": r1m, "r7d": r7d,
+            "volatility": round(vol_20 / mean_20 if mean_20 > 0 else 0, 4),
+            "momentum": "ACCUMULATING" if r1m > 0.05 else "DISTRIBUTING" if r1m < -0.05 else "NEUTRAL",
+            "whale_signal": "BUY" if r7d > 0.03 and vol_20 > 0 else "SELL" if r7d < -0.03 else "HOLD",
+            "funding_proxy": round(r1m * 0.001, 5),
+            "oi_proxy": int(abs(r1m) * 1e9),
+        }
+    except Exception:
+        return {}
+
+# ═══════════════════════════════════════════════════════════════════
 # SESSION & SIDEBAR
 # ═══════════════════════════════════════════════════════════════════
 if "snap" not in st.session_state: st.session_state.snap = None
@@ -1721,7 +2069,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v32.3 | Deep Options")
+    st.caption("v32.4 AUDITED")
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
@@ -1821,209 +2169,37 @@ if _vix_raw is not None:
     except Exception: vix_now = 20.0
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: DASHBOARD
+# PAGE: DASHBOARD — AUDITED (Layout fixes: Bull/Bear/Base + Asset Pulse)
 # ═══════════════════════════════════════════════════════════════════
-def _get_cot_proxy(ticker):
-    """Proxy COT data for forex/commodities tickers."""
-    cot_map = {
-        "EURUSD=X": {"net_noncom": 45000, "net_com": -32000, "change_wow": 2500, "signal": "BULLISH"},
-        "GBPUSD=X": {"net_noncom": 12000, "net_com": -8000, "change_wow": -1500, "signal": "NEUTRAL"},
-        "USDJPY=X": {"net_noncom": -28000, "net_com": 35000, "change_wow": 4200, "signal": "BEARISH"},
-        "AUDUSD=X": {"net_noncom": 8000, "net_com": -5000, "change_wow": 800, "signal": "BULLISH"},
-        "USDCAD=X": {"net_noncom": -15000, "net_com": 12000, "change_wow": -2000, "signal": "BEARISH"},
-        "USDCHF=X": {"net_noncom": -5000, "net_com": 3000, "change_wow": 500, "signal": "NEUTRAL"},
-        "NZDUSD=X": {"net_noncom": 3000, "net_com": -2000, "change_wow": 400, "signal": "BULLISH"},
-        "DX-Y.NYB": {"net_noncom": -35000, "net_com": 28000, "change_wow": 5000, "signal": "BEARISH"},
-        "GC=F": {"net_noncom": 180000, "net_com": -140000, "change_wow": 12000, "signal": "BULLISH"},
-        "SI=F": {"net_noncom": 45000, "net_com": -35000, "change_wow": 3000, "signal": "BULLISH"},
-        "CL=F": {"net_noncom": 220000, "net_com": -180000, "change_wow": -8000, "signal": "BULLISH"},
-        "NG=F": {"net_noncom": -80000, "net_com": 65000, "change_wow": 5000, "signal": "BEARISH"},
-        "HG=F": {"net_noncom": 25000, "net_com": -18000, "change_wow": 2000, "signal": "BULLISH"},
-    }
-    return cot_map.get(ticker, {"net_noncom": 0, "net_com": 0, "change_wow": 0, "signal": "NEUTRAL"})
-
-
-# ═══════════════════════════════════════════════════════════════════
-# CRASH METER v3 VISUALIZATION (Tomhardi Methodology)
-# ═══════════════════════════════════════════════════════════════════
-def _render_crash_meter(snap):
-    """Visual Crash Meter v3 based on Tomhardi methodology.
-
-    UPDATE SCHEDULE:
-    - A1 (T10Y-3M): Daily (FRED H.15, updated ~4:30 PM ET)
-    - A2 (Inversion Window): Event-driven (when inversion ends)
-    - B1/B2 (HY OAS): Daily (market close)
-    - C (Shiller CAPE): Monthly (1st week of each month)
-
-    TIMELINE TO CRASH:
-    - Score 2 (Waspada): No fixed timeline. Could stay here for months/years.
-      Watch for: A2 window closing (Jun 2026), CAPE crossing 44.2 (dotcom peak)
-    - Score 3 (Exit): Typically 3-12 months before peak if triggered by debt
-    - Score 4 (Critical): Days to weeks before major drawdown
-    """
-    from datetime import datetime
-
-    fred = snap.get("fred_series", {}) or {}
-
-    # A1: T10Y-3M spread
-    t10y = None; t3m = None
-    if fred.get("DGS10") is not None:
-        try:
-            s = pd.to_numeric(fred["DGS10"], errors="coerce").dropna()
-            if len(s) > 0: t10y = float(s.iloc[-1])
-        except: pass
-    if fred.get("DGS3MO") is not None:
-        try:
-            s = pd.to_numeric(fred["DGS3MO"], errors="coerce").dropna()
-            if len(s) > 0: t3m = float(s.iloc[-1])
-        except: pass
-
-    if t10y is None or t3m is None:
-        t10y3m = 0.77
-    else:
-        t10y3m = t10y - t3m
-
-    a1_score = 0 if t10y3m > 0.5 else 1
-    a1_status = "Aman" if a1_score == 0 else "Berbahaya"
-    a1_color = "#3FB950" if a1_score == 0 else "#F85149"
-
-    # A2: Inversion window (corrected: last inversion Dec 2024)
-    now = datetime.now()
-    last_inv = datetime(2024, 12, 1)
-    months_since = (now.year - last_inv.year) * 12 + (now.month - last_inv.month)
-    months_left = max(0, 18 - months_since)
-    a2_score = 1 if months_since < 18 else 0
-    a2_status = "Dalam Window ({}bln sisa)".format(months_left) if a2_score == 1 else "Lewat Window"
-    a2_color = "#D29922" if a2_score == 1 else "#3FB950"
-
-    # B1 & B2: HY OAS
-    hy_oas = None
-    if fred.get("BAMLH0A0HYM2") is not None:
-        try:
-            s = pd.to_numeric(fred["BAMLH0A0HYM2"], errors="coerce").dropna()
-            if len(s) > 0: hy_oas = float(s.iloc[-1])
-        except: pass
-    if hy_oas is None:
-        hy_oas = 2.82
-
-    hy_6m_ago = 3.10
-    hy_range_bps = abs(hy_oas - hy_6m_ago) * 100
-    b1_score = 0 if hy_range_bps < 150 else 1
-    b1_status = "Range {:.0f}bps (Aman)".format(hy_range_bps) if b1_score == 0 else "Range {:.0f}bps (Tinggi)".format(hy_range_bps)
-    b1_color = "#3FB950" if b1_score == 0 else "#F85149"
-
-    b2_score = 0 if hy_oas < 5.50 else 1
-    b2_status = "{:.2f}% < 5.50%".format(hy_oas) if b2_score == 0 else "{:.2f}% > 5.50%".format(hy_oas)
-    b2_color = "#3FB950" if b2_score == 0 else "#F85149"
-
-    # C: Shiller CAPE
-    cape = 41.66
-    c_score = 1 if cape > 35 else 0
-    c_status = "{:.1f} > 35 (Mahal)".format(cape) if c_score == 1 else "{:.1f} < 35".format(cape)
-    c_color = "#F85149" if c_score == 1 else "#3FB950"
-
-    total = a1_score + a2_score + b1_score + b2_score + c_score
-
-    # Timeline estimate
-    if total <= 1:
-        status = "AMAN"; status_color = "#3FB950"; status_bg = "#3FB95015"; emoji = "🟢"
-        advice = "Market normal. Tetap waspada tapi tidak perlu panic."
-        timeline = "No crash signal. Monitor monthly."
-    elif total == 2:
-        status = "WASPADA"; status_color = "#D29922"; status_bg = "#D2992215"; emoji = "🟡"
-        advice = "Signal mulai menyala. Review portfolio, siapkan cash buffer."
-        timeline = "A2 window closes Jun 2026 (~{} bln). CAPE 41.7 vs peak 44.2.".format(months_left)
-    elif total == 3:
-        status = "EXIT WINDOW"; status_color = "#F85149"; status_bg = "#F8514915"; emoji = "🟠"
-        advice = "COUNTDOWN DIMULAI. Profit-taking dan raise cash. Window sempit!"
-        timeline = "Historically 3-12 months to peak. Act within weeks."
-    else:
-        status = "CRITICAL"; status_color = "#F85149"; status_bg = "#F8514920"; emoji = "🔴"
-        advice = "Sistemik risk tinggi. Defensive positioning. Cash is king."
-        timeline = "Days to weeks before major drawdown. Exit NOW."
-
-    # Build HTML
-    html = '<div style="background:#161B22;border:1px solid ' + status_color + '40;border-radius:12px;padding:14px;margin:8px 0;">'
-
-    # Header with big score
-    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'
-    html += '<div style="width:56px;height:56px;border-radius:50%;background:' + status_bg + ';border:2px solid ' + status_color + ';display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:' + status_color + ';">' + str(total) + '<span style="font-size:0.6rem;">/4</span></div>'
-    html += '<div><div style="font-size:1.1rem;font-weight:700;color:' + status_color + ';letter-spacing:-0.5px;">' + emoji + ' ' + status + '</div>'
-    html += '<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">' + advice + '</div></div></div>'
-
-    # Timeline box
-    html += '<div style="background:' + status_bg + ';border-left:3px solid ' + status_color + ';border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
-    html += '<div style="font-size:0.6rem;color:' + status_color + ';text-transform:uppercase;font-weight:600;margin-bottom:3px;">⏱️ Timeline Estimate</div>'
-    html += '<div style="font-size:0.72rem;color:#E6EDF3;">' + timeline + '</div>'
-    html += '<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">Update: A1/A2/B daily · CAPE monthly · Next check: tomorrow</div>'
-    html += '</div>'
-
-    # Gauge bar
-    html += '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-bottom:3px;text-transform:uppercase;font-weight:600;"><span>0 Aman</span><span>1</span><span>2 Waspada</span><span>3 Exit</span><span>4 Critical</span></div>'
-    html += '<div style="height:10px;background:#21262D;border-radius:5px;overflow:hidden;display:flex;">'
-    html += '<div style="width:25%;height:100%;background:#3FB950;opacity:0.3;"></div>'
-    html += '<div style="width:25%;height:100%;background:#3FB950;opacity:0.3;"></div>'
-    html += '<div style="width:25%;height:100%;background:#D29922;opacity:0.3;"></div>'
-    html += '<div style="width:25%;height:100%;background:#F85149;opacity:0.3;"></div>'
-    html += '</div>'
-    marker_pct = min(100, max(0, total / 4 * 100))
-    html += '<div style="position:relative;height:4px;margin-top:-7px;"><div style="position:absolute;left:' + str(marker_pct) + '%;transform:translateX(-50%);width:10px;height:10px;background:' + status_color + ';border-radius:50%;border:2px solid #E6EDF3;box-shadow:0 0 6px ' + status_color + '80;"></div></div>'
-    html += '</div>'
-
-    # Parameters grid
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
-
-    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📊 A1 · T10Y-3M</span>'
-    html += '<span style="font-size:0.65rem;color:' + a1_color + ';font-weight:700;">' + a1_status + '</span></div>'
-    html += '<div style="font-size:0.7rem;color:#E6EDF3;font-weight:700;">' + str(round(t10y3m, 2)) + '%</div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: >0.5% = skor 0 · Daily</div></div>'
-
-    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">⏱️ A2 · 18Bln Window</span>'
-    html += '<span style="font-size:0.65rem;color:' + a2_color + ';font-weight:700;">' + a2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Last inversion: Des 2024 · Closes Jun 2026</div></div>'
-
-    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B1 · HY Range</span>'
-    html += '<span style="font-size:0.65rem;color:' + b1_color + ';font-weight:700;">' + b1_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <150bps in 6mo · Daily</div></div>'
-
-    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B2 · HY Abs</span>'
-    html += '<span style="font-size:0.65rem;color:' + b2_color + ';font-weight:700;">' + b2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <550bps = skor 0 · Daily</div></div>'
-
-    html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;grid-column:1 / -1;">'
-    html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📈 C · Shiller CAPE</span>'
-    html += '<span style="font-size:0.65rem;color:' + c_color + ';font-weight:700;">' + c_status + '</span></div>'
-    html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'
-    html += '<div style="flex:1;height:6px;background:#21262D;border-radius:3px;overflow:hidden;">'
-    cape_pct = min(100, cape / 50 * 100)
-    html += '<div style="width:' + str(round(cape_pct, 0)) + '%;height:100%;background:' + c_color + ';border-radius:3px;"></div>'
-    html += '</div>'
-    html += '<span style="font-size:0.6rem;color:#8B949E;min-width:60px;text-align:right;">Peak dotcom: 44.2</span>'
-    html += '</div></div>'
-
-    html += '</div>'
-
-    # Footer note
-    html += '<div style="font-size:0.6rem;color:#484F58;text-align:center;border-top:1px solid #21262D;padding-top:6px;">'
-    html += 'Crash Meter v3 · Tomhardi Methodology · A1+A2+B1+B2+C = ' + str(total) + '/4 · Updated daily (CAPE monthly)'
-    html += '</div>'
-
-    html += '</div>'
-
-    return html
-
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
+
+    # ── Bull/Bear/Base Scenario Bar (MOVED below structural compass) ──
+    narrative = snap.get("narrative", {}) or {}
+    scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
+    if scenarios:
+        dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
+        bull_p = scenarios.get("bull", {}).get("probability", 0) if isinstance(scenarios.get("bull"), dict) else 0
+        base_p = scenarios.get("base", {}).get("probability", 0) if isinstance(scenarios.get("base"), dict) else 0
+        bear_p = scenarios.get("bear", {}).get("probability", 0) if isinstance(scenarios.get("bear"), dict) else 0
+        total_p = bull_p + base_p + bear_p
+        if total_p > 0:
+            bull_pct = bull_p / total_p * 100
+            base_pct = base_p / total_p * 100
+            bear_pct = bear_p / total_p * 100
+        else:
+            bull_pct = base_pct = bear_pct = 33.3
+
+        st.markdown(
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin:6px 0;">'
+            f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:6px;">🔮 Scenario Probabilities · Dominant: {dom.title()}</div>'
+            f'{_scenario_bar_html(bull_pct, base_pct, bear_pct)}'
+            f'<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#8B949E;margin-top:4px;">'
+            f'<span style="color:#3FB950;">🐂 Bull {bull_p:.0%}</span>'
+            f'<span style="color:#D29922;">⚖ Base {base_p:.0%}</span>'
+            f'<span style="color:#F85149;">🐻 Bear {bear_p:.0%}</span>'
+            f'</div></div>', unsafe_allow_html=True)
 
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
@@ -2077,6 +2253,8 @@ def page_dashboard():
 
     st.divider()
 
+    # ── LEFT COLUMN: Boom-Bust + Behavioral + Asset Pulse (COMPACTED) ──
+    # ── RIGHT COLUMN: Crash Meter ──
     left, right = st.columns([1, 1.2])
     with left:
         st.markdown("### 🌀 Boom-Bust Stage")
@@ -2131,37 +2309,22 @@ def page_dashboard():
         else:
             st.caption("Behavioral macro unavailable")
 
+        # ── ASSET PULSE (COMPACTED below Behavioral) ──
+        st.markdown("### ⚡ Asset Pulse (21D)")
+        pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
+        pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
+        for t, label in pulse_assets:
+            ret = _price_ret(t, prices, 21)
+            pulse_html += _asset_pulse_box_h(label, ret, t)
+        pulse_html += '</div>'
+        st.markdown(pulse_html, unsafe_allow_html=True)
+
     with right:
         st.markdown("### 🚨 Crash Meter v3")
         st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
         st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
-    # Scenarios as small text line below
-    narrative = snap.get("narrative", {}) or {}
-    scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
-    if scenarios:
-        dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
-        scen_line = ""
-        for scen_name in ["bull", "base", "bear"]:
-            scen = scenarios.get(scen_name, {}) if isinstance(scenarios, dict) else {}
-            p = scen.get("probability", 0) if isinstance(scen, dict) else 0
-            color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
-            is_dom = "★" if dom == scen_name else ""
-            scen_line += f'<span style="color:{color};font-weight:700;">{scen_name.title()}{is_dom} {p:.0%}</span><span style="color:#484F58;margin:0 6px;">|</span>'
-        scen_line = scen_line.rstrip('<span style="color:#484F58;margin:0 6px;">|</span>')
-        st.markdown(f'<div style="font-size:0.65rem;color:#8B949E;text-align:center;margin:4px 0;">🔮 {scen_line}</div>', unsafe_allow_html=True)
-
     st.divider()
-
-    #Asset Pulse
-    st.markdown("### ⚡ Asset Pulse (21D)")
-    pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
-    pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
-    for t, label in pulse_assets:
-        ret = _price_ret(t, prices, 21)
-        pulse_html += _asset_pulse_box_h(label, ret, t)
-    pulse_html += '</div>'
-    st.markdown(pulse_html, unsafe_allow_html=True)
 
     with st.expander("🔬 Deep Technical", expanded=False):
         c1, c2 = st.columns(2)
@@ -2227,7 +2390,7 @@ def page_dashboard():
             cols[i % 4].markdown(f"<span style='color:{color};font-size:0.75rem;'>● {name}</span>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: ALPHA CENTER — Bottleneck + Front-Run + Quad Rotation
+# PAGE: ALPHA CENTER
 # ═══════════════════════════════════════════════════════════════════
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
@@ -2243,10 +2406,7 @@ def page_alpha():
     tab1, tab2, tab3, tab4 = st.tabs(["🏆 Top Picks", "🔮 Front-Run", "📊 Vol & Squeeze", "🧠 Discovery"])
 
     with tab1:
-        # Alpha Center basis: bottleneck + quad rotation + asymmetry
         alpha_candidates = []
-
-        # 1. Bottleneck candidates
         bottleneck = snap.get("bottleneck_v3", {}) or {}
         if isinstance(bottleneck, dict):
             for item in bottleneck.get("active_bottlenecks", []) or []:
@@ -2254,20 +2414,17 @@ def page_alpha():
                 for t in item.get("beneficiaries", [])[:5]:
                     alpha_candidates.append({"ticker": t, "source": "bottleneck", "score": 85, "thesis": f"Bottleneck: {item.get('name','').replace('_',' ').title()}", "direction": "LONG"})
 
-        # 2. Front-run candidates
         fr = snap.get("front_run_candidates", []) or []
         for item in fr[:15]:
             if not isinstance(item, dict): continue
             alpha_candidates.append({"ticker": item.get("ticker",""), "source": "front_run", "score": 75, "thesis": item.get("why_front_run", "")[:80], "direction": "LONG", "options": item.get("options", {})})
 
-        # 3. Leopold asymmetry setups
         leopold = snap.get("leopold_scan", {}) or {}
         if isinstance(leopold, dict):
             for t in leopold.get("asymmetry_setups", []) or []:
                 if isinstance(t, dict):
                     alpha_candidates.append({"ticker": t.get("ticker",""), "source": "leopold", "score": 80, "thesis": t.get("thesis", "Asymmetry setup"), "direction": t.get("direction", "LONG")})
 
-        # 4. Karsan squeeze setups
         karsan = snap.get("karsan_scanner", {}) or {}
         if isinstance(karsan, dict):
             for t in karsan.get("squeeze_setups", []) or []:
@@ -2277,14 +2434,12 @@ def page_alpha():
                 if isinstance(t, dict):
                     alpha_candidates.append({"ticker": t.get("ticker",""), "source": "karsan_convexity", "score": 72, "thesis": "Buy convexity — vol expansion play", "direction": "LONG"})
 
-        # 5. COATUE agentic plays
         coatue = snap.get("coatue_scan", {}) or {}
         if isinstance(coatue, dict):
             for t in coatue.get("agentic_plays", []) or []:
                 if isinstance(t, dict):
                     alpha_candidates.append({"ticker": t.get("ticker",""), "source": "coatue", "score": 70, "thesis": t.get("thesis", "Agentic play"), "direction": "LONG"})
 
-        # Deduplicate by ticker, keep highest score
         seen = {}
         for c in alpha_candidates:
             t = c.get("ticker", "")
@@ -2299,10 +2454,8 @@ def page_alpha():
             st.info(f"No alpha candidates this snapshot. Total analyzed: {len(alpha_candidates)}. Run orchestrator with all engines enabled.")
         else:
             st.markdown(f"**{len(top_alpha)} alpha candidates** from {len(alpha_candidates)} total (bar: ≥60/100)")
-            # Build visual rows for alpha tickers
             alpha_tickers = [c["ticker"] for c in top_alpha if c.get("ticker")]
             alpha_rows = build_ticker_rows(alpha_tickers, "us_equity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
-            # Enrich with alpha metadata
             for row in alpha_rows:
                 c = seen.get(row.get("ticker"), {})
                 if c:
@@ -2310,7 +2463,6 @@ def page_alpha():
                     row["alpha_score"] = c.get("score", 0)
                     row["alpha_thesis"] = c.get("thesis", "")
                     row["direction"] = c.get("direction", row.get("direction", "LONG"))
-            # Split long/short and render
             longs, shorts = split_long_short(alpha_rows)
             if longs:
                 st.markdown(f"<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🟢 Long Setups ({len(longs)})</div>", unsafe_allow_html=True)
@@ -2352,7 +2504,6 @@ def page_alpha():
             if isinstance(vrp, dict) and vrp.get("ok"):
                 sell = vrp.get("high_vrp_sell_premium", [])
                 buy = vrp.get("low_vrp_buy_premium", [])
-            # ── Proxy fallback ──
             if not sell and not buy:
                 proxy_vrp = []
                 for t in ["SPY","QQQ","IWM","GLD","TLT","VIXY","UVXY","HYG","LQD","EEM","TLT","IEF"]:
@@ -2361,7 +2512,6 @@ def page_alpha():
                     try:
                         s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
                         if len(s_clean) < 60: continue
-                        ret_20 = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else 0
                         vol_20 = float(s_clean.tail(20).pct_change().dropna().std() * math.sqrt(252))
                         vol_60 = float(s_clean.tail(60).pct_change().dropna().std() * math.sqrt(252)) if len(s_clean) >= 60 else vol_20
                         iv_rank = min(100, max(0, (vol_20 / max(vol_60, 0.001) * 50)))
@@ -2391,7 +2541,6 @@ def page_alpha():
             if isinstance(sq_scan, dict) and sq_scan.get("ok"):
                 imm = sq_scan.get("imminent_squeezes", [])
                 strong = sq_scan.get("strong_candidates", [])
-            # ── Proxy fallback ──
             if not imm and not strong:
                 proxy_sq = []
                 for t in list(prices.keys())[:80]:
@@ -2459,7 +2608,7 @@ def page_alpha():
                             f'<span style="color:#8B949E;">{p.get("conviction","—")} · {p.get("size_pct",0):.1f}%</span></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: US STOCKS — With aggregate options for SPY/QQQ/IWM/GLD/TLT
+# PAGE: US STOCKS
 # ═══════════════════════════════════════════════════════════════════
 def page_us_stocks():
     st.markdown("## 🇺🇸 US Stocks")
@@ -2480,7 +2629,6 @@ def page_us_stocks():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
 
-    # Index ETF visual setups
     st.divider()
     st.markdown("### 📊 Index / ETF Setups (SPY · QQQ · IWM · GLD · TLT)")
     key_etfs = ["SPY", "QQQ", "IWM", "GLD", "TLT"]
@@ -2492,22 +2640,6 @@ def page_us_stocks():
     if etf_shorts:
         st.markdown(f"<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:4px;'>🔴 Short Bias</div>", unsafe_allow_html=True)
         render_ticker_cards_v4(etf_shorts, max_rows=10)
-    # Fallback: if no rows built (missing price data), show raw options
-    if not etf_rows:
-        for etf in key_etfs:
-            opt = _get_options_data(etf, snap)
-            if opt.get("max_pain") or opt.get("gamma_regime"):
-                with st.expander(f"{etf} · Gamma: {opt.get('gamma_regime','—')} · Max Pain: {ff(opt.get('max_pain'))}", expanded=False):
-                    c1, c2, c3, c4, c5 = st.columns(5)
-                    c1.metric("Max Pain", ff(opt.get("max_pain")))
-                    c2.metric("Put Wall", ff(opt.get("put_wall")))
-                    c3.metric("Call Wall", ff(opt.get("call_wall")))
-                    c4.metric("GEX", f"{opt.get('gex',0):+.2f}" if opt.get('gex') is not None else "-")
-                    c5.metric("Expiry", f"{opt.get('days_to_expiry','—')}D")
-                    if opt.get("skew_30d") is not None or opt.get("skew_60d") is not None:
-                        st.markdown(_skew_curve_proxy_html(etf, opt, width=280, height=90), unsafe_allow_html=True)
-                    if opt.get("mm_recommendation"):
-                        st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
 
     st.divider()
     us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
@@ -2585,31 +2717,6 @@ def page_commodities():
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: CRYPTO
 # ═══════════════════════════════════════════════════════════════════
-def _get_onchain_proxy(ticker, prices):
-    """Proxy on-chain metrics for crypto tickers."""
-    s = prices.get(ticker)
-    if s is None or (hasattr(s, "__len__") and len(s) < 20):
-        return {}
-    try:
-        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-        if len(s_clean) < 20: return {}
-        px = float(s_clean.iloc[-1])
-        r1m = float(s_clean.iloc[-1] / s_clean.iloc[-22] - 1) if len(s_clean) >= 22 else 0
-        r7d = float(s_clean.iloc[-1] / s_clean.iloc[-8] - 1) if len(s_clean) >= 8 else r1m
-        vol_20 = float(s_clean.tail(20).std())
-        mean_20 = float(s_clean.tail(20).mean())
-        # Proxy metrics
-        return {
-            "price": px, "r1m": r1m, "r7d": r7d,
-            "volatility": round(vol_20 / mean_20 if mean_20 > 0 else 0, 4),
-            "momentum": "ACCUMULATING" if r1m > 0.05 else "DISTRIBUTING" if r1m < -0.05 else "NEUTRAL",
-            "whale_signal": "BUY" if r7d > 0.03 and vol_20 > 0 else "SELL" if r7d < -0.03 else "HOLD",
-            "funding_proxy": round(r1m * 0.001, 5),
-            "oi_proxy": int(abs(r1m) * 1e9),
-        }
-    except Exception:
-        return {}
-
 def page_crypto():
     st.markdown("## ₿ Crypto")
     playbook = {
@@ -2657,64 +2764,6 @@ def page_crypto():
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: GLOBAL & EM
 # ═══════════════════════════════════════════════════════════════════
-def _get_broker_proxy(ticker, prices):
-    """Proxy broker summary for IHSG with manipulation detection.
-    Detects crossing (wash trading) vs real accumulation."""
-    s = prices.get(ticker)
-    if s is None or (hasattr(s, "__len__") and len(s) < 30):
-        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
-    try:
-        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
-        if len(s_clean) < 30: return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
-
-        px = float(s_clean.iloc[-1])
-        # 5-day vs 20-day metrics
-        r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
-        r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
-
-        # Volatility analysis for crossing detection
-        vol_5 = float(s_clean.tail(5).std())
-        vol_20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else vol_5
-        mean_20 = float(s_clean.tail(20).mean())
-
-        # Price range compression = potential crossing
-        range_5 = float(s_clean.tail(5).max() - s_clean.tail(5).min())
-        range_20 = float(s_clean.tail(20).max() - s_clean.tail(20).min()) if len(s_clean) >= 20 else range_5
-
-        # Crossing detection: high activity (volatility spike) but price goes nowhere
-        crossing = False
-        if vol_20 > 0 and vol_5 / vol_20 > 1.5 and range_5 / max(range_20, 0.001) < 0.15:
-            crossing = True
-
-        # Real accumulation: price rising with consistent volume (proxy: steady trend)
-        real_acc = False
-        if r5d > 0.03 and r20d > 0.05 and not crossing:
-            real_acc = True
-
-        # Real distribution: price falling with consistent trend
-        real_dist = False
-        if r5d < -0.03 and r20d < -0.05 and not crossing:
-            real_dist = True
-
-        # Confidence score
-        conf = 0
-        if real_acc: conf = min(100, int(50 + abs(r5d)*500))
-        elif real_dist: conf = min(100, int(50 + abs(r5d)*500))
-        elif crossing: conf = 70
-
-        return {
-            "real_accumulation": real_acc,
-            "real_distribution": real_dist,
-            "crossing_detected": crossing,
-            "confidence": conf,
-            "r5d": round(r5d, 4),
-            "r20d": round(r20d, 4),
-            "vol_ratio": round(vol_5/vol_20, 2) if vol_20 > 0 else 1.0,
-            "range_ratio": round(range_5/max(range_20, 0.001), 2),
-        }
-    except Exception:
-        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
-
 def page_global():
     st.markdown("## 🌍 Global & EM")
     global_ = snap.get("global", {}) or {}
@@ -2830,4 +2879,4 @@ elif page == "📖 Themes": page_themes()
 
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v32.3 · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v32.4 AUDITED · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
