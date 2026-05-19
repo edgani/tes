@@ -729,8 +729,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         else:
             # Detect confluence cluster for LONG entry (LRR + put_wall + gamma_flip_down)
             long_entry_levels = [lrr]
-            if pw: long_entry_levels.append(pw)
-            if gf_down: long_entry_levels.append(gf_down)
+            if market_type != "ihsg":
+                if pw: long_entry_levels.append(pw)
+                if gf_down: long_entry_levels.append(gf_down)
             clusters = _cluster_levels(long_entry_levels, 0.02)
             if clusters:
                 best = clusters[0]
@@ -750,8 +751,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
 
         # Target confluence: TRR + call_wall + gamma_flip_up + max_pain
         long_target_levels = [trr]
-        if cw: long_target_levels.append(cw)
-        if gf_up: long_target_levels.append(gf_up)
+        if market_type != "ihsg":
+            if cw: long_target_levels.append(cw)
+            if gf_up: long_target_levels.append(gf_up)
         if mp: long_target_levels.append(mp)
         t_clusters = _cluster_levels(long_target_levels, 0.02)
         if t_clusters:
@@ -779,8 +781,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         else:
             # Detect confluence cluster for SHORT entry (TRR + call_wall + gamma_flip_up)
             short_entry_levels = [trr]
-            if cw: short_entry_levels.append(cw)
-            if gf_up: short_entry_levels.append(gf_up)
+            if market_type != "ihsg":
+                if cw: short_entry_levels.append(cw)
+                if gf_up: short_entry_levels.append(gf_up)
             clusters = _cluster_levels(short_entry_levels, 0.02)
             if clusters:
                 best = clusters[0]
@@ -800,8 +803,9 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
 
         # Target confluence: LRR + put_wall + gamma_flip_down + max_pain
         short_target_levels = [lrr]
-        if pw: short_target_levels.append(pw)
-        if gf_down: short_target_levels.append(gf_down)
+        if market_type != "ihsg":
+            if pw: short_target_levels.append(pw)
+            if gf_down: short_target_levels.append(gf_down)
         if mp: short_target_levels.append(mp)
         t_clusters = _cluster_levels(short_target_levels, 0.02)
         if t_clusters:
@@ -1216,6 +1220,7 @@ def render_ticker_card_v4(row, expanded=False):
     r1m = row.get("r1m")
     mm_pos = row.get("mm_positioning", "")
     options = row.get("options", {})
+    market_type = row.get("market_type", "us_equity")
     prices_series = None
     snap_local = st.session_state.snap
     if snap_local is not None:
@@ -1310,25 +1315,27 @@ def render_ticker_card_v4(row, expanded=False):
         if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
             levels = confluence.get("entry", [])
             levels_str = " · ".join([f"{name} {ff(val)}" for name, val in levels if val is not None])
-            confluence_html = (
-                f'<div style="margin-bottom:6px;padding:6px 10px;background:#3FB95012;border:1px solid #3FB95040;border-radius:6px;">'
-                f'<div style="font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
-                f'🔥 Entry Confluence x{confluence["entry_cluster"]["count"]}</div>'
-                f'<div style="font-size:0.7rem;color:#E6EDF3;">{levels_str}</div>'
-                f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
-                f'Multiple support levels clustered = high conviction zone. Ideal for accumulation.</div></div>'
-            )
+            if levels_str:
+                confluence_html = (
+                    f'<div style="margin-bottom:6px;padding:6px 10px;background:#3FB95012;border:1px solid #3FB95040;border-radius:6px;">'
+                    f'<div style="font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
+                    f'🔥 Entry Confluence x{confluence["entry_cluster"]["count"]}</div>'
+                    f'<div style="font-size:0.7rem;color:#E6EDF3;">{levels_str}</div>'
+                    f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
+                    f'Multiple support levels clustered = high conviction zone. Ideal for accumulation.</div></div>'
+                )
         if confluence.get("target_cluster") and confluence["target_cluster"].get("count", 0) >= 2:
             t_levels = confluence.get("target", [])
             t_str = " · ".join([f"{name} {ff(val)}" for name, val in t_levels if val is not None])
-            confluence_html += (
-                f'<div style="margin-bottom:6px;padding:6px 10px;background:#F8514912;border:1px solid #F8514940;border-radius:6px;">'
-                f'<div style="font-size:0.65rem;color:#F85149;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
-                f'🎯 Target Confluence x{confluence["target_cluster"]["count"]}</div>'
-                f'<div style="font-size:0.7rem;color:#E6EDF3;">{t_str}</div>'
-                f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
-                f'Multiple resistance levels clustered = strong profit-taking zone.</div></div>'
-            )
+            if t_str:
+                confluence_html += (
+                    f'<div style="margin-bottom:6px;padding:6px 10px;background:#F8514912;border:1px solid #F8514940;border-radius:6px;">'
+                    f'<div style="font-size:0.65rem;color:#F85149;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
+                    f'🎯 Target Confluence x{confluence["target_cluster"]["count"]}</div>'
+                    f'<div style="font-size:0.7rem;color:#E6EDF3;">{t_str}</div>'
+                    f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
+                    f'Multiple resistance levels clustered = strong profit-taking zone.</div></div>'
+                )
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
             f'{confluence_html}{note_html}'
@@ -1421,7 +1428,6 @@ def render_ticker_card_v4(row, expanded=False):
                     )
 
         # Dark Pool for this ticker
-        market_type = row.get("market_type", "us_equity")
         show_options = market_type != "ihsg"
         if show_options:
             dp = _get_dark_pool_for_ticker(ticker, st.session_state.snap)
@@ -1483,6 +1489,67 @@ def render_ticker_card_v4(row, expanded=False):
                         f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">Quarter: {cat.get("quarter","—")} · Priority: {cat.get("priority","—")}</div></div>',
                         unsafe_allow_html=True
                     )
+
+        # ── Forex/Commodity Context: DXY + COT inside ticker detail ──
+        if market_type == "forex":
+            dxy_corr = snap_local.get("dxy_correlation", {}) if snap_local else {}
+            if isinstance(dxy_corr, dict):
+                pos = dxy_corr.get("strongest_positive_corr", [])
+                neg = dxy_corr.get("strongest_negative_corr", [])
+                ticker_corr = None
+                for t, data in pos + neg:
+                    if t == ticker and isinstance(data, dict):
+                        ticker_corr = data.get("correlation", 0)
+                        break
+                if ticker_corr is not None:
+                    c_color = "#3FB950" if ticker_corr > 0 else "#F85149"
+                    st.markdown(
+                        f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;font-weight:600;">💱 DXY Correlation (20D)</div>'
+                        f'<div style="font-size:0.8rem;color:{c_color};font-weight:700;">{ticker_corr:+.2f}</div>'
+                        f'<div style="font-size:0.6rem;color:#484F58;">{"Rises with DXY" if ticker_corr > 0 else "Falls when DXY rises"}</div></div>',
+                        unsafe_allow_html=True
+                    )
+            cot = _get_cot_proxy(ticker)
+            if cot.get("signal") != "NEUTRAL":
+                sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149"}.get(cot["signal"], "#8B949E")
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                    f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;font-weight:600;">🏛️ COT Proxy</div>'
+                    f'<div style="font-size:0.8rem;color:{sig_color};font-weight:700;">{cot["signal"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#484F58;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div></div>',
+                    unsafe_allow_html=True
+                )
+
+        if market_type == "commodity":
+            dxy_corr = snap_local.get("dxy_correlation", {}) if snap_local else {}
+            if isinstance(dxy_corr, dict):
+                pos = dxy_corr.get("strongest_positive_corr", [])
+                neg = dxy_corr.get("strongest_negative_corr", [])
+                ticker_corr = None
+                for t, data in pos + neg:
+                    if t == ticker and isinstance(data, dict):
+                        ticker_corr = data.get("correlation", 0)
+                        break
+                if ticker_corr is not None:
+                    c_color = "#3FB950" if ticker_corr > 0 else "#F85149"
+                    st.markdown(
+                        f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;font-weight:600;">💱 DXY Correlation (20D)</div>'
+                        f'<div style="font-size:0.8rem;color:{c_color};font-weight:700;">{ticker_corr:+.2f}</div>'
+                        f'<div style="font-size:0.6rem;color:#484F58;">{"Rises with DXY" if ticker_corr > 0 else "Falls when DXY rises"}</div></div>',
+                        unsafe_allow_html=True
+                    )
+            cot = _get_cot_proxy(ticker)
+            if cot.get("signal") != "NEUTRAL":
+                sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149"}.get(cot["signal"], "#8B949E")
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                    f'<div style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;font-weight:600;">🏛️ COT Proxy</div>'
+                    f'<div style="font-size:0.8rem;color:{sig_color};font-weight:700;">{cot["signal"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#484F58;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div></div>',
+                    unsafe_allow_html=True
+                )
 
         # ── Option Recommendation (Buy-and-Hold tailored) ──
         if show_options:
@@ -2267,27 +2334,6 @@ def page_us_stocks():
                         st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
 
     st.divider()
-    # DXY Correlation for US Stocks
-    dxy_corr = snap.get("dxy_correlation", {}) or {}
-    if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
-        us_dxy = [item for item in (dxy_corr.get("strongest_positive_corr",[]) + dxy_corr.get("strongest_negative_corr",[])) 
-                  if isinstance(item, tuple) and len(item) == 2 and item[0] in (list(US_SECTORS.keys()) if US_SECTORS else FALLBACK_US)]
-        if us_dxy:
-            st.markdown("### 💱 DXY Correlation — US Stocks")
-            cols = st.columns(min(4, len(us_dxy)))
-            for i, (t, data) in enumerate(us_dxy[:8]):
-                if isinstance(data, dict):
-                    corr = data.get("correlation", 0)
-                    color = "#3FB950" if corr > 0 else "#F85149"
-                    with cols[i % len(cols)]:
-                        st.markdown(
-                            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:3px 0;text-align:center;">'
-                            f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t}</div>'
-                            f'<div style="font-size:0.9rem;color:{color};font-weight:700;">{corr:+.2f}</div>'
-                            f'</div>', unsafe_allow_html=True
-                        )
-            st.divider()
-
     us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
     for bucket in ["Growth","Quality","Defensives","Semis","Energy","Industrials","Financials","AI_Infra","PreciousMetals"]:
         us_tickers += US_BUCKETS.get(bucket, []) if US_BUCKETS else []
@@ -2339,41 +2385,6 @@ def page_forex():
                 if isinstance(data, dict):
                     st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
     st.divider()
-    # DXY Correlation moved from dashboard to Forex tab
-    dxy_corr = snap.get("dxy_correlation", {}) or {}
-    if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
-        st.markdown("### 💱 DXY Correlation (20D)")
-        pos = dxy_corr.get("strongest_positive_corr", [])[:5]
-        neg = dxy_corr.get("strongest_negative_corr", [])[:5]
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Positive</div>", unsafe_allow_html=True)
-            for t, data in pos:
-                if isinstance(data, dict):
-                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#3FB950;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
-        with c2:
-            st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Negative</div>", unsafe_allow_html=True)
-            for t, data in neg:
-                if isinstance(data, dict):
-                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
-        st.divider()
-
-    # COT Proxy for Forex
-    st.markdown("### 🏛️ COT — Commitment of Traders (Proxy)")
-    cot_tickers = [t for t in (list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX) if t in ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","DX-Y.NYB"]]
-    cot_cols = st.columns(min(4, len(cot_tickers)))
-    for i, t in enumerate(cot_tickers):
-        cot = _get_cot_proxy(t)
-        sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149", "NEUTRAL": "#8B949E"}.get(cot["signal"], "#8B949E")
-        with cot_cols[i % len(cot_cols)]:
-            st.markdown(
-                f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 10px;margin:3px 0;">'
-                f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t.replace("=X","").replace("DX-Y.NYB","DXY")}</div>'
-                f'<div style="font-size:0.85rem;color:{sig_color};font-weight:700;margin:2px 0;">{cot["signal"]}</div>'
-                f'<div style="font-size:0.6rem;color:#8B949E;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div>'
-                f'</div>', unsafe_allow_html=True)
-    st.divider()
-
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
@@ -2402,37 +2413,6 @@ def page_commodities():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
     st.divider()
-    # DXY Correlation for commodities
-    dxy_corr = snap.get("dxy_correlation", {}) or {}
-    if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
-        comm_dxy = [item for item in (dxy_corr.get("strongest_positive_corr",[]) + dxy_corr.get("strongest_negative_corr",[])) 
-                    if isinstance(item, tuple) and len(item) == 2 and item[0] in (list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM)]
-        if comm_dxy:
-            st.markdown("### 💱 DXY Correlation — Commodities")
-            for t, data in comm_dxy[:4]:
-                if isinstance(data, dict):
-                    corr = data.get("correlation", 0)
-                    color = "#3FB950" if corr > 0 else "#F85149"
-                    st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{t}: <span style="color:{color};font-weight:700;">{corr:+.2f}</span></div>', unsafe_allow_html=True)
-            st.divider()
-
-    # COT Proxy for Commodities
-    st.markdown("### 🏛️ COT — Commitment of Traders (Proxy)")
-    cot_comm = [t for t in (list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM) if t in ["GC=F","SI=F","CL=F","NG=F","HG=F","PL=F","PA=F","ZW=F","ZC=F","ZS=F"]]
-    if cot_comm:
-        cot_cols = st.columns(min(4, len(cot_comm)))
-        for i, t in enumerate(cot_comm[:8]):
-            cot = _get_cot_proxy(t)
-            sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149", "NEUTRAL": "#8B949E"}.get(cot["signal"], "#8B949E")
-            with cot_cols[i % len(cot_cols)]:
-                st.markdown(
-                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 10px;margin:3px 0;">'
-                    f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t.replace("=F","")}</div>'
-                    f'<div style="font-size:0.85rem;color:{sig_color};font-weight:700;margin:2px 0;">{cot["signal"]}</div>'
-                    f'<div style="font-size:0.6rem;color:#8B949E;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div>'
-                    f'</div>', unsafe_allow_html=True)
-        st.divider()
-
     comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
     rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
