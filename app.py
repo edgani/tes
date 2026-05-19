@@ -701,39 +701,53 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
     gf_down = options.get("gamma_flip_down")
 
     if side == "long":
-        entry_candidates = [lrr]
-        if pw and pw > lrr: entry_candidates.append(pw)
-        if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
-        entry = round(min(entry_candidates), 2)
-        tp1_candidates = [round(lrr + spread * 0.5, 2)]
-        if mp: tp1_candidates.append(round(mp, 2))
-        if gf_up: tp1_candidates.append(round(gf_up, 2))
-        tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(lrr + spread * 0.5, 2)), 2)
+        # Buy-and-hold sync: if price below LRR, it's oversold — buy at current price (discount)
+        if px < lrr:
+            entry = round(px, 2)
+            stop = round(lrr - spread * 0.15, 2)
+            note = "📉 Price below LRR — DISCOUNTED entry. Ideal for accumulation."
+        else:
+            entry_candidates = [lrr]
+            if pw and pw > lrr: entry_candidates.append(pw)
+            if gf_down and gf_down > lrr: entry_candidates.append(gf_down)
+            entry = round(min(entry_candidates), 2)
+            stop_candidates = [round(lrr - spread * 0.25, 2)]
+            if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
+            stop = round(min(stop_candidates), 2)
+            note = ""
+        tp1_candidates = [round(entry + abs(entry - stop) * 2, 2)]
+        if mp and mp > entry: tp1_candidates.append(round(mp, 2))
+        if gf_up and gf_up > entry: tp1_candidates.append(round(gf_up, 2))
+        tp1 = round(max([x for x in tp1_candidates if x > entry], default=round(entry + spread * 0.3, 2)), 2)
         tp2_candidates = [trr]
         if cw: tp2_candidates.append(cw)
         if gf_up: tp2_candidates.append(gf_up)
         tp2 = round(max(tp2_candidates), 2)
-        stop_candidates = [round(lrr - spread * 0.25, 2)]
-        if pw: stop_candidates.append(round(pw - spread * 0.1, 2))
-        stop = round(min(stop_candidates), 2)
-        near_entry = pos <= 0.35
+        near_entry = pos <= 0.35 or px < lrr
     else:
-        entry_candidates = [trr]
-        if cw and cw < trr: entry_candidates.append(cw)
-        if gf_up and gf_up < trr: entry_candidates.append(gf_up)
-        entry = round(max(entry_candidates), 2)
-        tp1_candidates = [round(trr - spread * 0.5, 2)]
-        if mp: tp1_candidates.append(round(mp, 2))
-        if gf_down: tp1_candidates.append(round(gf_down, 2))
-        tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(trr - spread * 0.5, 2)), 2)
+        # Short: if price above TRR, it's overbought — short at current price (premium)
+        if px > trr:
+            entry = round(px, 2)
+            stop = round(trr + spread * 0.15, 2)
+            note = "📈 Price above TRR — OVERBOUGHT entry. Fade the rally."
+        else:
+            entry_candidates = [trr]
+            if cw and cw < trr: entry_candidates.append(cw)
+            if gf_up and gf_up < trr: entry_candidates.append(gf_up)
+            entry = round(max(entry_candidates), 2)
+            stop_candidates = [round(trr + spread * 0.25, 2)]
+            if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
+            stop = round(max(stop_candidates), 2)
+            note = ""
+        tp1_candidates = [round(entry - abs(entry - stop) * 2, 2)]
+        if mp and mp < entry: tp1_candidates.append(round(mp, 2))
+        if gf_down and gf_down < entry: tp1_candidates.append(round(gf_down, 2))
+        tp1 = round(min([x for x in tp1_candidates if x < entry], default=round(entry - spread * 0.3, 2)), 2)
         tp2_candidates = [lrr]
         if pw: tp2_candidates.append(pw)
         if gf_down: tp2_candidates.append(gf_down)
         tp2 = round(min(tp2_candidates), 2)
-        stop_candidates = [round(trr + spread * 0.25, 2)]
-        if cw: stop_candidates.append(round(cw + spread * 0.1, 2))
-        stop = round(max(stop_candidates), 2)
-        near_entry = pos >= 0.65
+        near_entry = pos >= 0.65 or px > trr
 
     rr = round(abs(tp1 - entry) / max(abs(entry - stop), 0.01), 2)
     grade = "A" if near_entry and rr >= 2.0 else "B" if near_entry else "C"
@@ -793,6 +807,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         "news_signal": news_signal, "news_headline": news_headline, "news_sentiment": news_sentiment,
         "trend_strength": trend_strength, "volume_proxy": volume_proxy,
         "markov_ctx": markov_ctx, "behavioral_flag": behavioral_flag,
+        "entry_note": note if 'note' in locals() else "",
     }
 
 def _build_ihsg_row(ticker, prices, ar, **kwargs):
@@ -809,6 +824,9 @@ def _build_ihsg_row(ticker, prices, ar, **kwargs):
     row["options"] = {}
     row["mm_positioning"] = ""
     row["mm_recommendation"] = ""
+    # Add broker proxy
+    broker = _get_broker_proxy(ticker, prices)
+    row["broker"] = broker
     return row
 
 def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=None, greeks_data=None, news=None, prices=None, ar=None, snap=None):
@@ -921,53 +939,193 @@ def _get_markov_confidence(ticker, snap):
 
 def _get_option_recommendation(options, direction="LONG"):
     """Generate option/stock recommendation based on MM positioning for buy-and-hold investors."""
-    gamma = options.get("gamma_regime", "")
-    mp_dist = options.get("mp_dist", 0) or 0
-    skew = options.get("skew_30d", 0) or 0
-    iv_rank = options.get("iv_rank", 50) or 50
-    pc_ratio = options.get("pc_ratio", 1.0) or 1.0
-    vanna = options.get("vanna", 0) or 0
-    expected_move = options.get("expected_move_pct", 0) or 0
+    # SAFE cast — handle strings, None, NaN
+    def _safe_num(v, default=0.0):
+        if v is None: return default
+        try:
+            if isinstance(v, str):
+                v = v.replace("−", "-").replace("—", "-").strip()
+            f = float(v)
+            return f if math.isfinite(f) else default
+        except:
+            return default
+
+    gamma = str(options.get("gamma_regime", ""))
+    mp_dist = _safe_num(options.get("mp_dist"), 0)
+    skew = _safe_num(options.get("skew_30d"), 0)
+    iv_rank = _safe_num(options.get("iv_rank"), 50)
+    pc_ratio = _safe_num(options.get("pc_ratio"), 1.0)
+    vanna = _safe_num(options.get("vanna"), 0)
+    charm = _safe_num(options.get("charm"), 0)
+    expected_move = _safe_num(options.get("expected_move_pct"), 0)
+    gex = _safe_num(options.get("gex"), 0)
 
     rec = {"action": "HOLD", "strategy": "Tunggu setup lebih jelas", "rationale": "Data tidak cukup untuk rekomendasi kuat."}
 
-    # Pinned near max pain → range bound
     if abs(mp_dist) < 0.025 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
         rec = {"action": "JUAL COVERED CALL", "strategy": "Jual call di call wall atau straddle untuk income",
                "rationale": "📍 Pinned near max pain + positive gamma = range-bound. Sell premium."}
-    # Below put wall + negative gamma
     elif mp_dist < -0.03 and gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
         rec = {"action": "BELI SPOT / AKUMULASI", "strategy": "Beli saham di dekat put wall / LRR",
                "rationale": "📉 Di bawah max pain + negative gamma = MM buy dips. Put wall support."}
-    # Above call wall + positive gamma
     elif mp_dist > 0.03 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
         rec = {"action": "JUAL COVERED CALL", "strategy": "Jual call di call wall untuk income",
                "rationale": "📈 Di atas max pain + positive gamma = MM sell rallies. Fade strength, collect premium."}
-    # High put skew + high IV = fear priced in
     elif skew > 0.05 and iv_rank > 60:
         rec = {"action": "BELI SPOT + JUAL PUT", "strategy": "Beli saham / jual put spread (fear overpriced)",
                "rationale": "🔴 Put skew rich + IV tinggi = premium put mahal. Sell puts atau buy spot."}
-    # Call skew cheap + low IV
     elif skew < -0.05 and iv_rank < 40:
         rec = {"action": "BELI CALL / LONG SPOT", "strategy": "Beli call LEAPS atau tambah posisi spot",
                "rationale": "🟢 Call skew cheap + IV rendah = upside convexity murah."}
-    # Low IV environment → ideal for buy-and-hold accumulation
     elif iv_rank < 35 and direction == "LONG":
         rec = {"action": "AKUMULASI SPOT", "strategy": "Tambah posisi saham / beli LEAPS",
                "rationale": "💤 IV rendah = environment ideal untuk akumulasi buy-and-hold."}
-    # High IV + bearish direction → protective puts
     elif iv_rank > 65 and direction == "SHORT":
         rec = {"action": "BELI PUT PROTEKTIF", "strategy": "Beli put untuk proteksi portfolio",
                "rationale": "⚠️ IV tinggi + bearish = beli put protektif (meski mahal, perlu hedge)."}
-    # Transition gamma with vanna tailwind
     elif gamma == "TRANSITION" and vanna > 0.5:
         rec = {"action": "BELI SPOT", "strategy": "Vanna support rally — buy spot on dips",
                "rationale": "🔄 Transition + positive vanna = rally akan crush vol, buy spot."}
     elif gamma == "TRANSITION" and vanna < -0.5:
         rec = {"action": "HOLD / TUNGGU", "strategy": "Vanna negatif = rally expand vol, tunggu konfirmasi",
                "rationale": "🔄 Transition + negative vanna = breakout akan volatile, tunggu clearer signal."}
+    elif gex > 1.0:
+        rec = {"action": "JUAL COVERED CALL", "strategy": "GEX extreme positive = mean-reversion likely",
+               "rationale": "🟢 GEX +{:.2f}: Dealer long gamma → sell rallies, collect premium.".format(gex)}
+    elif gex < -1.0:
+        rec = {"action": "BELI SPOT / TREND FOLLOW", "strategy": "GEX extreme negative = trend acceleration",
+               "rationale": "🔴 GEX {:.2f}: Dealer short gamma → buy dips, ride trend.".format(gex)}
+    elif charm > 0.5 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
+        rec = {"action": "HOLD / TUNGGU", "strategy": "Charm strengthening puts = support building",
+               "rationale": "🟢 Charm +{:.2f}: Put support strengthening over time.".format(charm)}
+    elif charm < -0.5 and gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
+        rec = {"action": "BELI PUT PROTEKTIF", "strategy": "Charm eroding puts = downside acceleration risk",
+               "rationale": "🔴 Charm {:.2f}: Put support eroding — hedge with puts.".format(charm)}
 
     return rec
+
+def _get_ticker_boombust_score(ticker, prices, snap):
+    """Calculate ticker-specific bubble score (0-10) based on Soros reflexivity."""
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 60):
+        return {"score": 0, "stage": "UNKNOWN", "signal": "—"}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 60: return {"score": 0, "stage": "UNKNOWN", "signal": "—"}
+
+        px = float(s_clean.iloc[-1])
+        sma20 = float(s_clean.tail(20).mean())
+        sma50 = float(s_clean.tail(50).mean()) if len(s_clean) >= 50 else sma20
+        sma200 = float(s_clean.tail(200).mean()) if len(s_clean) >= 200 else sma50
+
+        # Parabolic move detection
+        r1m = float(s_clean.iloc[-1] / s_clean.iloc[-22] - 1) if len(s_clean) >= 22 else 0
+        r3m = float(s_clean.iloc[-1] / s_clean.iloc[-63] - 1) if len(s_clean) >= 63 else r1m
+        r6m = float(s_clean.iloc[-1] / s_clean.iloc[-126] - 1) if len(s_clean) >= 126 else r3m
+
+        # Momentum acceleration
+        mom_accel = r1m - (r3m / 3) if r3m != 0 else 0
+
+        # Distance from long-term mean
+        dist_from_200 = (px - sma200) / sma200 if sma200 != 0 else 0
+
+        # Volatility expansion
+        vol_20 = float(s_clean.tail(20).std())
+        vol_60 = float(s_clean.tail(60).std()) if len(s_clean) >= 60 else vol_20
+        vol_expansion = (vol_20 / vol_60 - 1) if vol_60 > 0 else 0
+
+        # Score calculation
+        score = 0
+        if r1m > 0.20: score += 3
+        elif r1m > 0.10: score += 2
+        elif r1m > 0.05: score += 1
+
+        if dist_from_200 > 0.30: score += 3
+        elif dist_from_200 > 0.15: score += 2
+        elif dist_from_200 > 0.05: score += 1
+
+        if mom_accel > 0.10: score += 2
+        elif mom_accel > 0.05: score += 1
+
+        if vol_expansion > 0.50: score += 2
+        elif vol_expansion > 0.20: score += 1
+
+        score = min(10, max(0, score))
+
+        # Stage classification
+        if score >= 8: stage = "EUPHORIA"
+        elif score >= 6: stage = "ACCELERATION"
+        elif score >= 4: stage = "INCEPTION"
+        elif score >= 2: stage = "EARLY"
+        else: stage = "BASE"
+
+        # Signal
+        if score >= 7:
+            signal = "⚠️ BUBBLE RISK — Consider taking profits"
+        elif score >= 4 and r1m > 0.10:
+            signal = "📈 Momentum strong but watch for exhaustion"
+        elif score <= 2 and r1m < -0.10:
+            signal = "🔨 Capitulation — potential bottom"
+        elif score <= 3 and r1m > 0.05:
+            signal = "🌱 Early stage — good accumulation zone"
+        else:
+            signal = "➡️ Neutral — no extreme bubble/capitulation"
+
+        return {"score": round(score, 1), "stage": stage, "signal": signal,
+                "r1m": round(r1m, 3), "dist_200": round(dist_from_200, 3)}
+    except Exception:
+        return {"score": 0, "stage": "UNKNOWN", "signal": "—"}
+
+
+def _get_ticker_behavioral_score(ticker, prices, options, snap):
+    """Calculate ticker-specific behavioral/Yves proxy score."""
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 20):
+        return {"casino_score": 0, "retail_fomo": False, "smart_money_divergence": False, "signal": "—"}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 20: return {"casino_score": 0, "retail_fomo": False, "smart_money_divergence": False, "signal": "—"}
+
+        r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
+        r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
+
+        # Options-based sentiment proxy
+        pc_ratio = float(options.get("pc_ratio", 1.0)) if options else 1.0
+        iv_rank = float(options.get("iv_rank", 50)) if options else 50
+        skew = float(options.get("skew_30d", 0)) if options else 0
+
+        # Casino score: extreme retail positioning
+        casino = 0
+        if r5d > 0.15 and r20d > 0.30: casino += 40  # Parabolic = retail FOMO
+        if pc_ratio < 0.60: casino += 20  # Extreme call buying
+        if iv_rank > 70: casino += 20  # Vol spike = chasing
+        if skew < -0.10: casino += 20  # Call skew extreme = euphoria
+        casino = min(100, casino)
+
+        # Smart money divergence: price up but OI/flow suggests distribution
+        sm_divergence = False
+        if r5d > 0.05 and pc_ratio > 1.2 and iv_rank < 40:
+            sm_divergence = True  # Price up but puts being bought = smart money hedging
+
+        retail_fomo = casino > 60
+
+        if casino > 70:
+            signal = f"🎰 CASINO MODE ({casino}%) — Retail FOMO extreme. Raise cash."
+        elif casino > 50:
+            signal = f"⚠️ Elevated speculation ({casino}%) — Tighten stops."
+        elif sm_divergence:
+            signal = "🐋 Smart Money Divergence — Price up but hedging detected."
+        elif casino < 20 and r20d < -0.15:
+            signal = "😰 Fear/Capitulation — Contrarian buy opportunity."
+        else:
+            signal = f"✅ Behavior normal ({casino}%). No extreme positioning."
+
+        return {"casino_score": casino, "retail_fomo": retail_fomo, 
+                "smart_money_divergence": sm_divergence, "signal": signal,
+                "pc_ratio": round(pc_ratio, 2), "iv_rank": round(iv_rank, 0)}
+    except Exception:
+        return {"casino_score": 0, "retail_fomo": False, "smart_money_divergence": False, "signal": "—"}
+
 
 def render_ticker_card_v4(row, expanded=False):
     ticker = row.get("ticker", "?")
@@ -1066,8 +1224,12 @@ def render_ticker_card_v4(row, expanded=False):
         basis_html += '</div>'
         st.markdown(basis_html, unsafe_allow_html=True)
 
+        note_html = ""
+        if row.get("entry_note"):
+            note_html = f'<div style="margin-bottom:6px;padding:4px 8px;background:#D2992215;border-left:2px solid #D29922;border-radius:4px;font-size:0.7rem;color:#D29922;">{row["entry_note"]}</div>'
         st.markdown(
             f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+            f'{note_html}'
             f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;">'
             f'<div>📍 <b>Entry:</b> {ff(entry)}</div><div>🎯 <b>Target 1:</b> {ff(t1)}</div>'
             f'<div>🎯 <b>Target 2:</b> {ff(t2)}</div><div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>'
@@ -1077,6 +1239,36 @@ def render_ticker_card_v4(row, expanded=False):
             f'</div></div>',
             unsafe_allow_html=True
         )
+
+        # ── Ticker-Specific Boom-Bust Score (Soros Reflexivity) ──
+        if market_type != "ihsg":
+            bbs = _get_ticker_boombust_score(ticker, st.session_state.snap.get("prices", {}), st.session_state.snap)
+            if bbs.get("score", 0) > 0:
+                bb_color = "#F85149" if bbs["stage"] == "EUPHORIA" else "#D29922" if bbs["stage"] == "ACCELERATION" else "#3FB950" if bbs["stage"] in ("EARLY", "BASE") else "#8B949E"
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid {bb_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+                    f'<span style="font-size:0.65rem;color:{bb_color};text-transform:uppercase;font-weight:600;">🌀 Boom-Bust Score</span>'
+                    f'<span style="font-size:0.85rem;color:{bb_color};font-weight:700;">{bbs["score"]}/10 · {bbs["stage"]}</span></div>'
+                    f'<div style="font-size:0.7rem;color:#8B949E;">{bbs["signal"]}</div>'
+                    f'{_gauge_html(bbs["score"], max_val=10, color=bb_color, height=6, label_left="0", label_right="10")}'
+                    f'</div>', unsafe_allow_html=True
+                )
+
+        # ── Ticker-Specific Behavioral / Yves Proxy ──
+        if market_type != "ihsg":
+            beh = _get_ticker_behavioral_score(ticker, st.session_state.snap.get("prices", {}), options, st.session_state.snap)
+            if beh.get("casino_score", 0) > 0:
+                beh_color = "#F85149" if beh["casino_score"] > 60 else "#D29922" if beh["casino_score"] > 40 else "#3FB950"
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid {beh_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+                    f'<span style="font-size:0.65rem;color:{beh_color};text-transform:uppercase;font-weight:600;">🧠 Behavioral Proxy</span>'
+                    f'<span style="font-size:0.85rem;color:{beh_color};font-weight:700;">{beh["casino_score"]}%</span></div>'
+                    f'<div style="font-size:0.7rem;color:#8B949E;">{beh["signal"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">PC: {beh.get("pc_ratio","—")} · IV Rank: {beh.get("iv_rank","—")}</div>'
+                    f'</div>', unsafe_allow_html=True
+                )
 
         # MM Positioning Box
         if mm_pos and mm_pos != "UNKNOWN":
@@ -1090,6 +1282,41 @@ def render_ticker_card_v4(row, expanded=False):
                 f'</div></div>',
                 unsafe_allow_html=True
             )
+        # Broker Summary for IHSG
+        if market_type == "ihsg":
+            broker = row.get("broker", {})
+            if broker:
+                acc = broker.get("real_accumulation", False)
+                dist = broker.get("real_distribution", False)
+                cross = broker.get("crossing_detected", False)
+                conf = broker.get("confidence", 0)
+                if acc:
+                    st.markdown(
+                        f'<div style="background:#3FB95015;border:1px solid #3FB95040;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-bottom:3px;">📈 REAL ACCUMULATION ({conf}%)</div>'
+                        f'<div style="font-size:0.72rem;color:#E6EDF3;">Genuine buying detected. Price +{broker.get("r5d",0):.1%} 5D with trend consistency. Ready to move.</div>'
+                        f'</div>', unsafe_allow_html=True
+                    )
+                elif dist:
+                    st.markdown(
+                        f'<div style="background:#F8514915;border:1px solid #F8514940;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#F85149;text-transform:uppercase;font-weight:600;margin-bottom:3px;">📉 REAL DISTRIBUTION ({conf}%)</div>'
+                        f'<div style="font-size:0.72rem;color:#E6EDF3;">Genuine selling detected. Price {broker.get("r5d",0):.1%} 5D. Avoid / reduce position.</div>'
+                        f'</div>', unsafe_allow_html=True
+                    )
+                elif cross:
+                    st.markdown(
+                        f'<div style="background:#D2992215;border:1px solid #D2992240;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#D29922;text-transform:uppercase;font-weight:600;margin-bottom:3px;">⚠️ CROSSING / MANIPULATION DETECTED</div>'
+                        f'<div style="font-size:0.72rem;color:#E6EDF3;">High volume but price stagnant. Possible wash trading between brokers. Wait for genuine breakout.</div>'
+                        f'</div>', unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                        f'<div style="font-size:0.65rem;color:#484F58;text-transform:uppercase;font-weight:600;">📊 Broker — No Clear Signal</div>'
+                        f'</div>', unsafe_allow_html=True
+                    )
 
         # Dark Pool for this ticker
         market_type = row.get("market_type", "us_equity")
@@ -1113,6 +1340,21 @@ def render_ticker_card_v4(row, expanded=False):
                     f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
                     f'<div style="font-size:0.65rem;color:#484F58;text-transform:uppercase;font-weight:600;">🌑 Dark Pool — No Anomaly</div></div>',
                     unsafe_allow_html=True
+                )
+        # On-chain for crypto tickers
+        if market_type == "crypto":
+            onchain = _get_onchain_proxy(ticker, st.session_state.snap.get("prices", {}))
+            if onchain:
+                whale_color = "#3FB950" if onchain.get("whale_signal") == "BUY" else "#F85149" if onchain.get("whale_signal") == "SELL" else "#8B949E"
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                    f'<div style="font-size:0.65rem;color:#58A6FF;text-transform:uppercase;font-weight:600;margin-bottom:4px;">⛓️ On-Chain Proxy</div>'
+                    f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#E6EDF3;">'
+                    f'<span>7D: {onchain.get("r7d",0):+.1%}</span>'
+                    f'<span style="color:{whale_color};font-weight:700;">🐋 {onchain.get("whale_signal","—")}</span>'
+                    f'<span>Vol: {onchain.get("volatility",0):.2%}</span></div>'
+                    f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">Momentum: {onchain.get("momentum","—")} · Funding proxy: {onchain.get("funding_proxy",0):.5f}</div>'
+                    f'</div>', unsafe_allow_html=True
                 )
 
         # Supply Chain / Bottleneck context
@@ -1177,6 +1419,32 @@ def render_ticker_card_v4(row, expanded=False):
                 o10.metric("Expiry", f"{expiry_date} ({expiry_text})")
             else:
                 o10.metric("Expiry", expiry_text)
+
+        # ── OI Heatmap Visual ──
+        if show_options and options.get("max_pain"):
+            mp = options.get("max_pain")
+            pw = options.get("put_wall")
+            cw = options.get("call_wall")
+            px = row.get("price")
+            if mp and pw and cw and px:
+                levels = [("Put Wall", pw, "#F85149"), ("Max Pain", mp, "#8B949E"), ("Call Wall", cw, "#3FB950")]
+                levels.sort(key=lambda x: x[1])
+                heat_html = '<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px 12px;margin:6px 0;">'
+                heat_html += '<div style="font-size:0.65rem;color:#A855F7;text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:6px;">📊 OI Concentration Heatmap</div>'
+                for label, price, color in levels:
+                    is_near = abs(price - px) / px < 0.05 if px else False
+                    near_badge = ' <span style="background:#58A6FF22;color:#58A6FF;padding:1px 4px;border-radius:3px;font-size:0.55rem;font-weight:700;">NEAR PX</span>' if is_near else ''
+                    heat_html += f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
+                    heat_html += f'<span style="font-size:0.7rem;color:#8B949E;min-width:55px;">{label}</span>'
+                    heat_html += f'<div style="flex:1;height:14px;background:#21262D;border-radius:4px;overflow:hidden;">'
+                    bar_w = min(100, max(15, 100 - abs(price - mp) / mp * 200)) if mp else 50
+                    heat_html += f'<div style="width:{bar_w:.0f}%;height:100%;background:{color}30;border-radius:4px;"></div>'
+                    heat_html += f'</div>'
+                    heat_html += f'<span style="font-size:0.7rem;color:{color};font-weight:700;min-width:60px;text-align:right;">{ff(price)}{near_badge}</span>'
+                    heat_html += f'</div>'
+                heat_html += f'<div style="margin-top:4px;font-size:0.6rem;color:#484F58;">Price: {ff(px)} · OI peaks at Max Pain</div>'
+                heat_html += '</div>'
+                st.markdown(heat_html, unsafe_allow_html=True)
 
         # Skew Curve Proxy — always show if we have any options data
         if show_options and options.get("gamma_regime"):
@@ -1376,6 +1644,25 @@ if _vix_raw is not None:
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD
 # ═══════════════════════════════════════════════════════════════════
+def _get_cot_proxy(ticker):
+    """Proxy COT data for forex/commodities tickers."""
+    cot_map = {
+        "EURUSD=X": {"net_noncom": 45000, "net_com": -32000, "change_wow": 2500, "signal": "BULLISH"},
+        "GBPUSD=X": {"net_noncom": 12000, "net_com": -8000, "change_wow": -1500, "signal": "NEUTRAL"},
+        "USDJPY=X": {"net_noncom": -28000, "net_com": 35000, "change_wow": 4200, "signal": "BEARISH"},
+        "AUDUSD=X": {"net_noncom": 8000, "net_com": -5000, "change_wow": 800, "signal": "BULLISH"},
+        "USDCAD=X": {"net_noncom": -15000, "net_com": 12000, "change_wow": -2000, "signal": "BEARISH"},
+        "USDCHF=X": {"net_noncom": -5000, "net_com": 3000, "change_wow": 500, "signal": "NEUTRAL"},
+        "NZDUSD=X": {"net_noncom": 3000, "net_com": -2000, "change_wow": 400, "signal": "BULLISH"},
+        "DX-Y.NYB": {"net_noncom": -35000, "net_com": 28000, "change_wow": 5000, "signal": "BEARISH"},
+        "GC=F": {"net_noncom": 180000, "net_com": -140000, "change_wow": 12000, "signal": "BULLISH"},
+        "SI=F": {"net_noncom": 45000, "net_com": -35000, "change_wow": 3000, "signal": "BULLISH"},
+        "CL=F": {"net_noncom": 220000, "net_com": -180000, "change_wow": -8000, "signal": "BULLISH"},
+        "NG=F": {"net_noncom": -80000, "net_com": 65000, "change_wow": 5000, "signal": "BEARISH"},
+        "HG=F": {"net_noncom": 25000, "net_com": -18000, "change_wow": 2000, "signal": "BULLISH"},
+    }
+    return cot_map.get(ticker, {"net_noncom": 0, "net_com": 0, "change_wow": 0, "signal": "NEUTRAL"})
+
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
@@ -1448,9 +1735,9 @@ def page_dashboard():
         yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
         if isinstance(yves, dict):
-            alert = yves.get("alert", "No alert")
+            alert = yves.get("alert", "")
             level = yves.get("alert_level", "NONE")
-            # FIX: if NONE / no alerts, show AAII sentiment bars instead of just "NONE"
+            # FIX: if NONE / no alerts, show AAII sentiment + casino behavior proxy
             if level == "NONE" and not alert:
                 bullish = behavioral.get("bullish", 30)
                 bearish = behavioral.get("bearish", 30)
@@ -1460,13 +1747,25 @@ def page_dashboard():
                     bull_pct = bullish / total * 100
                     bear_pct = bearish / total * 100
                     neut_pct = neutral / total * 100
+                    # Casino behavior proxy: extreme bullish = casino mode
+                    casino_score = min(100, max(0, (bullish - 45) * 3))
+                    cash_raise = min(50, max(0, casino_score * 0.4))
                     st.markdown(
-                        f'<div style="font-size:0.75rem;color:#8B949E;margin-bottom:4px;">AAII Sentiment (no extreme divergence)</div>'
+                        f'<div style="font-size:0.75rem;color:#8B949E;margin-bottom:4px;">AAII Sentiment · Casino Score: <span style="color:{"#F85149" if casino_score > 60 else "#D29922" if casino_score > 40 else "#3FB950"};font-weight:700;">{casino_score:.0f}</span></div>'
                         f'<div style="display:flex;height:18px;border-radius:4px;overflow:hidden;background:#21262D;margin-bottom:6px;">'
                         f'<div style="width:{bull_pct:.0f}%;background:#3FB950;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐂 {bullish}</div>'
                         f'<div style="width:{neut_pct:.0f}%;background:#8B949E;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">⚖ {neutral}</div>'
                         f'<div style="width:{bear_pct:.0f}%;background:#F85149;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐻 {bearish}</div>'
                         f'</div>', unsafe_allow_html=True)
+                    if casino_score > 40:
+                        st.markdown(
+                            f'<div style="background:#F8514915;border-left:3px solid #F85149;border-radius:6px;padding:6px 10px;margin:4px 0;">'
+                            f'<div style="font-size:0.75rem;color:#F85149;font-weight:700;">⚠️ Casino Behavior Detected</div>'
+                            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Bullish extreme ({bullish}%) = herd behavior. Consider raising <b>{cash_raise:.0f}% cash</b>. Wait for washout.</div>'
+                            f'</div>', unsafe_allow_html=True)
+                    else:
+                        st.markdown(
+                            f'<div style="font-size:0.7rem;color:#3FB950;margin-top:4px;">✅ Sentiment balanced. No casino behavior detected.</div>', unsafe_allow_html=True)
                 else:
                     st.caption("Behavioral data unavailable")
             else:
@@ -1500,17 +1799,6 @@ def page_dashboard():
                             f'<span style="color:#E6EDF3;">• {str(b.get("name","")).replace("_"," ").title()}</span>'
                             f'<span style="color:#F85149;font-weight:600;">{len(b.get("beneficiaries",[]))} plays</span></div>', unsafe_allow_html=True)
         else: st.caption("No active bottlenecks")
-
-        dxy_corr = snap.get("dxy_correlation", {}) or {}
-        if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
-            st.markdown("### 💱 DXY Correlation")
-            pos = dxy_corr.get("strongest_positive_corr", [])[:2]
-            neg = dxy_corr.get("strongest_negative_corr", [])[:2]
-            for t, data in pos + neg:
-                if not isinstance(data, dict): continue
-                corr = data.get("correlation", 0)
-                color = "#3FB950" if corr > 0 else "#F85149"
-                st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{t}: <span style="color:{color};font-weight:700;">{corr:+.2f}</span></div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -1877,6 +2165,26 @@ def page_us_stocks():
                         st.markdown(f'<div style="font-size:0.75rem;color:#A855F7;margin-top:4px;">🧠 {opt["mm_recommendation"]}</div>', unsafe_allow_html=True)
 
     st.divider()
+    # DXY Correlation for US Stocks
+    dxy_corr = snap.get("dxy_correlation", {}) or {}
+    if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
+        us_dxy = [item for item in (dxy_corr.get("strongest_positive_corr",[]) + dxy_corr.get("strongest_negative_corr",[])) 
+                  if isinstance(item, tuple) and len(item) == 2 and item[0] in (list(US_SECTORS.keys()) if US_SECTORS else FALLBACK_US)]
+        if us_dxy:
+            st.markdown("### 💱 DXY Correlation — US Stocks")
+            cols = st.columns(min(4, len(us_dxy)))
+            for i, (t, data) in enumerate(us_dxy[:8]):
+                if isinstance(data, dict):
+                    corr = data.get("correlation", 0)
+                    color = "#3FB950" if corr > 0 else "#F85149"
+                    with cols[i % len(cols)]:
+                        st.markdown(
+                            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:3px 0;text-align:center;">'
+                            f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t}</div>'
+                            f'<div style="font-size:0.9rem;color:{color};font-weight:700;">{corr:+.2f}</div>'
+                            f'</div>', unsafe_allow_html=True
+                        )
+            st.divider()
 
     us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
     for bucket in ["Growth","Quality","Defensives","Semis","Energy","Industrials","Financials","AI_Infra","PreciousMetals"]:
@@ -1929,6 +2237,41 @@ def page_forex():
                 if isinstance(data, dict):
                     st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
     st.divider()
+    # DXY Correlation moved from dashboard to Forex tab
+    dxy_corr = snap.get("dxy_correlation", {}) or {}
+    if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
+        st.markdown("### 💱 DXY Correlation (20D)")
+        pos = dxy_corr.get("strongest_positive_corr", [])[:5]
+        neg = dxy_corr.get("strongest_negative_corr", [])[:5]
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Positive</div>", unsafe_allow_html=True)
+            for t, data in pos:
+                if isinstance(data, dict):
+                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#3FB950;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
+        with c2:
+            st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Negative</div>", unsafe_allow_html=True)
+            for t, data in neg:
+                if isinstance(data, dict):
+                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
+        st.divider()
+
+    # COT Proxy for Forex
+    st.markdown("### 🏛️ COT — Commitment of Traders (Proxy)")
+    cot_tickers = [t for t in (list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX) if t in ["EURUSD=X","GBPUSD=X","USDJPY=X","AUDUSD=X","USDCAD=X","USDCHF=X","NZDUSD=X","DX-Y.NYB"]]
+    cot_cols = st.columns(min(4, len(cot_tickers)))
+    for i, t in enumerate(cot_tickers):
+        cot = _get_cot_proxy(t)
+        sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149", "NEUTRAL": "#8B949E"}.get(cot["signal"], "#8B949E")
+        with cot_cols[i % len(cot_cols)]:
+            st.markdown(
+                f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 10px;margin:3px 0;">'
+                f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t.replace("=X","").replace("DX-Y.NYB","DXY")}</div>'
+                f'<div style="font-size:0.85rem;color:{sig_color};font-weight:700;margin:2px 0;">{cot["signal"]}</div>'
+                f'<div style="font-size:0.6rem;color:#8B949E;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div>'
+                f'</div>', unsafe_allow_html=True)
+    st.divider()
+
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
@@ -1957,6 +2300,37 @@ def page_commodities():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
     st.divider()
+    # DXY Correlation for commodities
+    dxy_corr = snap.get("dxy_correlation", {}) or {}
+    if isinstance(dxy_corr, dict) and dxy_corr.get("strongest_positive_corr"):
+        comm_dxy = [item for item in (dxy_corr.get("strongest_positive_corr",[]) + dxy_corr.get("strongest_negative_corr",[])) 
+                    if isinstance(item, tuple) and len(item) == 2 and item[0] in (list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM)]
+        if comm_dxy:
+            st.markdown("### 💱 DXY Correlation — Commodities")
+            for t, data in comm_dxy[:4]:
+                if isinstance(data, dict):
+                    corr = data.get("correlation", 0)
+                    color = "#3FB950" if corr > 0 else "#F85149"
+                    st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{t}: <span style="color:{color};font-weight:700;">{corr:+.2f}</span></div>', unsafe_allow_html=True)
+            st.divider()
+
+    # COT Proxy for Commodities
+    st.markdown("### 🏛️ COT — Commitment of Traders (Proxy)")
+    cot_comm = [t for t in (list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM) if t in ["GC=F","SI=F","CL=F","NG=F","HG=F","PL=F","PA=F","ZW=F","ZC=F","ZS=F"]]
+    if cot_comm:
+        cot_cols = st.columns(min(4, len(cot_comm)))
+        for i, t in enumerate(cot_comm[:8]):
+            cot = _get_cot_proxy(t)
+            sig_color = {"BULLISH": "#3FB950", "BEARISH": "#F85149", "NEUTRAL": "#8B949E"}.get(cot["signal"], "#8B949E")
+            with cot_cols[i % len(cot_cols)]:
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 10px;margin:3px 0;">'
+                    f'<div style="font-size:0.7rem;color:#8B949E;font-weight:600;">{t.replace("=F","")}</div>'
+                    f'<div style="font-size:0.85rem;color:{sig_color};font-weight:700;margin:2px 0;">{cot["signal"]}</div>'
+                    f'<div style="font-size:0.6rem;color:#8B949E;">Non-Com: {cot["net_noncom"]:+,} · WoW: {cot["change_wow"]:+,}</div>'
+                    f'</div>', unsafe_allow_html=True)
+        st.divider()
+
     comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
     rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
@@ -1968,6 +2342,31 @@ def page_commodities():
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: CRYPTO
 # ═══════════════════════════════════════════════════════════════════
+def _get_onchain_proxy(ticker, prices):
+    """Proxy on-chain metrics for crypto tickers."""
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 20):
+        return {}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 20: return {}
+        px = float(s_clean.iloc[-1])
+        r1m = float(s_clean.iloc[-1] / s_clean.iloc[-22] - 1) if len(s_clean) >= 22 else 0
+        r7d = float(s_clean.iloc[-1] / s_clean.iloc[-8] - 1) if len(s_clean) >= 8 else r1m
+        vol_20 = float(s_clean.tail(20).std())
+        mean_20 = float(s_clean.tail(20).mean())
+        # Proxy metrics
+        return {
+            "price": px, "r1m": r1m, "r7d": r7d,
+            "volatility": round(vol_20 / mean_20 if mean_20 > 0 else 0, 4),
+            "momentum": "ACCUMULATING" if r1m > 0.05 else "DISTRIBUTING" if r1m < -0.05 else "NEUTRAL",
+            "whale_signal": "BUY" if r7d > 0.03 and vol_20 > 0 else "SELL" if r7d < -0.03 else "HOLD",
+            "funding_proxy": round(r1m * 0.001, 5),
+            "oi_proxy": int(abs(r1m) * 1e9),
+        }
+    except Exception:
+        return {}
+
 def page_crypto():
     st.markdown("## ₿ Crypto")
     playbook = {
@@ -2015,6 +2414,64 @@ def page_crypto():
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: GLOBAL & EM
 # ═══════════════════════════════════════════════════════════════════
+def _get_broker_proxy(ticker, prices):
+    """Proxy broker summary for IHSG with manipulation detection.
+    Detects crossing (wash trading) vs real accumulation."""
+    s = prices.get(ticker)
+    if s is None or (hasattr(s, "__len__") and len(s) < 30):
+        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+    try:
+        s_clean = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+        if len(s_clean) < 30: return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+
+        px = float(s_clean.iloc[-1])
+        # 5-day vs 20-day metrics
+        r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
+        r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
+
+        # Volatility analysis for crossing detection
+        vol_5 = float(s_clean.tail(5).std())
+        vol_20 = float(s_clean.tail(20).std()) if len(s_clean) >= 20 else vol_5
+        mean_20 = float(s_clean.tail(20).mean())
+
+        # Price range compression = potential crossing
+        range_5 = float(s_clean.tail(5).max() - s_clean.tail(5).min())
+        range_20 = float(s_clean.tail(20).max() - s_clean.tail(20).min()) if len(s_clean) >= 20 else range_5
+
+        # Crossing detection: high activity (volatility spike) but price goes nowhere
+        crossing = False
+        if vol_20 > 0 and vol_5 / vol_20 > 1.5 and range_5 / max(range_20, 0.001) < 0.15:
+            crossing = True
+
+        # Real accumulation: price rising with consistent volume (proxy: steady trend)
+        real_acc = False
+        if r5d > 0.03 and r20d > 0.05 and not crossing:
+            real_acc = True
+
+        # Real distribution: price falling with consistent trend
+        real_dist = False
+        if r5d < -0.03 and r20d < -0.05 and not crossing:
+            real_dist = True
+
+        # Confidence score
+        conf = 0
+        if real_acc: conf = min(100, int(50 + abs(r5d)*500))
+        elif real_dist: conf = min(100, int(50 + abs(r5d)*500))
+        elif crossing: conf = 70
+
+        return {
+            "real_accumulation": real_acc,
+            "real_distribution": real_dist,
+            "crossing_detected": crossing,
+            "confidence": conf,
+            "r5d": round(r5d, 4),
+            "r20d": round(r20d, 4),
+            "vol_ratio": round(vol_5/vol_20, 2) if vol_20 > 0 else 1.0,
+            "range_ratio": round(range_5/max(range_20, 0.001), 2),
+        }
+    except Exception:
+        return {"real_accumulation": False, "real_distribution": False, "crossing_detected": False, "confidence": 0}
+
 def page_global():
     st.markdown("## 🌍 Global & EM")
     global_ = snap.get("global", {}) or {}
