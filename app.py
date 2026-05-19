@@ -554,9 +554,9 @@ def _skew_curve_proxy_html(ticker, options_data, width=300, height=120, iv_exact
         else: h = int(30 + 55 * (x**2))
         h = max(10, min(95, h))
         bars_html += f'<div style="width:{bar_width-2}px;height:{h}%;background:{color}40;border-radius:2px;opacity:0.8;"></div>'
+    iv_label = f" · IV: {iv_exact:.1%} (Schadner)" if iv_exact else f" [{options_data.get('source','PROXY')}]"
     return (
         f'<div class="skew-curve-container">'
-        iv_label = f" · IV: {iv_exact:.1%} (Schadner)" if iv_exact else f" [{options_data.get('source','PROXY')}]"
         f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f}){iv_label}</div>'
         f'<div style="display:flex;align-items:flex-end;gap:1px;height:{height}px;padding:0 4px;">'
         f'{bars_html}'
