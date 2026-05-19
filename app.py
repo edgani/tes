@@ -177,6 +177,15 @@ def fp(v):
 def ff(v, d=2):
     try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "-"
     except: return "-"
+def sf(v, fmt=".2f"):
+    """Safe format float for metrics."""
+    try:
+        if v is None: return "—"
+        f = float(v)
+        if not math.isfinite(f): return "—"
+        return format(f, fmt)
+    except:
+        return "—"
 
 def _price_ret(ticker, prices, days=21):
     s = prices.get(ticker)
@@ -583,22 +592,28 @@ def _options_proxy_for_ticker_local(ticker, prices):
         iv_rank = min(100, max(0, (vol_20 / hist_vol * 50))) if hist_vol > 0 else 50
         expected_move = vol_20 / math.sqrt(12)
         pc_ratio = 0.8 if r20d > 0.05 else (1.2 if r20d < -0.05 else 1.0)
+        # OI proxy based on recent volume/price action
+        avg_vol = float(s_clean.tail(20).mean())
+        oi_call = max(50000, int(avg_vol * 80000 * (1.1 if r20d > 0 else 0.9)))
+        oi_put = max(50000, int(avg_vol * 80000 * (0.9 if r20d > 0 else 1.1)))
         return {
-            "max_pain": max_pain, "put_wall": put_wall, "call_wall": call_wall,
-            "gamma_flip_up": gamma_flip_up, "gamma_flip_down": gamma_flip_down,
-            "gamma_regime": gamma_regime, "gex": gex_proxy, "vanna": vanna_proxy,
-            "charm": charm_proxy, "skew_30d": skew_30d, "skew_60d": skew_30d * 0.8,
-            "skew_90d": skew_30d * 0.6, "mp_dist": mp_dist, "iv_rank": iv_rank,
-            "expected_move_pct": expected_move, "pc_ratio": pc_ratio,
+            "max_pain": float(max_pain), "put_wall": float(put_wall), "call_wall": float(call_wall),
+            "gamma_flip_up": float(gamma_flip_up), "gamma_flip_down": float(gamma_flip_down),
+            "gamma_regime": gamma_regime, "gex": float(gex_proxy), "vanna": float(vanna_proxy),
+            "charm": float(charm_proxy), "skew_30d": float(skew_30d), "skew_60d": float(skew_30d) * 0.8,
+            "skew_90d": float(skew_30d) * 0.6, "mp_dist": float(mp_dist), "iv_rank": float(iv_rank),
+            "expected_move_pct": float(expected_move), "pc_ratio": float(pc_ratio),
+            "oi_call": int(oi_call), "oi_put": int(oi_put),
             "source": "PROXY", "next_expiry": _get_next_expiry(), "days_to_expiry": 21,
         }
     except Exception:
         return {}
 
 def _get_dark_pool_for_ticker(ticker, snap):
-    """Get dark pool print for specific ticker from snap."""
+    """Get dark pool print for specific ticker from snap. Returns proxy if no real print."""
     if not snap:
         return None
+    # 1. Try real institutional data
     inst = snap.get("institutional_data", {}) if isinstance(snap.get("institutional_data"), dict) else {}
     if inst.get("per_ticker"):
         data = inst.get("per_ticker", {}).get(ticker)
@@ -612,7 +627,8 @@ def _get_dark_pool_for_ticker(ticker, snap):
                 size = int(data.get("volume_anomaly", 0) * 1000)
                 return {"size": size, "price": px, "amount": size * px,
                         "side": "BUY" if data.get("buy_pressure", 0) > data.get("sell_pressure", 0) else "SELL",
-                        "time": "Live"}
+                        "time": "Live", "source": "INST"}
+    # 2. Try front-run consensus
     fr = snap.get("front_run_candidates", []) or []
     for item in fr:
         if not isinstance(item, dict): continue
@@ -623,7 +639,24 @@ def _get_dark_pool_for_ticker(ticker, snap):
                 try: px = float(pd.to_numeric(pd.Series(prices[ticker]), errors="coerce").dropna().iloc[-1])
                 except: pass
             if px:
-                return {"size": 250000, "price": px, "amount": 250000 * px, "side": "BUY", "time": "Consensus"}
+                return {"size": 250000, "price": px, "amount": 250000 * px, "side": "BUY", "time": "Consensus", "source": "FR"}
+    # 3. Proxy dark pool for tickers with price action
+    prices = snap.get("prices", {})
+    if ticker in prices:
+        try:
+            s = pd.to_numeric(pd.Series(prices[ticker]), errors="coerce").dropna()
+            if len(s) >= 6:
+                px = float(s.iloc[-1])
+                r5d = float(s.iloc[-1] / s.iloc[-6] - 1) if len(s) >= 6 else 0
+                vol_5 = float(s.tail(5).std())
+                vol_20 = float(s.tail(20).std()) if len(s) >= 20 else vol_5
+                if vol_20 > 0 and abs(vol_5 / vol_20 - 1) > 0.25:
+                    side = "BUY" if r5d > 0 else "SELL"
+                    size = int(150000 * (1 + abs(r5d) * 5))
+                    return {"size": size, "price": px, "amount": size * px,
+                            "side": side, "time": "Proxy", "source": "PROXY"}
+        except Exception:
+            pass
     return None
 
 # ═══════════════════════════════════════════════════════════════════
@@ -886,6 +919,56 @@ def _get_markov_confidence(ticker, snap):
     # Try to match ticker to regime — simplified
     return m.get("confidence", 0)
 
+def _get_option_recommendation(options, direction="LONG"):
+    """Generate option/stock recommendation based on MM positioning for buy-and-hold investors."""
+    gamma = options.get("gamma_regime", "")
+    mp_dist = options.get("mp_dist", 0) or 0
+    skew = options.get("skew_30d", 0) or 0
+    iv_rank = options.get("iv_rank", 50) or 50
+    pc_ratio = options.get("pc_ratio", 1.0) or 1.0
+    vanna = options.get("vanna", 0) or 0
+    expected_move = options.get("expected_move_pct", 0) or 0
+
+    rec = {"action": "HOLD", "strategy": "Tunggu setup lebih jelas", "rationale": "Data tidak cukup untuk rekomendasi kuat."}
+
+    # Pinned near max pain → range bound
+    if abs(mp_dist) < 0.025 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
+        rec = {"action": "JUAL COVERED CALL", "strategy": "Jual call di call wall atau straddle untuk income",
+               "rationale": "📍 Pinned near max pain + positive gamma = range-bound. Sell premium."}
+    # Below put wall + negative gamma
+    elif mp_dist < -0.03 and gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
+        rec = {"action": "BELI SPOT / AKUMULASI", "strategy": "Beli saham di dekat put wall / LRR",
+               "rationale": "📉 Di bawah max pain + negative gamma = MM buy dips. Put wall support."}
+    # Above call wall + positive gamma
+    elif mp_dist > 0.03 and gamma in ("POSITIVE", "DEEP_POSITIVE"):
+        rec = {"action": "JUAL COVERED CALL", "strategy": "Jual call di call wall untuk income",
+               "rationale": "📈 Di atas max pain + positive gamma = MM sell rallies. Fade strength, collect premium."}
+    # High put skew + high IV = fear priced in
+    elif skew > 0.05 and iv_rank > 60:
+        rec = {"action": "BELI SPOT + JUAL PUT", "strategy": "Beli saham / jual put spread (fear overpriced)",
+               "rationale": "🔴 Put skew rich + IV tinggi = premium put mahal. Sell puts atau buy spot."}
+    # Call skew cheap + low IV
+    elif skew < -0.05 and iv_rank < 40:
+        rec = {"action": "BELI CALL / LONG SPOT", "strategy": "Beli call LEAPS atau tambah posisi spot",
+               "rationale": "🟢 Call skew cheap + IV rendah = upside convexity murah."}
+    # Low IV environment → ideal for buy-and-hold accumulation
+    elif iv_rank < 35 and direction == "LONG":
+        rec = {"action": "AKUMULASI SPOT", "strategy": "Tambah posisi saham / beli LEAPS",
+               "rationale": "💤 IV rendah = environment ideal untuk akumulasi buy-and-hold."}
+    # High IV + bearish direction → protective puts
+    elif iv_rank > 65 and direction == "SHORT":
+        rec = {"action": "BELI PUT PROTEKTIF", "strategy": "Beli put untuk proteksi portfolio",
+               "rationale": "⚠️ IV tinggi + bearish = beli put protektif (meski mahal, perlu hedge)."}
+    # Transition gamma with vanna tailwind
+    elif gamma == "TRANSITION" and vanna > 0.5:
+        rec = {"action": "BELI SPOT", "strategy": "Vanna support rally — buy spot on dips",
+               "rationale": "🔄 Transition + positive vanna = rally akan crush vol, buy spot."}
+    elif gamma == "TRANSITION" and vanna < -0.5:
+        rec = {"action": "HOLD / TUNGGU", "strategy": "Vanna negatif = rally expand vol, tunggu konfirmasi",
+               "rationale": "🔄 Transition + negative vanna = breakout akan volatile, tunggu clearer signal."}
+
+    return rec
+
 def render_ticker_card_v4(row, expanded=False):
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
@@ -1014,12 +1097,21 @@ def render_ticker_card_v4(row, expanded=False):
         if show_options:
             dp = _get_dark_pool_for_ticker(ticker, st.session_state.snap)
             if dp:
+                src_label = f" · {dp.get('source','')}" if dp.get('source') else ""
+                side_color = "#3FB950" if dp.get("side") == "BUY" else "#F85149"
                 st.markdown(
                     f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-                    f'<div style="font-size:0.65rem;color:#A855F7;text-transform:uppercase;font-weight:600;margin-bottom:4px;">🌑 Dark Pool Print</div>'
+                    f'<div style="font-size:0.65rem;color:#A855F7;text-transform:uppercase;font-weight:600;margin-bottom:4px;">🌑 Dark Pool Print{src_label}</div>'
                     f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#E6EDF3;">'
-                    f'<span>{dp.get("side","—")} {dp.get("size",0):,.0f} @ ${ff(dp.get("price"))}</span>'
+                    f'<span style="color:{side_color};font-weight:700;">{dp.get("side","—")}</span>'
+                    f'<span>{dp.get("size",0):,.0f} @ ${ff(dp.get("price"))}</span>'
                     f'<span style="color:#3FB950;font-weight:700;">${dp.get("amount",0)/1e6:.1f}M</span></div></div>',
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:6px 10px;margin:4px 0;">'
+                    f'<div style="font-size:0.65rem;color:#484F58;text-transform:uppercase;font-weight:600;">🌑 Dark Pool — No Anomaly</div></div>',
                     unsafe_allow_html=True
                 )
 
@@ -1048,38 +1140,54 @@ def render_ticker_card_v4(row, expanded=False):
                         unsafe_allow_html=True
                     )
 
+        # ── Option Recommendation (Buy-and-Hold tailored) ──
+        if show_options:
+            rec = _get_option_recommendation(options, direction=row.get("direction", "LONG"))
+            rec_color = {"BELI SPOT / AKUMULASI": "#3FB950", "AKUMULASI SPOT": "#3FB950", "BELI CALL / LONG SPOT": "#3FB950",
+                         "BELI SPOT + JUAL PUT": "#2EA043", "BELI SPOT": "#3FB950",
+                         "JUAL COVERED CALL": "#D29922", "JUAL PUT PROTEKTIF": "#F85149",
+                         "HOLD / TUNGGU": "#8B949E", "HOLD": "#8B949E"}.get(rec["action"], "#58A6FF")
+            st.markdown(
+                f'<div style="background:#161B22;border:1px solid {rec_color}40;border-radius:8px;padding:10px 12px;margin:6px 0;">'
+                f'<div style="font-size:0.65rem;color:{rec_color};text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">'
+                f'🎯 Rekomendasi Options / Spot</div>'
+                f'<div style="font-size:0.85rem;color:#E6EDF3;font-weight:700;margin-bottom:3px;">{rec["action"]}</div>'
+                f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:4px;">{rec["strategy"]}</div>'
+                f'<div style="font-size:0.7rem;color:{rec_color};line-height:1.4;">{rec["rationale"]}</div>'
+                f'</div>', unsafe_allow_html=True)
+
         # Options detail columns
         if show_options and (options.get("gamma_regime") or options.get("max_pain")):
             o1, o2, o3, o4, o5 = st.columns(5)
-            o1.metric("Gamma", options.get("gamma_regime", "-"))
+            o1.metric("Gamma", options.get("gamma_regime", "—"))
             o2.metric("Max Pain", ff(options.get("max_pain")))
             o3.metric("Put Wall", ff(options.get("put_wall")))
             o4.metric("Call Wall", ff(options.get("call_wall")))
-            o5.metric("Exp Move", f"{options.get('expected_move_pct',0):.1%}" if options.get('expected_move_pct') else "—")
+            o5.metric("Exp Move", sf(options.get('expected_move_pct'), ".1%"))
 
             # Second row of options metrics
             o6, o7, o8, o9, o10 = st.columns(5)
-            o6.metric("IV Rank", f"{options.get('iv_rank',0):.0f}" if options.get('iv_rank') is not None else "—")
-            o7.metric("PC Ratio", f"{options.get('pc_ratio',0):.2f}" if options.get('pc_ratio') is not None else "—")
-            o8.metric("OI Call", f"{options.get('oi_call',0)/1e6:.1f}M" if options.get('oi_call') else "—")
-            o9.metric("OI Put", f"{options.get('oi_put',0)/1e6:.1f}M" if options.get('oi_put') else "—")
-            expiry_text = f"{options.get('days_to_expiry','—')}D" if options.get('days_to_expiry') else "—"
+            o6.metric("IV Rank", sf(options.get('iv_rank'), ".0f"))
+            o7.metric("PC Ratio", sf(options.get('pc_ratio'), ".2f"))
+            o8.metric("OI Call", sf(options.get('oi_call')/1e6 if options.get('oi_call') is not None else None, ".1f") + "M" if options.get('oi_call') is not None else "—")
+            o9.metric("OI Put", sf(options.get('oi_put')/1e6 if options.get('oi_put') is not None else None, ".1f") + "M" if options.get('oi_put') is not None else "—")
+            expiry_text = f"{options.get('days_to_expiry','—')}D" if options.get('days_to_expiry') is not None else "—"
             expiry_date = options.get("next_expiry", "")
-            if expiry_date and options.get("days_to_expiry"):
+            if expiry_date and options.get("days_to_expiry") is not None:
                 o10.metric("Expiry", f"{expiry_date} ({expiry_text})")
             else:
                 o10.metric("Expiry", expiry_text)
 
-        # Skew Curve Proxy
-        if show_options and (options.get("skew_30d") is not None or options.get("skew_60d") is not None):
-            st.markdown(_skew_curve_proxy_html(ticker, options, width=300, height=100), unsafe_allow_html=True)
+        # Skew Curve Proxy — always show if we have any options data
+        if show_options and options.get("gamma_regime"):
+            st.markdown(_skew_curve_proxy_html(ticker, options, width=320, height=110), unsafe_allow_html=True)
 
         # Greeks mini
-        if show_options and (options.get("gex") is not None or options.get("vanna") is not None or options.get("charm") is not None):
+        if show_options and options.get("gamma_regime"):
             g1, g2, g3 = st.columns(3)
-            g1.metric("GEX", f"{options.get('gex',0):+.2f}" if options.get('gex') is not None else "-")
-            g2.metric("Vanna", str(options.get("vanna","-"))[:10])
-            g3.metric("Charm", str(options.get("charm","-"))[:10])
+            g1.metric("GEX", sf(options.get('gex'), '+.2f'))
+            g2.metric("Vanna", sf(options.get('vanna'), '.3f')[:10])
+            g3.metric("Charm", sf(options.get('charm'), '.3f')[:10])
 
         if row.get("news_headline"):
             st.markdown(f'<div style="font-size:0.72rem;color:#58A6FF;margin-top:3px;">📰 {row.get("news_headline")[:120]}</div>', unsafe_allow_html=True)
@@ -1326,27 +1434,51 @@ def page_dashboard():
 
     left, right = st.columns([1.1, 1])
     with left:
-        st.markdown("### 📋 Regime Playbook")
-        pb = snap.get("playbook", {}) or {}
-        if isinstance(pb, dict):
-            best = pb.get("best_assets", [])[:6]; worst = pb.get("worst_assets", [])[:6]; strategy = pb.get("strategy", "")
-            if strategy: st.markdown(f'<div style="font-size:0.8rem;color:#E6EDF3;line-height:1.5;margin-bottom:8px;">{strategy}</div>', unsafe_allow_html=True)
-            if best or worst:
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Overweight</div>", unsafe_allow_html=True)
-                    for b in best: st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {b}</div>", unsafe_allow_html=True)
-                with c2:
-                    st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
-                    for w in worst: st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {w}</div>", unsafe_allow_html=True)
+        st.markdown("### 🌀 Boom-Bust Stage")
+        bb = snap.get("boom_bust", {}) or {}
+        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
+        reflex = snap.get("reflexivity", {}) or {}
+        score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
+        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
+        st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
+        st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
 
-        st.markdown("### 💼 Allocation")
-        allocation = {"Q1": {"long": 75, "short": 5, "cash": 20}, "Q2": {"long": 70, "short": 10, "cash": 20}, "Q3": {"long": 60, "short": 15, "cash": 25}, "Q4": {"long": 50, "short": 20, "cash": 30}}
-        alloc = allocation.get(sq, allocation["Q3"])
-        st.markdown(_stacked_bar_html(alloc["long"], alloc["short"], alloc["cash"]), unsafe_allow_html=True)
+        st.markdown("### 🧠 Behavioral Macro (Yves)")
+        behavioral = snap.get("behavioral_macro", {}) or {}
+        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
+        n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
+        if isinstance(yves, dict):
+            alert = yves.get("alert", "No alert")
+            level = yves.get("alert_level", "NONE")
+            # FIX: if NONE / no alerts, show AAII sentiment bars instead of just "NONE"
+            if level == "NONE" and not alert:
+                bullish = behavioral.get("bullish", 30)
+                bearish = behavioral.get("bearish", 30)
+                neutral = behavioral.get("neutral", 40)
+                total = bullish + bearish + neutral
+                if total > 0:
+                    bull_pct = bullish / total * 100
+                    bear_pct = bearish / total * 100
+                    neut_pct = neutral / total * 100
+                    st.markdown(
+                        f'<div style="font-size:0.75rem;color:#8B949E;margin-bottom:4px;">AAII Sentiment (no extreme divergence)</div>'
+                        f'<div style="display:flex;height:18px;border-radius:4px;overflow:hidden;background:#21262D;margin-bottom:6px;">'
+                        f'<div style="width:{bull_pct:.0f}%;background:#3FB950;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐂 {bullish}</div>'
+                        f'<div style="width:{neut_pct:.0f}%;background:#8B949E;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">⚖ {neutral}</div>'
+                        f'<div style="width:{bear_pct:.0f}%;background:#F85149;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐻 {bearish}</div>'
+                        f'</div>', unsafe_allow_html=True)
+                else:
+                    st.caption("Behavioral data unavailable")
+            else:
+                color = "#F85149" if level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if level == "MEDIUM" or n_alerts > 0 else "#3FB950"
+                st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
+        else:
+            st.caption("Behavioral macro unavailable")
 
     with right:
         st.markdown("### 🔮 Scenarios")
+        narrative = snap.get("narrative", {}) or {}
         scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
         if scenarios:
             dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
@@ -1382,33 +1514,7 @@ def page_dashboard():
 
     st.divider()
 
-    # Boom-Bust + Behavioral row
-    bb = snap.get("boom_bust", {}) or {}
-    stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
-    reflex = snap.get("reflexivity", {}) or {}
-    score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
-
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("### 🌀 Boom-Bust Stage")
-        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
-        st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
-        st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
-    with c2:
-        st.markdown("### 🧠 Behavioral Macro (Yves)")
-        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-        if isinstance(yves, dict):
-            alert = yves.get("alert", "No alert")
-            level = yves.get("alert_level", "NONE")
-            color = "#F85149" if level in ("HIGH", "CRITICAL") else "#D29922" if level == "MEDIUM" else "#3FB950"
-            st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
-            st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
-        else:
-            st.caption("Behavioral macro unavailable")
-
-    st.divider()
-
-    # Asset Pulse
+    #Asset Pulse
     st.markdown("### ⚡ Asset Pulse (21D)")
     pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
     pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
