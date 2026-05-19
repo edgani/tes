@@ -516,6 +516,44 @@ logger.info(
     f"V9 (Sprint 9) methodology engines: karsan={_V9_KARSAN} spotgamma={_V9_SPOTGAMMA} "
     f"leopold={_V9_LEOPOLD} coatue={_V9_COATUE}"
 )
+logger.info(
+    f"V9 (Sprint 9) methodology engines: karsan={_V9_KARSAN} spotgamma={_V9_SPOTGAMMA} "
+    f"leopold={_V9_LEOPOLD} coatue={_V9_COATUE}"
+)
+
+# ═══════════════════════════════════════════════════════════════════════
+# SPRINT 11: VolSignals + SpotGamma + Schadner Integration
+# ═══════════════════════════════════════════════════════════════════════
+try:
+    from engines.volsignals_regime import compute_dealer_regime_multi
+    _V11_VOLSIGNALS = True
+except Exception as e:
+    logger.error(f"Failed to import volsignals_regime: {e}")
+    _V11_VOLSIGNALS = False
+    def compute_dealer_regime_multi(*a, **k): return {}
+
+try:
+    from engines.spotgamma_levels import compute_structural_levels_multi
+    _V11_SPOTGAMMA = True
+except Exception as e:
+    logger.error(f"Failed to import spotgamma_levels: {e}")
+    _V11_SPOTGAMMA = False
+    def compute_structural_levels_multi(*a, **k): return {}
+
+try:
+    from engines.schadner_iv import schadner_iv, validate_iv_proxy
+    _V11_SCHADNER = True
+except Exception as e:
+    logger.error(f"Failed to import schadner_iv: {e}")
+    _V11_SCHADNER = False
+    def schadner_iv(*a, **k): return None
+    def validate_iv_proxy(*a, **k): return {}
+
+logger.info(
+    f"V11 (Sprint 11) engines: volsignals={_V11_VOLSIGNALS} spotgamma={_V11_SPOTGAMMA} "
+    f"schadner={_V11_SCHADNER}"
+)
+
 
 logger.info(
     "V2 engines loaded: "
@@ -2599,6 +2637,67 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 logger.warning(f"Squeeze scanner failed: {e}")
 
         # ═══════════════════════════════════════════════════════════════
+        # SPRINT 11: VolSignals + SpotGamma + Schadner Integration
+        # ═══════════════════════════════════════════════════════════════
+
+        # ── VolSignals Dealer Regime ──
+        if _V11_VOLSIGNALS:
+            _safe_progress(progress_cb, "VolSignals dealer regime...", 0.52)
+            try:
+                vs_regime = compute_dealer_regime_multi(
+                    prices=prices,
+                    gex_data=result.get("gex_data", {}),
+                    vanna_data=result.get("vanna_data", {}),
+                    charm_data=result.get("charm_data", {}),
+                    gamma_data=result.get("gamma_data", {}),
+                    key_tickers=["SPY", "QQQ", "IWM"] + list(prices.keys())[:150]
+                )
+                result["volsignals_regime"] = vs_regime
+                logger.info(f"VolSignals regime: {len(vs_regime)} tickers classified")
+            except Exception as e:
+                logger.warning(f"VolSignals regime failed: {e}")
+                result["errors"].append(f"volsignals_regime: {e}")
+
+        # ── SpotGamma Structural Levels ──
+        if _V11_SPOTGAMMA:
+            _safe_progress(progress_cb, "SpotGamma structural levels...", 0.53)
+            try:
+                sg_levels = compute_structural_levels_multi(
+                    prices=prices,
+                    options_data=result.get("gex_data", {}),
+                    key_tickers=["SPY", "QQQ", "IWM"] + list(prices.keys())[:150]
+                )
+                result["spotgamma_levels"] = sg_levels
+                logger.info(f"SpotGamma levels: {len(sg_levels)} tickers mapped")
+            except Exception as e:
+                logger.warning(f"SpotGamma levels failed: {e}")
+                result["errors"].append(f"spotgamma_levels: {e}")
+
+        # ── Schadner IV (validate proxy IV where option prices exist) ──
+        if _V11_SCHADNER:
+            _safe_progress(progress_cb, "Schadner IV validation...", 0.54)
+            try:
+                yf_opts = result.get("yfinance_options", {})
+                schadner_validation = {}
+                for t, opt in yf_opts.items():
+                    if not isinstance(opt, dict):
+                        continue
+                    if opt.get("ok") and opt.get("call_price") and opt.get("strike") and opt.get("forward"):
+                        iv_exact = schadner_iv(
+                            C=opt["call_price"], K=opt["strike"],
+                            F=opt["forward"], T=opt.get("days_to_expiry", 21) / 365.0, D=1.0
+                        )
+                        if iv_exact is not None:
+                            iv_proxy = opt.get("iv", 0) or opt.get("implied_vol", 0) or 0
+                            schadner_validation[t] = validate_iv_proxy(t, iv_proxy, iv_exact)
+                            schadner_validation[t]["source"] = "SCHADNER"
+                result["schadner_iv"] = schadner_validation
+                logger.info(f"Schadner IV: {len(schadner_validation)} tickers validated")
+            except Exception as e:
+                logger.warning(f"Schadner IV failed: {e}")
+                result["errors"].append(f"schadner_iv: {e}")
+
+        # ═══════════════════════════════════════════════════════════════
         # SPRINT 9: Methodology-driven scanners
         # ═══════════════════════════════════════════════════════════════
         try:
@@ -2714,6 +2813,10 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             "v10_active_chains": result.get("narrative", {}).get("n_active_chains", 0),
             "v10_active_bottlenecks": result.get("narrative", {}).get("n_active_bottlenecks", 0),
             "v10_behavioral_divergences": result.get("narrative", {}).get("n_behavioral_divergences", 0),
+            # Sprint 11
+            "v11_volsignals_regimes": len(result.get("volsignals_regime", {})),
+            "v11_spotgamma_levels": len(result.get("spotgamma_levels", {})),
+            "v11_schadner_validated": len(result.get("schadner_iv", {})),
         }
 
         result["ok"] = True

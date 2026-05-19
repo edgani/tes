@@ -507,6 +507,25 @@ def _get_options_data(ticker, snap):
         out["mm_positioning"] = "UNKNOWN"
         out["mm_recommendation"] = "Insufficient options data for MM positioning."
 
+    # 15. VolSignals dealer regime
+    vs = snap.get("volsignals_regime", {}) if isinstance(snap.get("volsignals_regime"), dict) else {}
+    if isinstance(vs, dict) and ticker in vs and isinstance(vs[ticker], dict):
+        out["volsignals_regime"] = vs[ticker]
+
+    # 16. SpotGamma structural levels
+    sg = snap.get("spotgamma_levels", {}) if isinstance(snap.get("spotgamma_levels"), dict) else {}
+    if isinstance(sg, dict) and ticker in sg and isinstance(sg[ticker], dict):
+        out["spotgamma_levels"] = sg[ticker]
+        if not out.get("volatility_trigger"): out["volatility_trigger"] = sg[ticker].get("volatility_trigger")
+        if not out.get("risk_pivot_upper"): out["risk_pivot_upper"] = sg[ticker].get("risk_pivot_upper")
+        if not out.get("risk_pivot_lower"): out["risk_pivot_lower"] = sg[ticker].get("risk_pivot_lower")
+
+    # 17. Schadner IV validation
+    sch = snap.get("schadner_iv", {}) if isinstance(snap.get("schadner_iv"), dict) else {}
+    if isinstance(sch, dict) and ticker in sch and isinstance(sch[ticker], dict):
+        out["iv_schadner"] = sch[ticker].get("iv_exact")
+        out["iv_proxy_error"] = sch[ticker].get("error_pct")
+
     # ── Fallback proxy: fill any missing fields from price action ──
     proxy = _options_proxy_for_ticker_local(ticker, snap.get("prices", {}))
     if proxy:
@@ -516,7 +535,7 @@ def _get_options_data(ticker, snap):
 
     return out
 
-def _skew_curve_proxy_html(ticker, options_data, width=300, height=120):
+def _skew_curve_proxy_html(ticker, options_data, width=300, height=120, iv_exact=None):
     skew_val = options_data.get("skew_30d") or options_data.get("skew_60d") or 0
     if skew_val is None: skew_val = 0
     if skew_val > 0.05:
@@ -537,7 +556,8 @@ def _skew_curve_proxy_html(ticker, options_data, width=300, height=120):
         bars_html += f'<div style="width:{bar_width-2}px;height:{h}%;background:{color}40;border-radius:2px;opacity:0.8;"></div>'
     return (
         f'<div class="skew-curve-container">'
-        f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f}) [{options_data.get("source","PROXY")}]</div>'
+        iv_label = f" · IV: {iv_exact:.1%} (Schadner)" if iv_exact else f" [{options_data.get('source','PROXY')}]"
+        f'<div class="skew-curve-title">{ticker} Skew · {shape.replace("_"," ").title()} ({skew_val:+.2f}){iv_label}</div>'
         f'<div style="display:flex;align-items:flex-end;gap:1px;height:{height}px;padding:0 4px;">'
         f'{bars_html}'
         f'</div>'
@@ -1753,6 +1773,15 @@ def render_ticker_card_v4(row, expanded=False):
     if mm_pos and mm_pos != "UNKNOWN": 
         badges += _badge_html(mm_pos, "mm")
 
+    # ── VolSignals Dealer Regime Badge ──
+    vs_regime = options.get("volsignals_regime", {})
+    if vs_regime and isinstance(vs_regime, dict):
+        regime_label = vs_regime.get("dealer_regime", "")
+        regime_conf = vs_regime.get("confidence", "")
+        if regime_label:
+            regime_color = "long" if "STABILIZING" in regime_label else "short" if "AMPLIFYING" in regime_label else "neut"
+            badges += _badge_html(f"🛡️ {regime_label[:4]} {regime_conf[:1]}", regime_color)
+
     # Chase/Wait badge
     chase_status = row.get("chase_status", "NEUTRAL")
     if chase_status == "CHASE":
@@ -2023,7 +2052,46 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'</div>'
         st.markdown(rec_html, unsafe_allow_html=True)
 
+        # ── VolSignals Dealer Regime Panel ──
+        if show_options and options.get("volsignals_regime"):
+            vs = options.get("volsignals_regime", {})
+            if isinstance(vs, dict):
+                vs_reg = vs.get("dealer_regime", "—")
+                vs_conf = vs.get("confidence", "—")
+                vs_vanna = vs.get("vanna_alignment", "—")
+                vs_charm = vs.get("charm_bias", "—")
+                vs_color = "#3FB950" if "STABILIZING" in vs_reg else "#F85149" if "AMPLIFYING" in vs_reg else "#D29922"
+                st.markdown(
+                    f'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:4px;margin-bottom:8px;padding:6px;background:#0D1117;border-radius:6px;">'
+                    f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Dealer Regime</div>'
+                    f'<div style="font-size:0.7rem;color:{vs_color};font-weight:700;">{vs_reg}</div></div>'
+                    f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Vanna Cycle</div>'
+                    f'<div style="font-size:0.7rem;color:{"#3FB950" if "VIRTUOUS" in vs_vanna else "#F85149" if "VICIOUS" in vs_vanna else "#8B949E"};font-weight:700;">{vs_vanna}</div></div>'
+                    f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Confidence</div>'
+                    f'<div style="font-size:0.7rem;color:{"#3FB950" if "High" in vs_conf else "#D29922" if "Moderate" in vs_conf else "#8B949E"};font-weight:700;">{vs_conf}</div></div>'
+                    f'</div>', unsafe_allow_html=True)
+
+        # ── P&L Decomposition Panel (VolSignals-style) ──
+        if show_options and options.get("gex") is not None:
+            gex_v = float(options.get("gex", 0) or 0)
+            vanna_v = float(options.get("vanna", 0) or 0)
+            iv_r = float(options.get("iv_rank", 50) or 50)
+            # Proxy P&L decomposition
+            vrp_term = max(-5.0, min(5.0, (50 - iv_r) * 0.08))  # IV rank deviation → VRP edge
+            vanna_flow = max(-3.0, min(3.0, vanna_v * 2.5))      # Vanna → directional vol flow
+            volga_term = max(-1.0, min(1.0, gex_v * 0.3))        # Gamma curvature proxy
+            net_edge = vrp_term + vanna_flow + volga_term
+            st.markdown(
+                f'<div style="font-size:0.65rem;color:#8B949E;padding:6px;background:#0D1117;border-radius:6px;margin-bottom:8px;">'
+                f'<div style="font-size:0.55rem;color:#58A6FF;text-transform:uppercase;font-weight:600;margin-bottom:3px;">📐 P&L Decomposition (VolSignals)</div>'
+                f'<div>VRP Term: <span style="color:{"#3FB950" if vrp_term>0 else "#F85149"};font-weight:700;">{vrp_term:+.2f}%</span> · '
+                f'Vanna Flow: <span style="color:{"#3FB950" if vanna_flow>0 else "#F85149"};font-weight:700;">{vanna_flow:+.2f}%</span> · '
+                f'Volga: <span style="color:{"#3FB950" if volga_term>0 else "#F85149"};font-weight:700;">{volga_term:+.2f}%</span></div>'
+                f'<div style="margin-top:2px;color:#484F58;">Net Edge: <span style="color:#E6EDF3;font-weight:700;">{net_edge:+.2f}%</span> · Gamma regime determines dominant term</div>'
+                f'</div>', unsafe_allow_html=True)
+
         # OI Heatmap
+
         if show_options and options.get("max_pain"):
             mp = options.get("max_pain")
             pw = options.get("put_wall")
@@ -2045,13 +2113,41 @@ def render_ticker_card_v4(row, expanded=False):
                     heat_html += f'</div>'
                     heat_html += f'<span style="font-size:0.7rem;color:{color};font-weight:700;min-width:60px;text-align:right;">{ff(price)}{near_badge}</span>'
                     heat_html += f'</div>'
+                # ── SpotGamma Structural Levels ──
+                sg_levels = options.get("spotgamma_levels", {})
+                if sg_levels and isinstance(sg_levels, dict):
+                    vt = sg_levels.get("volatility_trigger")
+                    rp = sg_levels.get("risk_pivot")
+                    if vt:
+                        is_near_vt = abs(vt - px) / px < 0.03 if px else False
+                        near_badge_vt = ' <span style="background:#D2992222;color:#D29922;padding:1px 4px;border-radius:3px;font-size:0.55rem;font-weight:700;">NEAR PX</span>' if is_near_vt else ''
+                        heat_html += f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
+                        heat_html += f'<span style="font-size:0.7rem;color:#8B949E;min-width:55px;">Vol Trigger</span>'
+                        heat_html += f'<div style="flex:1;height:14px;background:#21262D;border-radius:4px;overflow:hidden;">'
+                        bar_w_vt = min(100, max(15, 100 - abs(vt - mp) / mp * 200)) if mp else 50
+                        heat_html += f'<div style="width:{bar_w_vt:.0f}%;height:100%;background:#D2992230;border-radius:4px;"></div>'
+                        heat_html += f'</div>'
+                        heat_html += f'<span style="font-size:0.7rem;color:#D29922;font-weight:700;min-width:60px;text-align:right;">{ff(vt)}{near_badge_vt}</span>'
+                        heat_html += f'</div>'
+                    if rp:
+                        is_near_rp = abs(rp - px) / px < 0.03 if px else False
+                        near_badge_rp = ' <span style="background:#F8514922;color:#F85149;padding:1px 4px;border-radius:3px;font-size:0.55rem;font-weight:700;">NEAR PX</span>' if is_near_rp else ''
+                        heat_html += f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
+                        heat_html += f'<span style="font-size:0.7rem;color:#8B949E;min-width:55px;">Risk Pivot</span>'
+                        heat_html += f'<div style="flex:1;height:14px;background:#21262D;border-radius:4px;overflow:hidden;">'
+                        bar_w_rp = min(100, max(15, 100 - abs(rp - mp) / mp * 200)) if mp else 50
+                        heat_html += f'<div style="width:{bar_w_rp:.0f}%;height:100%;background:#F8514930;border-radius:4px;"></div>'
+                        heat_html += f'</div>'
+                        heat_html += f'<span style="font-size:0.7rem;color:#F85149;font-weight:700;min-width:60px;text-align:right;">{ff(rp)}{near_badge_rp}</span>'
+                        heat_html += f'</div>'
                 heat_html += f'<div style="margin-top:4px;font-size:0.6rem;color:#484F58;">Price: {ff(px)} · OI peaks at Max Pain · Source: {options.get("source","PROXY")}</div>'
                 heat_html += '</div>'
                 st.markdown(heat_html, unsafe_allow_html=True)
 
         # Skew Curve
         if show_options and options.get("gamma_regime"):
-            st.markdown(_skew_curve_proxy_html(ticker, options, width=320, height=110), unsafe_allow_html=True)
+            iv_schadner = options.get("iv_schadner")
+            st.markdown(_skew_curve_proxy_html(ticker, options, width=320, height=110, iv_exact=iv_schadner), unsafe_allow_html=True)
 
         # Boom-Bust + Behavioral mini
         if market_type == "us_equity":
