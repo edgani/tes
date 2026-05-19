@@ -1428,18 +1428,67 @@ def render_ticker_card_v4(row, expanded=False):
 
         # ── Build comprehensive single recommendation ──
         confluence = row.get("confluence", {})
-        # Prepare market-specific context
-        cot_data = None
-        onchain_data = None
-        if market_type == "forex" or market_type == "commodity":
-            cot_data = _get_cot_proxy(ticker)
-        if market_type == "crypto":
-            onchain_data = _get_onchain_proxy(ticker, st.session_state.snap.get("prices", {}))
-        rec = _get_single_recommendation(options, direction=row.get("direction", "LONG"), 
-                                          market_type=market_type, cot_data=cot_data, 
-                                          onchain_data=onchain_data, ticker=ticker)
 
-        # Build context lines
+        # IHSG: Show broker summary instead of options recommendation
+        if market_type == "ihsg":
+            broker = row.get("broker", {})
+            if broker:
+                acc = broker.get("real_accumulation", False)
+                dist = broker.get("real_distribution", False)
+                cross = broker.get("crossing_detected", False)
+                conf = broker.get("confidence", 0)
+                r5d = broker.get("r5d", 0)
+
+                if acc:
+                    broker_color = "#3FB950"
+                    broker_action = "AKUMULASI REAL"
+                    broker_strategy = "Genuine buying detected — tambah posisi"
+                    broker_rationale = f"📈 Price +{r5d:.1%} 5D dengan trend consistency. Broker accumulation {conf}% confidence."
+                elif dist:
+                    broker_color = "#F85149"
+                    broker_action = "DISTRIBUSI REAL"
+                    broker_strategy = "Genuine selling detected — kurangi posisi"
+                    broker_rationale = f"📉 Price {r5d:.1%} 5D. Broker distribution {conf}% confidence."
+                elif cross:
+                    broker_color = "#D29922"
+                    broker_action = "WASPADA CROSSING"
+                    broker_strategy = "Volume tinggi tapi price flat — possible wash trading"
+                    broker_rationale = f"⚠️ High volume but stagnant price. Wait for genuine breakout."
+                else:
+                    broker_color = "#8B949E"
+                    broker_action = "TIDAK ADA SIGNAL"
+                    broker_strategy = "Broker activity normal — tunggu konfirmasi"
+                    broker_rationale = "📊 No clear accumulation or distribution pattern."
+
+                rec = {
+                    "action": broker_action,
+                    "strategy": broker_strategy,
+                    "rationale": broker_rationale,
+                    "confidence": conf,
+                    "factors": 1,
+                }
+                rec_color = broker_color
+            else:
+                rec = {
+                    "action": "HOLD / TUNGGU",
+                    "strategy": "Data broker tidak tersedia",
+                    "rationale": "• Data broker summary tidak cukup untuk rekomendasi.",
+                    "confidence": 0,
+                    "factors": 0,
+                }
+                rec_color = "#8B949E"
+        else:
+            # Prepare market-specific context for non-IHSG
+            cot_data = None
+            onchain_data = None
+            if market_type == "forex" or market_type == "commodity":
+                cot_data = _get_cot_proxy(ticker)
+            if market_type == "crypto":
+                onchain_data = _get_onchain_proxy(ticker, st.session_state.snap.get("prices", {}))
+            rec = _get_single_recommendation(options, direction=row.get("direction", "LONG"), 
+                                              market_type=market_type, cot_data=cot_data, 
+                                              onchain_data=onchain_data, ticker=ticker)
+                    # Build context lines
         ctx_lines = []
         if row.get("entry_note"):
             ctx_lines.append(row["entry_note"])
@@ -1457,13 +1506,6 @@ def render_ticker_card_v4(row, expanded=False):
         ctx_html = ""
         if ctx_lines:
             ctx_html = '<div style="margin-bottom:6px;padding:4px 8px;background:#21262D;border-radius:4px;font-size:0.68rem;color:#8B949E;line-height:1.4;">' + "<br>".join(ctx_lines) + '</div>'
-
-        rec_color = {"BELI SPOT / AKUMULASI": "#3FB950", "AKUMULASI SPOT": "#3FB950", "BELI CALL / LONG SPOT": "#3FB950",
-                     "BELI SPOT + JUAL PUT": "#2EA043", "BELI SPOT": "#3FB950",
-                     "JUAL COVERED CALL": "#D29922", "JUAL PUT PROTEKTIF": "#F85149",
-                     "JUAL / REDUKSI": "#F85149", "HEDGE POSISI": "#F85149",
-                     "HOLD + JUAL PREMIUM": "#D29922", "WASPADA / TUNGGU": "#D29922",
-                     "HOLD / TUNGGU": "#8B949E", "HOLD": "#8B949E"}.get(rec["action"], "#58A6FF")
 
         # ── VISUAL RECOMMENDATION CARD ──
         rec_html = f'<div style="background:#161B22;border:1px solid {rec_color}40;border-radius:10px;padding:12px;margin:6px 0;">'
@@ -1488,7 +1530,7 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'<div>🛑 <b style="color:#E6EDF3;">Stop:</b> {ff(stop)}</div>'
         rec_html += f'</div>'
 
-        # Greeks / Options mini dashboard (if available)
+        # Greeks / Options mini dashboard (if available and not IHSG)
         if show_options and options.get("gamma_regime"):
             rec_html += f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:8px;padding:6px;background:#0D1117;border-radius:6px;">'
             # Gamma
@@ -1496,19 +1538,28 @@ def render_ticker_card_v4(row, expanded=False):
             rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Gamma</div><div style="font-size:0.7rem;color:{g_color};font-weight:700;">{options.get("gamma_regime","—")[:8]}</div></div>'
             # GEX
             gex_v = options.get("gex")
-            if gex_v is not None:
-                gex_c = "#3FB950" if float(gex_v) > 0 else "#F85149"
-                rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">GEX</div><div style="font-size:0.7rem;color:{gex_c};font-weight:700;">{float(gex_v):+.2f}</div></div>'
+            try:
+                gex_f = float(gex_v)
+                if math.isfinite(gex_f):
+                    gex_c = "#3FB950" if gex_f > 0 else "#F85149"
+                    rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">GEX</div><div style="font-size:0.7rem;color:{gex_c};font-weight:700;">{gex_f:+.2f}</div></div>'
+            except (TypeError, ValueError): pass
             # Vanna
             van_v = options.get("vanna")
-            if van_v is not None:
-                van_c = "#3FB950" if float(van_v) > 0 else "#F85149"
-                rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Vanna</div><div style="font-size:0.7rem;color:{van_c};font-weight:700;">{float(van_v):+.2f}</div></div>'
+            try:
+                van_f = float(van_v)
+                if math.isfinite(van_f):
+                    van_c = "#3FB950" if van_f > 0 else "#F85149"
+                    rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">Vanna</div><div style="font-size:0.7rem;color:{van_c};font-weight:700;">{van_f:+.2f}</div></div>'
+            except (TypeError, ValueError): pass
             # IV Rank
             iv_v = options.get("iv_rank")
-            if iv_v is not None:
-                iv_c = "#3FB950" if float(iv_v) < 40 else "#D29922" if float(iv_v) < 60 else "#F85149"
-                rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">IV Rank</div><div style="font-size:0.7rem;color:{iv_c};font-weight:700;">{float(iv_v):.0f}</div></div>'
+            try:
+                iv_f = float(iv_v)
+                if math.isfinite(iv_f):
+                    iv_c = "#3FB950" if iv_f < 40 else "#D29922" if iv_f < 60 else "#F85149"
+                    rec_html += f'<div style="text-align:center;"><div style="font-size:0.5rem;color:#8B949E;text-transform:uppercase;">IV Rank</div><div style="font-size:0.7rem;color:{iv_c};font-weight:700;">{iv_f:.0f}</div></div>'
+            except (TypeError, ValueError): pass
             rec_html += f'</div>'
 
         # Rationale with icons
@@ -1967,10 +2018,6 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
 
-    st.markdown("### 🚨 Crash Meter v3")
-    st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
-    st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
-
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
     if macro_nar.get("headline") or macro_nar.get("narrative"):
@@ -2023,8 +2070,8 @@ def page_dashboard():
 
     st.divider()
 
-    left, right = st.columns([1.1, 1])
-    with left:
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
         st.markdown("### 🌀 Boom-Bust Stage")
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
@@ -2034,6 +2081,7 @@ def page_dashboard():
         st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
         st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
 
+    with c2:
         st.markdown("### 🧠 Behavioral Macro (Yves)")
         behavioral = snap.get("behavioral_macro", {}) or {}
         yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
@@ -2041,7 +2089,6 @@ def page_dashboard():
         if isinstance(yves, dict):
             alert = yves.get("alert", "")
             level = yves.get("alert_level", "NONE")
-            # FIX: if NONE / no alerts, show AAII sentiment + casino behavior proxy
             if level == "NONE" and not alert:
                 bullish = behavioral.get("bullish", 30)
                 bearish = behavioral.get("bearish", 30)
@@ -2051,7 +2098,6 @@ def page_dashboard():
                     bull_pct = bullish / total * 100
                     bear_pct = bearish / total * 100
                     neut_pct = neutral / total * 100
-                    # Casino behavior proxy: extreme bullish = casino mode
                     casino_score = min(100, max(0, (bullish - 45) * 3))
                     cash_raise = min(50, max(0, casino_score * 0.4))
                     st.markdown(
@@ -2079,30 +2125,25 @@ def page_dashboard():
         else:
             st.caption("Behavioral macro unavailable")
 
-    with right:
-        st.markdown("### 🔮 Scenarios")
-        narrative = snap.get("narrative", {}) or {}
-        scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
-        if scenarios:
-            dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
-            for scen_name in ["bull", "base", "bear"]:
-                scen = scenarios.get(scen_name, {}) if isinstance(scenarios, dict) else {}
-                p = scen.get("probability", 0) if isinstance(scen, dict) else 0
-                color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
-                is_dom = " ★" if dom == scen_name else ""
-                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #21262D;">'
-                            f'<span style="font-size:0.78rem;color:#E6EDF3;">{scen_name.title()}{is_dom}</span>'
-                            f'<span style="font-size:0.82rem;font-weight:700;color:{color};">{p:.0%}</span></div>', unsafe_allow_html=True)
+    with c3:
+        st.markdown("### 🚨 Crash Meter v3")
+        st.markdown("<div style='font-size:0.6rem;color:#8B949E;margin-bottom:6px;'>Yield Curve + Credit + Valuasi · Tomhardi</div>", unsafe_allow_html=True)
+        st.markdown(_render_crash_meter_compact(snap), unsafe_allow_html=True)
 
-        st.markdown("### 🚧 Bottlenecks")
-        bottlenecks = ((snap.get("narrative", {}) or {}).get("active_bottlenecks", []) or []) if isinstance(snap.get("narrative"), dict) else []
-        if bottlenecks:
-            for b in bottlenecks[:3]:
-                if not isinstance(b, dict): continue
-                st.markdown(f'<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;font-size:0.78rem;">'
-                            f'<span style="color:#E6EDF3;">• {str(b.get("name","")).replace("_"," ").title()}</span>'
-                            f'<span style="color:#F85149;font-weight:600;">{len(b.get("beneficiaries",[]))} plays</span></div>', unsafe_allow_html=True)
-        else: st.caption("No active bottlenecks")
+    # Scenarios as small text line below
+    narrative = snap.get("narrative", {}) or {}
+    scenarios = (narrative.get("scenarios") or {}) if isinstance(narrative, dict) else {}
+    if scenarios:
+        dom = scenarios.get("dominant_scenario", "base") if isinstance(scenarios, dict) else "base"
+        scen_line = ""
+        for scen_name in ["bull", "base", "bear"]:
+            scen = scenarios.get(scen_name, {}) if isinstance(scenarios, dict) else {}
+            p = scen.get("probability", 0) if isinstance(scen, dict) else 0
+            color = "#3FB950" if scen_name == "bull" else "#D29922" if scen_name == "base" else "#F85149"
+            is_dom = "★" if dom == scen_name else ""
+            scen_line += f'<span style="color:{color};font-weight:700;">{scen_name.title()}{is_dom} {p:.0%}</span><span style="color:#484F58;margin:0 6px;">|</span>'
+        scen_line = scen_line.rstrip('<span style="color:#484F58;margin:0 6px;">|</span>')
+        st.markdown(f'<div style="font-size:0.65rem;color:#8B949E;text-align:center;margin:4px 0;">🔮 {scen_line}</div>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -2115,16 +2156,6 @@ def page_dashboard():
         pulse_html += _asset_pulse_box_h(label, ret, t)
     pulse_html += '</div>'
     st.markdown(pulse_html, unsafe_allow_html=True)
-
-    st.divider()
-
-    st.divider()
-
-    st.markdown("### 🚨 Crash Meter v3")
-    st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Visualisasi risk sistemik berdasarkan Yield Curve, Credit Spread, dan Valuasi (Tomhardi Methodology)</div>", unsafe_allow_html=True)
-    st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
-
-    st.divider()
 
     with st.expander("🔬 Deep Technical", expanded=False):
         c1, c2 = st.columns(2)
