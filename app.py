@@ -1340,6 +1340,7 @@ def render_ticker_card_v4(row, expanded=False):
     mm_pos = row.get("mm_positioning", "")
     options = row.get("options", {})
     market_type = row.get("market_type", "us_equity")
+    show_options = market_type != "ihsg"
     prices_series = None
     snap_local = st.session_state.snap
     if snap_local is not None:
@@ -1788,7 +1789,20 @@ def _get_cot_proxy(ticker):
 # CRASH METER v3 VISUALIZATION (Tomhardi Methodology)
 # ═══════════════════════════════════════════════════════════════════
 def _render_crash_meter(snap):
-    """Visual Crash Meter v3 based on Tomhardi methodology."""
+    """Visual Crash Meter v3 based on Tomhardi methodology.
+
+    UPDATE SCHEDULE:
+    - A1 (T10Y-3M): Daily (FRED H.15, updated ~4:30 PM ET)
+    - A2 (Inversion Window): Event-driven (when inversion ends)
+    - B1/B2 (HY OAS): Daily (market close)
+    - C (Shiller CAPE): Monthly (1st week of each month)
+
+    TIMELINE TO CRASH:
+    - Score 2 (Waspada): No fixed timeline. Could stay here for months/years.
+      Watch for: A2 window closing (Jun 2026), CAPE crossing 44.2 (dotcom peak)
+    - Score 3 (Exit): Typically 3-12 months before peak if triggered by debt
+    - Score 4 (Critical): Days to weeks before major drawdown
+    """
     from datetime import datetime
 
     fred = snap.get("fred_series", {}) or {}
@@ -1819,8 +1833,9 @@ def _render_crash_meter(snap):
     now = datetime.now()
     last_inv = datetime(2024, 12, 1)
     months_since = (now.year - last_inv.year) * 12 + (now.month - last_inv.month)
+    months_left = max(0, 18 - months_since)
     a2_score = 1 if months_since < 18 else 0
-    a2_status = "Dalam Window ({}bln)".format(months_since) if a2_score == 1 else "Lewat Window"
+    a2_status = "Dalam Window ({}bln sisa)".format(months_left) if a2_score == 1 else "Lewat Window"
     a2_color = "#D29922" if a2_score == 1 else "#3FB950"
 
     # B1 & B2: HY OAS
@@ -1851,27 +1866,39 @@ def _render_crash_meter(snap):
 
     total = a1_score + a2_score + b1_score + b2_score + c_score
 
+    # Timeline estimate
     if total <= 1:
         status = "AMAN"; status_color = "#3FB950"; status_bg = "#3FB95015"; emoji = "🟢"
         advice = "Market normal. Tetap waspada tapi tidak perlu panic."
+        timeline = "No crash signal. Monitor monthly."
     elif total == 2:
         status = "WASPADA"; status_color = "#D29922"; status_bg = "#D2992215"; emoji = "🟡"
         advice = "Signal mulai menyala. Review portfolio, siapkan cash buffer."
+        timeline = "A2 window closes Jun 2026 (~{} bln). CAPE 41.7 vs peak 44.2.".format(months_left)
     elif total == 3:
         status = "EXIT WINDOW"; status_color = "#F85149"; status_bg = "#F8514915"; emoji = "🟠"
         advice = "COUNTDOWN DIMULAI. Profit-taking dan raise cash. Window sempit!"
+        timeline = "Historically 3-12 months to peak. Act within weeks."
     else:
         status = "CRITICAL"; status_color = "#F85149"; status_bg = "#F8514920"; emoji = "🔴"
         advice = "Sistemik risk tinggi. Defensive positioning. Cash is king."
+        timeline = "Days to weeks before major drawdown. Exit NOW."
 
     # Build HTML
     html = '<div style="background:#161B22;border:1px solid ' + status_color + '40;border-radius:12px;padding:14px;margin:8px 0;">'
 
     # Header with big score
-    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">'
+    html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'
     html += '<div style="width:56px;height:56px;border-radius:50%;background:' + status_bg + ';border:2px solid ' + status_color + ';display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:' + status_color + ';">' + str(total) + '<span style="font-size:0.6rem;">/4</span></div>'
     html += '<div><div style="font-size:1.1rem;font-weight:700;color:' + status_color + ';letter-spacing:-0.5px;">' + emoji + ' ' + status + '</div>'
     html += '<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">' + advice + '</div></div></div>'
+
+    # Timeline box
+    html += '<div style="background:' + status_bg + ';border-left:3px solid ' + status_color + ';border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
+    html += '<div style="font-size:0.6rem;color:' + status_color + ';text-transform:uppercase;font-weight:600;margin-bottom:3px;">⏱️ Timeline Estimate</div>'
+    html += '<div style="font-size:0.72rem;color:#E6EDF3;">' + timeline + '</div>'
+    html += '<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">Update: A1/A2/B daily · CAPE monthly · Next check: tomorrow</div>'
+    html += '</div>'
 
     # Gauge bar
     html += '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-bottom:3px;text-transform:uppercase;font-weight:600;"><span>0 Aman</span><span>1</span><span>2 Waspada</span><span>3 Exit</span><span>4 Critical</span></div>'
@@ -1885,7 +1912,7 @@ def _render_crash_meter(snap):
     html += '<div style="position:relative;height:4px;margin-top:-7px;"><div style="position:absolute;left:' + str(marker_pct) + '%;transform:translateX(-50%);width:10px;height:10px;background:' + status_color + ';border-radius:50%;border:2px solid #E6EDF3;box-shadow:0 0 6px ' + status_color + '80;"></div></div>'
     html += '</div>'
 
-    # Parameters
+    # Parameters grid
     html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
@@ -1893,25 +1920,25 @@ def _render_crash_meter(snap):
     html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📊 A1 · T10Y-3M</span>'
     html += '<span style="font-size:0.65rem;color:' + a1_color + ';font-weight:700;">' + a1_status + '</span></div>'
     html += '<div style="font-size:0.7rem;color:#E6EDF3;font-weight:700;">' + str(round(t10y3m, 2)) + '%</div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: >0.5% = skor 0</div></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: >0.5% = skor 0 · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
     html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">⏱️ A2 · 18Bln Window</span>'
     html += '<span style="font-size:0.65rem;color:' + a2_color + ';font-weight:700;">' + a2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Last inversion: Des 2024 (corrected)</div></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Last inversion: Des 2024 · Closes Jun 2026</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
     html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B1 · HY Range</span>'
     html += '<span style="font-size:0.65rem;color:' + b1_color + ';font-weight:700;">' + b1_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <150bps in 6mo</div></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <150bps in 6mo · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
     html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B2 · HY Abs</span>'
     html += '<span style="font-size:0.65rem;color:' + b2_color + ';font-weight:700;">' + b2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <550bps = skor 0</div></div>'
+    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <550bps = skor 0 · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;grid-column:1 / -1;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
@@ -1929,17 +1956,20 @@ def _render_crash_meter(snap):
 
     # Footer note
     html += '<div style="font-size:0.6rem;color:#484F58;text-align:center;border-top:1px solid #21262D;padding-top:6px;">'
-    html += 'Crash Meter v3 · Tomhardi Methodology · A1+A2+B1+B2+C = ' + str(total) + '/4'
+    html += 'Crash Meter v3 · Tomhardi Methodology · A1+A2+B1+B2+C = ' + str(total) + '/4 · Updated daily (CAPE monthly)'
     html += '</div>'
 
     html += '</div>'
 
     return html
 
-
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
+
+    st.markdown("### 🚨 Crash Meter v3")
+    st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
+    st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
