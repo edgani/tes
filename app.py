@@ -1,4 +1,4 @@
-"""app.py - MacroRegime Pro v32.2 FIX
+"""app.py - MacroRegime Pro v32.3
 Major rewrite:
 - Dashboard: regime + narrative + metrics + boom-bust + behavioral + allocation + scenarios + bottlenecks + asset pulse + deep technical
 - Alpha Center: bottleneck + front-run + quad rotation candidates
@@ -16,7 +16,7 @@ import json, os
 from datetime import datetime
 
 logger = __import__("logging").getLogger(__name__)
-st.set_page_config(page_title="MacroRegime Pro v32", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MacroRegime Pro v32.3", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
 # CSS
@@ -1721,7 +1721,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v32.2 FIX | Deep Options")
+    st.caption("v32.3 | Deep Options")
     st.divider()
     page = st.radio("Navigation", [
         "🏠 Dashboard", "⚡ Alpha Center", "🇺🇸 US Stocks", "💱 Forex",
@@ -2830,4 +2830,4 @@ elif page == "📖 Themes": page_themes()
 
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v32.2 FIX · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
+st.caption(f"MacroRegime Pro v32.3 · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators{flip_note}")
