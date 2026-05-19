@@ -1678,9 +1678,9 @@ def _get_ticker_behavioral_score(ticker, prices, options, snap):
         r5d = float(s_clean.iloc[-1] / s_clean.iloc[-6] - 1) if len(s_clean) >= 6 else 0
         r20d = float(s_clean.iloc[-1] / s_clean.iloc[-21] - 1) if len(s_clean) >= 21 else r5d
 
-        pc_ratio = float(options.get("pc_ratio", 1.0)) if options else 1.0
-        iv_rank = float(options.get("iv_rank", 50)) if options else 50
-        skew = float(options.get("skew_30d", 0)) if options else 0
+        pc_ratio = (_safe_float(options.get("pc_ratio")) or 1.0) if options else 1.0
+        iv_rank = (_safe_float(options.get("iv_rank")) or 50) if options else 50
+        skew = (_safe_float(options.get("skew_30d")) or 0) if options else 0
 
         casino = 0
         if r5d > 0.15 and r20d > 0.30: casino += 40
@@ -2073,9 +2073,9 @@ def render_ticker_card_v4(row, expanded=False):
 
         # ── P&L Decomposition Panel (VolSignals-style) ──
         if show_options and options.get("gex") is not None:
-            gex_v = float(options.get("gex", 0) or 0)
-            vanna_v = float(options.get("vanna", 0) or 0)
-            iv_r = float(options.get("iv_rank", 50) or 50)
+            gex_v = _safe_float(options.get("gex")) or 0
+            vanna_v = _safe_float(options.get("vanna")) or 0
+            iv_r = _safe_float(options.get("iv_rank")) or 50
             # Proxy P&L decomposition
             vrp_term = max(-5.0, min(5.0, (50 - iv_r) * 0.08))  # IV rank deviation → VRP edge
             vanna_flow = max(-3.0, min(3.0, vanna_v * 2.5))      # Vanna → directional vol flow
