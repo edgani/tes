@@ -1306,78 +1306,77 @@ def render_ticker_card_v4(row, expanded=False):
         basis_html += '</div>'
         st.markdown(basis_html, unsafe_allow_html=True)
 
-        note_html = ""
-        if row.get("entry_note"):
-            note_html = f'<div style="margin-bottom:6px;padding:4px 8px;background:#D2992215;border-left:2px solid #D29922;border-radius:4px;font-size:0.7rem;color:#D29922;">{row["entry_note"]}</div>'
-        # Confluence detail box
+        # ── Build comprehensive single recommendation ──
         confluence = row.get("confluence", {})
-        confluence_html = ""
+        rec = _get_option_recommendation(options, direction=row.get("direction", "LONG"))
+
+        # Build context lines
+        ctx_lines = []
+        if row.get("entry_note"):
+            ctx_lines.append(row["entry_note"])
         if confluence.get("entry_cluster") and confluence["entry_cluster"].get("count", 0) >= 2:
             levels = confluence.get("entry", [])
             levels_str = " · ".join([f"{name} {ff(val)}" for name, val in levels if val is not None])
             if levels_str:
-                confluence_html = (
-                    f'<div style="margin-bottom:6px;padding:6px 10px;background:#3FB95012;border:1px solid #3FB95040;border-radius:6px;">'
-                    f'<div style="font-size:0.65rem;color:#3FB950;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
-                    f'🔥 Entry Confluence x{confluence["entry_cluster"]["count"]}</div>'
-                    f'<div style="font-size:0.7rem;color:#E6EDF3;">{levels_str}</div>'
-                    f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
-                    f'Multiple support levels clustered = high conviction zone. Ideal for accumulation.</div></div>'
-                )
+                ctx_lines.append(f"🔥 Entry Confluence x{confluence['entry_cluster']['count']}: {levels_str}")
         if confluence.get("target_cluster") and confluence["target_cluster"].get("count", 0) >= 2:
             t_levels = confluence.get("target", [])
             t_str = " · ".join([f"{name} {ff(val)}" for name, val in t_levels if val is not None])
             if t_str:
-                confluence_html += (
-                    f'<div style="margin-bottom:6px;padding:6px 10px;background:#F8514912;border:1px solid #F8514940;border-radius:6px;">'
-                    f'<div style="font-size:0.65rem;color:#F85149;text-transform:uppercase;font-weight:600;margin-bottom:3px;">'
-                    f'🎯 Target Confluence x{confluence["target_cluster"]["count"]}</div>'
-                    f'<div style="font-size:0.7rem;color:#E6EDF3;">{t_str}</div>'
-                    f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">'
-                    f'Multiple resistance levels clustered = strong profit-taking zone.</div></div>'
-                )
+                ctx_lines.append(f"🎯 Target Confluence x{confluence['target_cluster']['count']}: {t_str}")
+
+        ctx_html = ""
+        if ctx_lines:
+            ctx_html = '<div style="margin-bottom:6px;padding:4px 8px;background:#21262D;border-radius:4px;font-size:0.68rem;color:#8B949E;line-height:1.4;">' + "<br>".join(ctx_lines) + '</div>'
+
+        rec_color = {"BELI SPOT / AKUMULASI": "#3FB950", "AKUMULASI SPOT": "#3FB950", "BELI CALL / LONG SPOT": "#3FB950",
+                     "BELI SPOT + JUAL PUT": "#2EA043", "BELI SPOT": "#3FB950",
+                     "JUAL COVERED CALL": "#D29922", "JUAL PUT PROTEKTIF": "#F85149",
+                     "HOLD / TUNGGU": "#8B949E", "HOLD": "#8B949E"}.get(rec["action"], "#58A6FF")
+
         st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-            f'{confluence_html}{note_html}'
-            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;">'
+            f'<div style="background:#161B22;border:1px solid {rec_color}30;border-radius:8px;padding:10px 12px;margin:6px 0;">'
+            f'{ctx_html}'
+            f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:0.74rem;color:#8B949E;margin-bottom:8px;">'
             f'<div>📍 <b>Entry:</b> {ff(entry)}</div><div>🎯 <b>Target 1:</b> {ff(t1)}</div>'
             f'<div>🎯 <b>Target 2:</b> {ff(t2)}</div><div>🛑 <b>Stop Loss:</b> {ff(stop)}</div>'
             f'</div>'
-            f'<div style="margin-top:6px;padding-top:6px;border-top:1px solid #30363D;font-size:0.74rem;color:#E6EDF3;">'
-            f'💡 <b>Rekomendasi:</b> {row.get("recommendation", row.get("thesis", "Tunggu setup dekat entry level dengan RR minimal 2x."))}'
+            f'<div style="padding-top:8px;border-top:1px solid #30363D;">'
+            f'<div style="font-size:0.65rem;color:{rec_color};text-transform:uppercase;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">🎯 Rekomendasi</div>'
+            f'<div style="font-size:0.9rem;color:#E6EDF3;font-weight:700;margin-bottom:3px;">{rec["action"]}</div>'
+            f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:4px;">{rec["strategy"]}</div>'
+            f'<div style="font-size:0.7rem;color:{rec_color};line-height:1.4;">{rec["rationale"]}</div>'
             f'</div></div>',
             unsafe_allow_html=True
         )
 
         # ── Ticker-Specific Boom-Bust Score (Soros Reflexivity) ──
-        if market_type != "ihsg":
-            bbs = _get_ticker_boombust_score(ticker, st.session_state.snap.get("prices", {}), st.session_state.snap)
-            if bbs.get("score", 0) > 0:
-                bb_color = "#F85149" if bbs["stage"] == "EUPHORIA" else "#D29922" if bbs["stage"] == "ACCELERATION" else "#3FB950" if bbs["stage"] in ("EARLY", "BASE") else "#8B949E"
-                st.markdown(
-                    f'<div style="background:#161B22;border:1px solid {bb_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-                    f'<span style="font-size:0.65rem;color:{bb_color};text-transform:uppercase;font-weight:600;">🌀 Boom-Bust Score</span>'
-                    f'<span style="font-size:0.85rem;color:{bb_color};font-weight:700;">{bbs["score"]}/10 · {bbs["stage"]}</span></div>'
-                    f'<div style="font-size:0.7rem;color:#8B949E;">{bbs["signal"]}</div>'
-                    f'{_gauge_html(bbs["score"], max_val=10, color=bb_color, height=6, label_left="0", label_right="10")}'
-                    f'</div>', unsafe_allow_html=True
-                )
+        bbs = _get_ticker_boombust_score(ticker, st.session_state.snap.get("prices", {}), st.session_state.snap)
+        if bbs.get("score", 0) > 0:
+            bb_color = "#F85149" if bbs["stage"] == "EUPHORIA" else "#D29922" if bbs["stage"] == "ACCELERATION" else "#3FB950" if bbs["stage"] in ("EARLY", "BASE") else "#8B949E"
+            st.markdown(
+                f'<div style="background:#161B22;border:1px solid {bb_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+                f'<span style="font-size:0.65rem;color:{bb_color};text-transform:uppercase;font-weight:600;">🌀 Boom-Bust Score</span>'
+                f'<span style="font-size:0.85rem;color:{bb_color};font-weight:700;">{bbs["score"]}/10 · {bbs["stage"]}</span></div>'
+                f'<div style="font-size:0.7rem;color:#8B949E;">{bbs["signal"]}</div>'
+                f'{_gauge_html(bbs["score"], max_val=10, color=bb_color, height=6, label_left="0", label_right="10")}'
+                f'</div>', unsafe_allow_html=True
+            )
 
         # ── Ticker-Specific Behavioral / Yves Proxy ──
-        if market_type != "ihsg":
-            beh = _get_ticker_behavioral_score(ticker, st.session_state.snap.get("prices", {}), options, st.session_state.snap)
-            if beh.get("casino_score", 0) > 0:
-                beh_color = "#F85149" if beh["casino_score"] > 60 else "#D29922" if beh["casino_score"] > 40 else "#3FB950"
-                st.markdown(
-                    f'<div style="background:#161B22;border:1px solid {beh_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
-                    f'<span style="font-size:0.65rem;color:{beh_color};text-transform:uppercase;font-weight:600;">🧠 Behavioral Proxy</span>'
-                    f'<span style="font-size:0.85rem;color:{beh_color};font-weight:700;">{beh["casino_score"]}%</span></div>'
-                    f'<div style="font-size:0.7rem;color:#8B949E;">{beh["signal"]}</div>'
-                    f'<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">PC: {beh.get("pc_ratio","—")} · IV Rank: {beh.get("iv_rank","—")}</div>'
-                    f'</div>', unsafe_allow_html=True
-                )
+        beh = _get_ticker_behavioral_score(ticker, st.session_state.snap.get("prices", {}), options, st.session_state.snap)
+        if beh.get("casino_score", 0) > 0:
+            beh_color = "#F85149" if beh["casino_score"] > 60 else "#D29922" if beh["casino_score"] > 40 else "#3FB950"
+            st.markdown(
+                f'<div style="background:#161B22;border:1px solid {beh_color}30;border-radius:8px;padding:8px 12px;margin:4px 0;">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+                f'<span style="font-size:0.65rem;color:{beh_color};text-transform:uppercase;font-weight:600;">🧠 Behavioral Proxy</span>'
+                f'<span style="font-size:0.85rem;color:{beh_color};font-weight:700;">{beh["casino_score"]}%</span></div>'
+                f'<div style="font-size:0.7rem;color:#8B949E;">{beh["signal"]}</div>'
+                f'<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">PC: {beh.get("pc_ratio","—")} · IV Rank: {beh.get("iv_rank","—")}</div>'
+                f'</div>', unsafe_allow_html=True
+            )
 
         # MM Positioning Box
         if mm_pos and mm_pos != "UNKNOWN":
@@ -2053,7 +2052,6 @@ def page_dashboard():
 # ═══════════════════════════════════════════════════════════════════
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
-    render_regime_compass(snap)
 
     summary = snap.get("summary", {}) or {}
     k1, k2, k3, k4 = st.columns(4)
@@ -2370,21 +2368,6 @@ def page_forex():
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
         st.divider()
-        st.markdown("### 💱 DXY Correlation (20D)")
-        pos = dxy_corr.get("strongest_positive_corr", [])[:5]
-        neg = dxy_corr.get("strongest_negative_corr", [])[:5]
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("<div style='font-size:0.65rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Positive</div>", unsafe_allow_html=True)
-            for t, data in pos:
-                if isinstance(data, dict):
-                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#3FB950;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
-        with c2:
-            st.markdown("<div style='font-size:0.65rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Negative</div>", unsafe_allow_html=True)
-            for t, data in neg:
-                if isinstance(data, dict):
-                    st.markdown(f"<div style='font-size:0.78rem; color:#E6EDF3;'>• {t}: <span style='color:#F85149;font-weight:700;'>{data.get('correlation',0):+.2f}</span></div>", unsafe_allow_html=True)
-    st.divider()
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap)
     longs, shorts = split_long_short(rows)
