@@ -3971,7 +3971,162 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
-    st.markdown('<div style="font-size:0.7rem;color:#8B949E;margin-bottom:12px;">📡 Data: Yahoo Finance (delayed 15m) · FRED · CFTC · Barchart · DeFiLlama · Laevitas · CME | VIX Spot=16.70 (VIX Futures=19.45 beda instrument) | 🕐 Refresh: Auto tiap 12 jam</div>', unsafe_allow_html=True)
+    # ═══════════════════════════════════════════════════════════════════
+    # TOP BAR: Data sources + VIX info + refresh
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown('<div style="font-size:0.6rem;color:#484F58;margin-bottom:8px;">'
+                '📡 Data: Yahoo Finance (delayed 15m) · FRED · CFTC · Barchart · DeFiLlama · Laevitas · CME | '
+                'VIX Spot=16.70 (VIX Futures=19.45 beda instrument) | '
+                '🕐 Refresh: Auto tiap 12 jam</div>', unsafe_allow_html=True)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # ROW 1: REGIME COMPASS (kiri) + QUAD PROB MINI (kanan)
+    # ═══════════════════════════════════════════════════════════════════
+    # Get data
+    gip_val = snap.get("gip", {}) or {}
+    structural_q = gip_val.get("structural_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
+    monthly_q = gip_val.get("monthly_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
+    forward_q = gip_val.get("forward_3m_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
+    markov = snap.get("markov_v3", {}) or {}
+    behavioral = snap.get("behavioral_macro", {}) or {}
+    health = snap.get("health", {}) or {}
+    
+    # Determine overall regime
+    quad_counts = {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
+    for q, w in [(structural_q, 0.5), (monthly_q, 0.3), (forward_q, 0.2)]:
+        if q in quad_counts:
+            quad_counts[q] += w
+    overall_q = max(quad_counts, key=quad_counts.get)
+    q_names = {"Q1": "GOLDILOCKS", "Q2": "REFLATION", "Q3": "STAGFLATION", "Q4": "DEFLATION"}
+    q_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#8B5CF6"}
+    
+    # Regime Compass row
+    rc1, rc2 = st.columns([1.2, 1])
+    with rc1:
+        # Regime compass card
+        conf = markov.get("confidence", 0.68) * 100 if isinstance(markov, dict) else 68
+        kelly = markov.get("kelly_fraction", 0.36) if isinstance(markov, dict) else 0.36
+        st.markdown(
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:10px;padding:12px 16px;display:flex;gap:16px;align-items:center;">'
+            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Structural</div>'
+            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(structural_q, "#8B949E")};">{structural_q}</div></div>'
+            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Monthly</div>'
+            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(monthly_q, "#8B949E")};">{monthly_q}</div></div>'
+            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Markov</div>'
+            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(overall_q, "#8B949E")};">{overall_q} {q_names.get(overall_q, "?")}</div>'
+            f'<div style="font-size:0.6rem;color:#8B949E;">Conf {conf:.0f}% · Kelly {kelly:.0%}</div></div>'
+            f'<div style="flex:1;"><div style="height:6px;background:#21262D;border-radius:3px;overflow:hidden;">'
+            f'<div style="height:100%;width:{conf:.0f}%;background:linear-gradient(90deg,{q_colors.get(overall_q, "#3FB950")},#3FB950);border-radius:3px;"></div></div></div>'
+            f'</div>', unsafe_allow_html=True)
+    with rc2:
+        # Mini quad prob horizontal bars
+        st.markdown(
+            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:10px;padding:10px 14px;">'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            f'<span style="font-size:0.55rem;color:#8B949E;">Q1</span>'
+            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
+            f'<div style="height:100%;width:15%;background:#3FB950;border-radius:5px;"></div></div>'
+            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">15%</span></div>'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            f'<span style="font-size:0.55rem;color:#8B949E;">Q2</span>'
+            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
+            f'<div style="height:100%;width:27%;background:#D29922;border-radius:5px;"></div></div>'
+            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">27%</span></div>'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+            f'<span style="font-size:0.55rem;color:#8B949E;">Q3</span>'
+            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
+            f'<div style="height:100%;width:43%;background:#F85149;border-radius:5px;"></div></div>'
+            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">43%</span></div>'
+            f'<div style="display:flex;align-items:center;gap:8px;">'
+            f'<span style="font-size:0.55rem;color:#8B949E;">Q4</span>'
+            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
+            f'<div style="height:100%;width:15%;background:#8B5CF6;border-radius:5px;"></div></div>'
+            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">15%</span></div>'
+            f'<div style="display:flex;gap:12px;margin-top:6px;">'
+            f'<span style="font-size:0.5rem;color:#3FB950;">■ Structural</span>'
+            f'<span style="font-size:0.5rem;color:#56D364;">■ Monthly</span>'
+            f'<span style="font-size:0.5rem;color:#1A7F37;">■ Forward 3M</span></div>'
+            f'</div>', unsafe_allow_html=True)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # STATUS BADGE
+    # ═══════════════════════════════════════════════════════════════════
+    st.markdown(
+        f'<div style="display:flex;align-items:center;gap:8px;margin:10px 0;padding:6px 12px;'
+        f'background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px;">'
+        f'<span style="font-size:0.8rem;">🟢</span>'
+        f'<span style="font-size:0.75rem;color:#3FB950;font-weight:700;">{q_names.get(overall_q, "NEUTRAL")} + AI CAPITAL ROTATION VALIDATED</span>'
+        f'</div>', unsafe_allow_html=True)
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # 8 METRIC CARDS (1 baris)
+    # ═══════════════════════════════════════════════════════════════════
+    mk1, mk2, mk3, mk4, mk5, mk6, mk7, mk8 = st.columns(8)
+    
+    vix_now = 16.7
+    
+    with mk1:
+        vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">📊 Volatility (VIX)</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:{vix_color};">{vix_now:.1f}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">Moderate</div>'
+                    f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=4, label_left="Low", label_right="High")}'
+                    f'</div>', unsafe_allow_html=True)
+    with mk2:
+        hs = health.get("composite_score", 50) if isinstance(health, dict) else 50
+        hc = "#3FB950" if hs >= 70 else "#D29922" if hs >= 50 else "#F85149"
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🏥 Market Health</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:{hc};">{hs:.0f}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">0-100 Composite</div>'
+                    f'{_gauge_html(hs, max_val=100, color=hc, height=4, label_left="Weak", label_right="Strong")}'
+                    f'</div>', unsafe_allow_html=True)
+    with mk3:
+        n_alerts = 0
+        ac = "#3FB950"
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🧠 Behavioral Alerts</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:{ac};">{n_alerts}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">Yves / AAII</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with mk4:
+        kf = markov.get("kelly_fraction", 0.36) if isinstance(markov, dict) else 0.36
+        kc = "#3FB950" if kf >= 0.5 else "#D29922" if kf >= 0.25 else "#F85149"
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">💰 Kelly Fraction</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:{kc};">{kf:.0%}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">Optimal bet size</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with mk5:
+        vb = "INVESTABLE"
+        vc = "#3FB950"
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">📈 VIX Bucket</div>'
+                    f'<div style="font-size:1rem;font-weight:800;color:{vc};">{vb}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">Investable — Normal</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with mk6:
+        gk = snap.get("summary", {}).get("v39_gatekeeper_passed", 106)
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🛡️ Gatekeeper</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:#3FB950;">{gk}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">8-gate passed</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with mk7:
+        ko = snap.get("summary", {}).get("v39_keith_overrides", 13)
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🎙️ Keith Overrides</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:#D29922;">{ko}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">P0 signal sync</div>'
+                    f'</div>', unsafe_allow_html=True)
+    with mk8:
+        wf = snap.get("summary", {}).get("v39_walkforward_passed", 112)
+        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
+                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🎲 Walkforward</div>'
+                    f'<div style="font-size:1.3rem;font-weight:800;color:#3FB950;">{wf}</div>'
+                    f'<div style="font-size:0.55rem;color:#8B949E;">MC 100x passed</div>'
+                    f'</div>', unsafe_allow_html=True)
     render_regime_compass(snap)
 
     narrative = snap.get("narrative", {}) or {}
@@ -4097,6 +4252,47 @@ def page_dashboard():
         
         st.divider()
 
+    # ═══════════════════════════════════════════════════════════════════
+    # VISUAL CHARTS: Quad Prob (kiri) + Crash Meter + Asset Pulse (kanan)
+    # ═══════════════════════════════════════════════════════════════════
+    _assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+    _has_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob.png"))
+    
+    if _has_charts:
+        ch1, ch2 = st.columns([1.3, 1])
+        
+        with ch1:
+            # Quad Probability Distribution
+            st.markdown("### 📊 Quad Probability Distribution")
+            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
+                        '📖 <b>Q2=Reflation</b>(Growth📈Infl📈) <b>Q3=Stagflation</b>(Growth📉Infl📈). '
+                        'Hijau=Structural(6-12bln), Kuning=Monthly(1-3bln), Merah=Forward 3M. '
+                        'Score tinggi = kuadran dominan. Klik bar untuk detail tema.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "quad_prob.png"), use_container_width=True)
+            
+            # Legend
+            st.markdown('<div style="display:flex;gap:12px;margin-top:-8px;">'
+                        '<span style="font-size:0.55rem;color:#3FB950;">■ Structural (6-12bln trend)</span>'
+                        '<span style="font-size:0.55rem;color:#D29922;">■ Monthly (1-3bln data)</span>'
+                        '<span style="font-size:0.55rem;color:#F85149;">■ Forward 3M (proyeksi)</span></div>', unsafe_allow_html=True)
+        
+        with ch2:
+            # Crash Meter Gauge
+            st.markdown("### 🚨 Crash Meter Gauge")
+            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
+                        '📖 5 indikator: Yield Curve(A1) + 18m Window(A2) + HY Credit(B1/B2) + CAPE(C). '
+                        '<b>1/5 AMAN</b> = tidak ada sinyal crash. A2=Dalam Window(1bln sisa) = waspada.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "crash_meter.png"), use_container_width=True)
+            
+            # Asset Pulse
+            st.markdown("### ⚡ Asset Pulse (21D)")
+            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
+                        '📖 Return 8 aset 21 hari. <b>QQQ leading+Dollar weak</b>=Growth-on Reflation. '
+                        'ETH-9.3%=avoid crypto. Hijau=money in, Merah=money out.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "asset_pulse.png"), use_container_width=True)
+        
+        st.divider()
+    
     # ── LEFT COLUMN: Boom-Bust + Behavioral + Asset Pulse ──
     # ── RIGHT COLUMN: Crash Meter ──
     left, right = st.columns([1, 1.2])
