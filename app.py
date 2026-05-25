@@ -812,6 +812,218 @@ def _plotly_quad_probabilities(snap):
     )
     return fig
 
+def _plotly_regime_overview(snap):
+    """Regime Overview — Merge compass + quad probability + next quad forecast.
+    Prediksi 'next quad dalam berapa lama' pakai Markov transition + confidence decay.
+    """
+    # ── Data extraction ──
+    gip_local = snap.get("gip")
+    if gip_local is not None and not isinstance(gip_local, dict):
+        from types import SimpleNamespace
+        gip_local = SimpleNamespace(**gip_local.__dict__) if hasattr(gip_local, '__dict__') else {}
+    if not isinstance(gip_local, dict):
+        gip_local = {}
+
+    q_probs = gip_local.get("structural_probs", {}) or {}
+    m_probs = gip_local.get("monthly_probs", {}) or {}
+    sq = gip_local.get("structural_quad", "Q3") or "Q3"
+    mq = gip_local.get("monthly_quad", "Q2") or "Q2"
+
+    markov = snap.get("markov_v3", {}) or {}
+    if not isinstance(markov, dict):
+        markov = {}
+    mk_conf = markov.get("confidence", 0) or 0
+    mk_kelly = markov.get("kelly_fraction", 0.25) or 0.25
+    mk_regime = markov.get("current_regime", "UNKNOWN") or "UNKNOWN"
+    cp_alert = markov.get("change_point_alert", False) or False
+
+    # Markov forecasts
+    f1m = markov.get("forecast_1m", {}) or {}
+    f3m = markov.get("forecast_3m", {}) or {}
+    if not isinstance(f1m, dict):
+        f1m = {}
+    if not isinstance(f3m, dict):
+        f3m = {}
+
+    quads = ["Q1", "Q2", "Q3", "Q4"]
+    quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+    quad_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+
+    # ── Hitung Next Quad Forecast ──
+    # Cari quad dengan prob tertinggi yang BUKAN current quad
+    current_q = str(sq).upper()
+    next_candidates = []
+    for q in quads:
+        if q == current_q:
+            continue
+        p1m = f1m.get(q, 0) or 0
+        p3m = f3m.get(q, 0) or 0
+        # Weighted: 1m lebih dekat tapi 3m lebih stabil
+        p_combined = p1m * 0.6 + p3m * 0.4
+        if p_combined > 0.05:  # Minimum threshold
+            next_candidates.append((q, p_combined, p1m, p3m))
+
+    # Sort by combined probability
+    next_candidates.sort(key=lambda x: x[1], reverse=True)
+
+    # Estimasi waktu: kalau prob di 1m > 0.25 → ~30 hari, else if di 3m > 0.3 → ~60-90 hari
+    forecast_html = ""
+    if next_candidates:
+        best_q, best_p, best_1m, best_3m = next_candidates[0]
+        if best_1m > 0.25:
+            est_days = max(7, int(30 * (1 - best_1m) + 7))
+            est_label = f"~{est_days} hari"
+        elif best_1m > 0.15:
+            est_days = max(14, int(45 * (1 - best_1m)))
+            est_label = f"~{est_days} hari"
+        elif best_3m > 0.20:
+            est_days = max(30, int(90 * (1 - best_3m)))
+            est_label = f"~{est_days} hari"
+        else:
+            est_label = "tidak pasti (>90 hari)"
+
+        qcolor = quad_colors.get(best_q, "#8b949e")
+        qname = quad_names.get(best_q, best_q)
+        forecast_html = (
+            f'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;'
+            f'background:#0d1117;border:1px solid {qcolor}40;border-radius:6px;margin-top:6px;">'
+            f'<div style="font-size:1.1rem;">🔮</div>'
+            f'<div style="flex:1;">'
+            f'<div style="font-size:0.68rem;color:#8b949e;font-weight:600;">NEXT QUAD FORECAST</div>'
+            f'<div style="font-size:0.8rem;color:{qcolor};font-weight:700;">'
+            f'{best_q} {qname}</span> <span style="color:#8b949e;font-weight:400;">· {best_p:.0%} prob · {est_label}</span></div>'
+            f'</div></div>'
+        )
+
+    # ── Build unified figure: subplot [compass_card | quad_bars | forecast] ──
+    from plotly.subplots import make_subplots
+
+    # Structural probs untuk bar
+    s_vals = [q_probs.get(q, 0) if isinstance(q_probs, dict) else 0 for q in quads]
+    mo_vals = [m_probs.get(q, 0) if isinstance(m_probs, dict) else 0 for q in quads]
+    f1m_vals = [f1m.get(q, 0) or 0 for q in quads]
+
+    # Normalize kalau sum=0
+    for arr in [s_vals, mo_vals, f1m_vals]:
+        total = sum(arr)
+        if total == 0:
+            arr[:] = [0.25, 0.25, 0.25, 0.25]
+        elif abs(total - 1.0) > 0.01:
+            arr[:] = [v / total for v in arr]
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.45, 0.55],
+        specs=[[{"type": "domain"}, {"type": "xy"}]],
+        subplot_titles=("", ""),
+    )
+
+    # KIRI: Quad probability horizontal bar (merge dari yang sebelumnya terpisah)
+    for i, (q, s_val, mo_val) in enumerate(zip(quads, s_vals, mo_vals)):
+        color = quad_colors.get(q, "#8b949e")
+        name = quad_names.get(q, q)
+        # Stacked: structural + monthly
+        fig.add_trace(go.Bar(
+            x=[s_val], y=[f"{q} · {name}"],
+            orientation="h",
+            marker={"color": color, "opacity": 0.95, "line": {"width": 0}},
+            text=[f"{s_val:.0%}"],
+            textposition="inside" if s_val > 0.15 else "outside",
+            textfont={"color": "#fff" if s_val > 0.15 else color, "size": 10, "weight": 700},
+            name=f"{q} Structural",
+            showlegend=False,
+            hovertemplate=f"<b>{q} {name}</b><br>Structural: %{{x:.1%}}<extra></extra>",
+        ), row=1, col=1)
+
+    # KANAN: Grouped bar Structural vs Monthly vs Forward 1M
+    for q, color in zip(quads, [quad_colors[q] for q in quads]):
+        # Trace kosong untuk legend
+        pass
+
+    fig.add_trace(go.Bar(
+        x=quads, y=s_vals,
+        marker_color=[quad_colors[q] for q in quads], opacity=1.0,
+        text=[f"{v:.0%}" for v in s_vals],
+        textposition="outside", textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
+        name="📊 Structural (sekarang)", showlegend=True,
+        hovertemplate="%{x}<br>Structural: %{y:.1%}<extra></extra>",
+    ), row=1, col=2)
+
+    fig.add_trace(go.Bar(
+        x=quads, y=mo_vals,
+        marker_color=[quad_colors[q] for q in quads], opacity=0.5,
+        text=[f"{v:.0%}" for v in mo_vals],
+        textposition="outside", textfont={"size": 9, "color": "#8b949e"},
+        name="📅 Monthly (tren)", showlegend=True,
+        hovertemplate="%{x}<br>Monthly: %{y:.1%}<extra></extra>",
+    ), row=1, col=2)
+
+    fig.add_trace(go.Bar(
+        x=quads, y=f1m_vals,
+        marker_color=[quad_colors[q] for q in quads], opacity=0.25,
+        text=[f"{v:.0%}" for v in f1m_vals],
+        textposition="outside", textfont={"size": 8, "color": "#484f58"},
+        name="🔮 Forward 1M (prediksi)", showlegend=True,
+        hovertemplate="%{x}<br>Forward 1M: %{y:.1%}<extra></extra>",
+    ), row=1, col=2)
+
+    # ── Judul dengan info regime ──
+    sq_color = quad_colors.get(sq, "#8b949e")
+    mq_color = quad_colors.get(mq, "#8b949e")
+    markov_display = str(mk_regime).replace("_", " ")
+    cp_icon = " ⚠️" if cp_alert else ""
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
+        margin={"t": 55, "b": 10, "l": 100, "r": 20},
+        height=185,
+        barmode="group", bargap=0.25, bargroupgap=0.1,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.65,
+                "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
+        title={
+            "text": f"🎯 REGIME: <b style='color:{sq_color};'>{sq}</b> + <b style='color:{mq_color};'>{mq}</b> · {markov_display}{cp_icon} · Conf {mk_conf:.0%}",
+            "font": {"size": 12, "color": "#c9d1d9"},
+            "x": 0, "xanchor": "left",
+        },
+        xaxis2={"range": [0, 1.15], "tickformat": ".0%", "gridcolor": "#21262d",
+                "tickfont": {"size": 9, "color": "#8b949e"}, "dtick": 0.25},
+        yaxis2={"tickfont": {"size": 10, "color": "#c9d1d9"}, "gridcolor": "#21262d"},
+        yaxis={"tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700}, "gridcolor": "#21262d",
+               "autorange": "reversed"},
+        xaxis={"range": [0, 0.7], "tickformat": ".0%", "gridcolor": "#21262d",
+               "tickfont": {"size": 9, "color": "#8b949e"}},
+    )
+
+    # Add forecast as annotation
+    if next_candidates:
+        best_q, best_p, best_1m, best_3m = next_candidates[0]
+        qcolor = quad_colors.get(best_q, "#8b949e")
+        qname = quad_names.get(best_q, best_q)
+        if best_1m > 0.25:
+            est_days = max(7, int(30 * (1 - best_1m) + 7))
+        elif best_1m > 0.15:
+            est_days = max(14, int(45 * (1 - best_1m)))
+        elif best_3m > 0.20:
+            est_days = max(30, int(90 * (1 - best_3m)))
+        else:
+            est_days = 90
+
+        fig.add_annotation(
+            x=0.98, y=-0.18,
+            xref="paper", yref="paper",
+            text=f"🔮 Next: <b>{best_q}</b> dalam ~{est_days}h",
+            showarrow=False,
+            font={"size": 10, "color": qcolor, "weight": 700},
+            bgcolor="rgba(13,17,23,0.8)",
+            bordercolor=qcolor,
+            borderwidth=1,
+            borderpad=4,
+            align="right",
+        )
+
+    return fig
+
 def _plotly_crash_meter(snap):
     """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 150px."""
     cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
@@ -4253,12 +4465,14 @@ def _render_crash_meter(snap):
 # PAGE: DASHBOARD — Compact v40
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
-    """Macro Dashboard v40 — Compact Layout, Merged Correlated Charts.
-    Semua visual terlihat dalam 1 frame tanpa scroll.
-    Merge: Vol+Crash | Health+Kelly | Quad+Behavioral | BoomBust+AssetPulse
-    """
+    """Macro Dashboard v40 — Compact Layout, Merged Correlated Charts."""
     st.markdown("## 🏠 Macro Dashboard")
-    render_regime_compass(snap)
+
+    # ═══════════════════════════════════════════════════════════
+    # ROW 1: UNIFIED REGIME OVERVIEW (merged compass + quad prob + forecast)
+    # ═══════════════════════════════════════════════════════════
+    fig_ro = _plotly_regime_overview(snap)
+    st.plotly_chart(fig_ro, use_container_width=True, config={"displayModeBar": False})
 
     # ── Narrative (compact, 1 baris) ──
     narrative = snap.get("narrative", {}) or {}
