@@ -813,37 +813,29 @@ def _plotly_quad_probabilities(snap):
     return fig
 
 def _plotly_crash_meter(snap):
-    """Buat multi-indicator gauge untuk Crash Meter v3."""
-    # Ambil data crash meter dari snap
+    """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 150px."""
     cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
-    # Indikator: Yield Curve, Credit Spread, CAPE, VIX percentile
-    indicators = [
-        {"name": "Yield Curve", "value": cm.get("yield_curve_score", 1), "max": 5, "color": GREEN},
-        {"name": "Credit Spread", "value": cm.get("credit_spread_score", 1), "max": 5, "color": GREEN},
-        {"name": "CAPE", "value": cm.get("cape_score", 1), "max": 5, "color": GREEN},
-        {"name": "VIX %ile", "value": cm.get("vix_percentile_score", 1), "max": 5, "color": GREEN},
-        {"name": "Margin Debt", "value": cm.get("margin_score", 2), "max": 5, "color": AMBER},
+    inds = [
+        {"name": "Yield<br>Curve", "key": "yield_curve_score"},
+        {"name": "Credit<br>Spread", "key": "credit_spread_score"},
+        {"name": "CAPE", "key": "cape_score"},
+        {"name": "VIX<br>%ile", "key": "vix_percentile_score"},
+        {"name": "Margin<br>Debt", "key": "margin_score"},
     ]
-    # Color logic: 1=green, 2=amber, 3+=red
-    for ind in indicators:
-        v = ind["value"]
-        ind["color"] = GREEN if v <= 1 else AMBER if v <= 2 else RED
-
-    fig = make_subplots(
-        rows=1, cols=len(indicators),
-        specs=[[{"type": "indicator"}] * len(indicators)],
-        subplot_titles=[ind["name"] for ind in indicators],
-    )
-    for i, ind in enumerate(indicators):
+    fig = make_subplots(rows=1, cols=5, specs=[[{"type": "indicator"}] * 5], horizontal_spacing=0.06)
+    total = 0
+    for i, ind in enumerate(inds):
+        val = cm.get(ind["key"], 1)
+        total += val
+        color = GREEN if val <= 1 else AMBER if val <= 2 else RED
         fig.add_trace(go.Indicator(
-            mode="gauge+number",
-            value=ind["value"],
-            title={"text": ind["name"], "font": {"size": 10, "color": TEXT_SECONDARY}},
-            number={"font": {"size": 16, "color": TEXT_PRIMARY}},
+            mode="gauge+number", value=val,
+            title={"text": ind["name"], "font": {"size": 9, "color": "#8b949e"}},
+            number={"font": {"size": 14, "color": "#c9d1d9", "weight": 700}},
             gauge={
-                "axis": {"range": [0, ind["max"]], "tickwidth": 1},
-                "bar": {"color": ind["color"], "thickness": 0.75},
-                "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": BORDER,
+                "axis": {"range": [0, 5], "tickwidth": 0, "tickfont": {"size": 7, "color": "#484f58"}},
+                "bar": {"color": color, "thickness": 0.8},
+                "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
                 "steps": [
                     {"range": [0, 1.5], "color": "rgba(63,185,80,0.08)"},
                     {"range": [1.5, 2.5], "color": "rgba(210,153,34,0.08)"},
@@ -852,18 +844,17 @@ def _plotly_crash_meter(snap):
             },
         ), row=1, col=i+1)
 
+    oc = GREEN if total <= 7 else AMBER if total <= 12 else RED
+    ol = "AMAN" if total <= 7 else "WASPADA" if total <= 12 else "KRITIS"
     fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
-        margin={"t": 40, "b": 60, "l": 30, "r": 30},
-        title={"text": "🚨 Crash Meter v3 — 5 Indikator Sistemik", "font": {"size": 13, "color": "#c9d1d9"}},
-        height=130,
-    )
-    fig.add_annotation(
-        text="<b>📖 Penjelasan:</b> Skor 1-2 (hijau) = AMAN. Skor 3-5 (merah) = WASPADA. Crash mungkin terjadi jika ≥3 indikator merah.",
-        x=0.5, y=-0.20, showarrow=False,
-        font={"size": 10, "color": "#8b949e"},
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 9},
+        margin={"t": 25, "b": 25, "l": 15, "r": 15}, height=150,
+        annotations=[{
+            "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2 hijau=AMAN · 3 kuning=WASPADA · 4-5 merah=KRITIS",
+            "x": 0.5, "y": -0.06, "showarrow": False,
+            "font": {"size": 9, "color": "#8b949e"},
+        }],
     )
     return fig
 
@@ -4294,24 +4285,59 @@ def page_dashboard():
     vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
     vix_b_label = (snap.get("vix_bucket") or {}).get("label", "—")
 
-    # ── 4 Gauge dengan label di bawah (gak pake subtitle di chart) ──
+    # ── 4 Gauge dengan LABEL JELAS di bawah ──
+    # Label fix: gak "Composite/Bet size/NONE" tapi nama yang orang ngerti
     g1, g2, g3, g4 = st.columns(4)
     with g1:
         vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
-        st.plotly_chart(_plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix=""), use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-6px;'>{vix_b} · {vix_b_label}</div>", unsafe_allow_html=True)
+        vix_cond = "Rendah/Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Tinggi/Panik"
+        st.plotly_chart(_plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix=""),
+                       use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>📊 Volatilitas</div>"
+                   f"<div style='text-align:center;font-size:0.55rem;color:{vc};font-weight:600;'>{vix_cond}</div>",
+                   unsafe_allow_html=True)
     with g2:
         hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
-        st.plotly_chart(_plotly_gauge(health_score, "Health", max_val=100, color=hc), use_container_width=True, config={"displayModeBar": False})
-        st.markdown("<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-6px;'>Composite</div>", unsafe_allow_html=True)
+        h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
+        st.plotly_chart(_plotly_gauge(health_score, "HEALTH", max_val=100, color=hc),
+                       use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>❤️ Kesehatan Pasar</div>"
+                   f"<div style='text-align:center;font-size:0.55rem;color:{hc};font-weight:600;'>{h_cond}</div>",
+                   unsafe_allow_html=True)
     with g3:
         kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
-        st.plotly_chart(_plotly_gauge(kelly*100, "Kelly", max_val=100, color=kc, suffix="%"), use_container_width=True, config={"displayModeBar": False})
-        st.markdown("<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-6px;'>Bet size</div>", unsafe_allow_html=True)
+        k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
+        st.plotly_chart(_plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%"),
+                       use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>🎯 Ukuran Taruhan</div>"
+                   f"<div style='text-align:center;font-size:0.55rem;color:{kc};font-weight:600;'>{k_cond}</div>",
+                   unsafe_allow_html=True)
     with g4:
         ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
-        st.plotly_chart(_plotly_gauge(n_alerts, "Alerts", max_val=10, color=ac), use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-6px;'>{alert_level}</div>", unsafe_allow_html=True)
+        a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
+        # Alerts tanpa suffix % (ini count, bukan persen!)
+        fig_a = go.Figure(go.Indicator(
+            mode="gauge+number", value=n_alerts,
+            title={"text": "ALERTS", "font": {"size": 10, "color": "#8b949e"}},
+            number={"font": {"size": 20, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
+            gauge={
+                "axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
+                "bar": {"color": ac, "thickness": 0.75},
+                "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
+                "steps": [
+                    {"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
+                    {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
+                    {"range": [4, 10], "color": "rgba(248,81,73,0.06)"},
+                ],
+            },
+        ))
+        fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                           font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
+                           height=90, margin={"t": 5, "b": 5, "l": 5, "r": 5})
+        st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>🧠 Sinyal Behavioral</div>"
+                   f"<div style='text-align:center;font-size:0.55rem;color:{ac};font-weight:600;'>{a_cond}</div>",
+                   unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
     # ROW 2: QUAD + CRASH | BUBBLE + ASSET PULSE (merged, compact)
@@ -4322,30 +4348,9 @@ def page_dashboard():
         # Quad probability bar
         fig_q = _plotly_quad_probabilities(snap)
         st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False})
-        # Crash meter overlay bar (HTML, reliable, gak kosong)
-        cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
-        cm_vals = [
-            cm.get("yield_curve_score", 1), cm.get("credit_spread_score", 1),
-            cm.get("cape_score", 1), cm.get("vix_percentile_score", 1), cm.get("margin_score", 1)
-        ]
-        cm_total = sum(cm_vals)
-        cm_max = len(cm_vals) * 5
-        cm_pct = min(100, (cm_total / cm_max) * 100)
-        cm_color = GREEN if cm_total <= 5 else AMBER if cm_total <= 8 else RED
-        cm_label = "AMAN" if cm_total <= 5 else "WASPADA" if cm_total <= 8 else "KRITIS"
-        # Individual indicator dots
-        names = ["YC", "CS", "CAPE", "VIX", "MG"]
-        dots_html = ""
-        for val, name in zip(cm_vals, names):
-            dc = GREEN if val <= 1 else AMBER if val <= 2 else RED
-            dots_html += f'<span style="font-size:0.6rem;color:{dc};">●{name}</span> '
-        st.markdown(
-            f'<div style="display:flex;align-items:center;gap:4px;padding:4px 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;">'
-            f'{dots_html}'
-            f'<div style="flex:1;height:8px;background:#21262d;border-radius:3px;overflow:hidden;margin:0 4px;">'
-            f'<div style="width:{cm_pct:.0f}%;height:100%;background:{cm_color};border-radius:3px;"></div></div>'
-            f'<span style="font-size:0.65rem;color:{cm_color};font-weight:800;min-width:50px;text-align:right;">{cm_total}/{cm_max} {cm_label}</span></div>',
-            unsafe_allow_html=True)
+        # Crash meter Plotly multi-gauge (versi yang disukai user)
+        fig_cm = _plotly_crash_meter(snap)
+        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False})
 
     with right:
         # Bubble gauge + stage label
