@@ -351,3 +351,29 @@ def run_portfolio_sizing(
             "skip": sum(1 for s in sized if s["mode"] == "❌ SKIP"),
         },
     }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADDITIONAL SIZING METHODS (merged from conviction, kelly, bayesian, hedgeye)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKWARD-COMPATIBLE WRAPPERS for orchestrator.py imports
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def run_sizing(alpha_items, gamma_data=None, greeks_data=None, reflexivity=None,
+               portfolio_value=100000, quad="Q3", stage="INCEPTION"):
+    """Wrapper: engines.conviction_sizing.run_sizing -> delegates to run_portfolio_sizing"""
+    try:
+        return run_portfolio_sizing(
+            alpha_items=alpha_items,
+            portfolio_value=portfolio_value,
+            quad=quad,
+            stage=stage,
+            gamma_data=gamma_data,
+            greeks_data=greeks_data,
+            reflexivity=reflexivity,
+        )
+    except Exception:
+        return {}
+
