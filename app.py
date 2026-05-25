@@ -752,7 +752,7 @@ def _plotly_gauge(value, title, max_val=100, color=None, suffix="%", height=90):
         mode="gauge+number",
         value=value,
         title={"text": title, "font": {"size": 10, "color": "#8b949e"}},
-        number={"suffix": suffix, "font": {"size": 16, "color": "#c9d1d9", "family": "Inter"},
+        number={"suffix": suffix, "font": {"size": 20, "color": "#c9d1d9", "family": "Inter", "weight": 700},
                 "valueformat": ".0f" if suffix=="%" or suffix=="" else ".1f"},
         gauge={
             "axis": {"range": [0, max_val], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
@@ -948,7 +948,7 @@ def _plotly_behavioral_bar(snap):
         barmode="stack", showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 9, "color": "#8b949e"}},
-        height=70,
+        height=85,
     )
     return fig
 
@@ -4334,17 +4334,24 @@ def page_dashboard():
         cm_color = GREEN if cm_total <= 5 else AMBER if cm_total <= 8 else RED
         cm_label = "AMAN" if cm_total <= 5 else "WASPADA" if cm_total <= 8 else "KRITIS"
         # Individual indicator dots
-        dot_html = ""
-        names = ["YC", "CS", "CAPE", "VIX", "MG"]
-        for val, name in zip(cm_vals, names):
+        names_full = ["Yield", "Credit", "CAPE", "VIX", "Margin"]
+        bars_html = ""
+        for val, name in zip(cm_vals, names_full):
             dc = GREEN if val <= 1 else AMBER if val <= 2 else RED
-            dot_html += f'<span style="font-size:0.55rem;color:{dc};">●{name}</span> '
+            vp = min(100, (val / 5) * 100)
+            bars_html += (
+                f'<div style="flex:1;text-align:center;">'
+                f'<div style="font-size:0.5rem;color:#8b949e;margin-bottom:1px;">{name}</div>'
+                f'<div style="height:16px;background:#21262d;border-radius:3px;overflow:hidden;position:relative;">'
+                f'<div style="position:absolute;bottom:0;width:100%;height:{vp:.0f}%;background:{dc};opacity:0.85;border-radius:3px;"></div>'
+                f'<div style="position:relative;font-size:0.5rem;color:#fff;font-weight:700;line-height:16px;">{val}</div>'
+                f'</div></div>'
+            )
         st.markdown(
-            f'<div style="display:flex;align-items:center;gap:4px;padding:3px 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;">'
-            f'{dot_html}'
-            f'<div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin:0 4px;">'
-            f'<div style="width:{cm_pct:.0f}%;height:100%;background:{cm_color};border-radius:3px;"></div></div>'
-            f'<span style="font-size:0.6rem;color:{cm_color};font-weight:700;">{cm_total}/{cm_max}</span></div>',
+            f'<div style="display:flex;gap:3px;padding:4px 6px;background:#161b22;border:1px solid #30363d;border-radius:6px;">'
+            f'{bars_html}'
+            f'<div style="display:flex;align-items:center;padding-left:4px;border-left:1px solid #30363d;">'
+            f'<span style="font-size:0.6rem;color:{cm_color};font-weight:800;">{cm_label}</span></div></div>',
             unsafe_allow_html=True)
 
     with right:
@@ -4355,12 +4362,13 @@ def page_dashboard():
         bubble_score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
         fig_bb = _plotly_boombust_gauge(snap)
         st.plotly_chart(fig_bb, use_container_width=True, config={"displayModeBar": False})
-        # Stage label overlay
+        # Stage + score merged line
         stage_color = GREEN if bubble_score <= 2 else AMBER if bubble_score <= 5 else RED
         st.markdown(
-            f'<div style="display:flex;justify-content:space-between;padding:2px 8px;font-size:0.6rem;margin-top:-4px;">'
-            f'<span style="color:#8b949e;">Stage: <b style="color:{stage_color};">{stage}</b></span>'
-            f'<span style="color:#8b949e;">Score: <b style="color:{stage_color};">{bubble_score:.1f}</b>/10</span></div>',
+            f'<div style="text-align:center;font-size:0.65rem;margin-top:-4px;padding-bottom:2px;">'
+            f'<span style="color:{stage_color};font-weight:800;">{stage}</span>'
+            f'<span style="color:#484f58;margin:0 4px;">·</span>'
+            f'<span style="color:#8b949e;">{bubble_score:.1f}/10</span></div>',
             unsafe_allow_html=True)
         # Asset pulse
         fig_ap = _plotly_asset_pulse(snap, prices)
@@ -4376,11 +4384,11 @@ def page_dashboard():
     # PENJELASAN RINGKAS GABUNGAN (1 card untuk semua)
     # ═══════════════════════════════════════════════════════════
     st.markdown(_penjelasan(
-        "<b>VIX</b> &lt;20 tenang, 20-25 waspada, &gt;25 panik. <b>Health</b> = kesehatan pasar 0-100. "
-        "<b>Kelly</b> = ukuran taruhan optimal. <b>Alerts</b> = sinyal behavioral (Yves/AAII).<br>"
-        "<b>Macro Regime:</b> Q1=Goldilocks(saham↑), Q2=Reflation(commodity↑), Q3=Stagflation(gold↑), Q4=Deflation(crash). "
-        "Crash Meter ● hijau=aman, merah=stress. <b>Bubble</b> 0-2=akumulasi, 5-7=waspada, 8-10=euphoria. "
-        "Asset Pulse hijau=uang masuk, merah=keluar. <b>Sentiment</b> Bullish&gt;45%=FOMO, raise cash."
+        "• <b>VIX</b> &lt;20=tenang · 20-25=waspada · &gt;25=panik &nbsp;|&nbsp; <b>Health</b> kesehatan pasar 0-100 &nbsp;|&nbsp; <b>Kelly</b> ukuran taruhan optimal<br>"
+        "• <b>Regime:</b> Q1=Goldilocks(saham↑) · Q2=Reflation(commodity↑) · Q3=Stagflation(gold↑) · Q4=Deflation(crash↓)<br>"
+        "• <b>Crash Meter:</b> 5 mini bar (Yield→Margin), skor 1-2=aman · 3=waspada · 4-5=kritis<br>"
+        "• <b>Bubble</b> 0-2=akumulasi aman · 5-7=waspada · 8-10=euphoria risiko koreksi · Asset Pulse hijau=masuk merah=keluar<br>"
+        "• <b>Sentiment:</b> Bullish&gt;45% = crowd FOMO → pertimbangkan raise cash 20-50%"
     ), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
