@@ -1229,7 +1229,7 @@ def _plotly_crash_meter(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
-        margin={"t": 10, "b": 10, "l": 6, "r": 6}, height=80,
+        margin={"t": 8, "b": 8, "l": 5, "r": 5}, height=70,
         annotations=[{
             "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
             "x": 0.5, "y": -0.08, "showarrow": False,
@@ -4843,22 +4843,22 @@ def page_dashboard():
             # VIX Gauge + label detail
             vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
             vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
-            fig_vix = _plotly_gauge(vix_now, f"VIX", max_val=40, color=vc, suffix="", height=65)
-            st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="g_vix_v50")
+            fig_vix = _plotly_gauge(vix_now, f"VIX", max_val=40, color=vc, suffix="", height=55)
+            st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="g_vix_v51")
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{vc};'>{vix_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Volatilitas</span></div>", unsafe_allow_html=True)
         with g2:
             hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
             h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
-            fig_h = _plotly_gauge(health_score, f"HEALTH", max_val=100, color=hc, height=65)
-            st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar": False}, key="g_h_v50")
+            fig_h = _plotly_gauge(health_score, f"HEALTH", max_val=100, color=hc, height=55)
+            st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar": False}, key="g_h_v51")
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{hc};'>{h_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Kesehatan Pasar</span></div>", unsafe_allow_html=True)
 
         g3, g4 = st.columns(2)
         with g3:
             kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
             k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
-            fig_k = _plotly_gauge(kelly*100, f"KELLY", max_val=100, color=kc, suffix="%", height=65)
-            st.plotly_chart(fig_k, use_container_width=True, config={"displayModeBar": False}, key="g_k_v50")
+            fig_k = _plotly_gauge(kelly*100, f"KELLY", max_val=100, color=kc, suffix="%", height=55)
+            st.plotly_chart(fig_k, use_container_width=True, config={"displayModeBar": False}, key="g_k_v51")
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{kc};'>{k_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Taruhan Optimal</span></div>", unsafe_allow_html=True)
         with g4:
             ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
@@ -4875,14 +4875,14 @@ def page_dashboard():
             ))
             fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
-                               height=65, margin={"t": 3, "b": 3, "l": 3, "r": 3})
-            st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v50")
+                               height=55, margin={"t": 2, "b": 2, "l": 2, "r": 2})
+            st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v51")
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
-        # ══ CRASH METER (di bawah gauge, isi space kanan) ══
-        st.markdown("<div style='font-size:0.65rem;color:#F85149;font-weight:700;margin:2px 0 0;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        # ══ CRASH METER (rapat di bawah gauge) ══
+        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:1px 0 0;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
-        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v51")
+        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v51b")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 2: BUBBLE (kiri) | ASSET PULSE (kanan)
