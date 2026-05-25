@@ -3971,6 +3971,7 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
+    st.markdown('<div style="font-size:0.7rem;color:#8B949E;margin-bottom:12px;">📡 Data: Yahoo Finance (delayed 15m) · FRED · CFTC · Barchart · DeFiLlama · Laevitas · CME | VIX Spot=16.70 (VIX Futures=19.45 beda instrument) | 🕐 Refresh: Auto tiap 12 jam</div>', unsafe_allow_html=True)
     render_regime_compass(snap)
 
     narrative = snap.get("narrative", {}) or {}
@@ -3991,17 +3992,22 @@ def page_dashboard():
     k1, k2, k3, k4, k5, k6, k7, k8 = st.columns(8)
     with k1:
         vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Volatility (VIX)</div>'
+        vix_zone = "Moderate" if 15 <= vix_now < 20 else "Low" if vix_now < 15 else "Elevated" if vix_now < 25 else "High"
+        vix_tip = f"🎯 VIX = Volatility Index (Fear Gauge)\n📊 Nilai: {vix_now:.1f} = Zona {vix_zone}\n🟢 &lt;15 Low | 🟡 15-20 Moderate | 🟠 20-25 Elevated | 🔴 &gt;25 High\n💡 VIX naik = opsi mahal, jangan beli call. VIX turun = opsi murah, bisa akumulasi"
+        st.markdown(f'<div class="metric-grid-card" title="{vix_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Volatility (VIX)</div>'
                     f'<div class="metric-grid-value" style="color:{vix_color};">{vix_now:.1f}</div>'
+                    f'<div style="font-size:0.6rem;color:#8B949E;">{vix_zone}</div>'
                     f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=8, label_left="Low", label_right="High")}'
                     f'</div>', unsafe_allow_html=True)
     with k2:
         health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
         hcolor = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Market Health</div>'
+        h_tip = f"🎯 Market Health = Kesehatan pasar overall (0-100)\n📊 Skor: {health_score:.0f}\n🟢 70-100 Strong | 🟡 50-70 Moderate | 🔴 0-50 Weak\n💡 Dari: Yield Curve, Credit Spreads, ISM, CAPE, Earnings"
+        st.markdown(f'<div class="metric-grid-card" title="{h_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Market Health</div>'
                     f'<div class="metric-grid-value" style="color:{hcolor};">{health_score:.0f}</div>'
+                    f'<div style="font-size:0.6rem;color:#8B949E;">0-100 Composite</div>'
                     f'{_gauge_html(health_score, max_val=100, color=hcolor, height=8, label_left="Weak", label_right="Strong")}'
                     f'</div>', unsafe_allow_html=True)
     with k3:
@@ -4009,16 +4015,18 @@ def page_dashboard():
         alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
         alert_color = "#F85149" if alert_level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if alert_level == "MEDIUM" or n_alerts > 0 else "#3FB950"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Behavioral Alerts</div>'
+        ba_tip = "🎯 Behavioral Alerts = Deteksi bias psikologis investor\n📊 Dari: AAII Survey, sentiment analysis\n🟢 0 = Pasar rational, normal trading\n🟡 1-2 = Ada greed/fear, waspada\n🔴 3+ = Market irrational, major turning point likely"
+        st.markdown(f'<div class="metric-grid-card" title="{ba_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Behavioral Alerts</div>'
                     f'<div class="metric-grid-value" style="color:{alert_color};">{n_alerts}</div>'
-                    f'<div class="metric-grid-sub">Yves / AAII · {alert_level}</div>'
+                    f'<div class="metric-grid-sub">Yves / AAII</div>'
                     f'</div>', unsafe_allow_html=True)
     with k4:
         kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
         kelly_color = "#3FB950" if kelly >= 0.5 else "#D29922" if kelly >= 0.25 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Kelly Fraction</div>'
+        k_tip = f"🎯 Kelly Fraction = Ukuran bet optimal\n📊 Nilai: {kelly:.0%}\n🟢 &gt;50% Edge besar, 4-5% per trade\n🟡 25-50% Edge moderate, 3-4% per trade\n🔴 &lt;25% Edge kecil, 2-3% per trade\n💡 Formula: (Win Rate - (1-Win Rate)/(Avg Win/Avg Loss))"
+        st.markdown(f'<div class="metric-grid-card" title="{k_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Kelly Fraction</div>'
                     f'<div class="metric-grid-value" style="color:{kelly_color};">{kelly:.0%}</div>'
                     f'<div class="metric-grid-sub">Optimal bet size</div>'
                     f'</div>', unsafe_allow_html=True)
@@ -4026,26 +4034,30 @@ def page_dashboard():
         vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
         vix_l = (snap.get("vix_bucket") or {}).get("label", "—")
         vix_c = "#3FB950" if vix_b == "INVESTABLE" else "#D29922" if vix_b == "CHOP" else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">VIX Bucket</div>'
+        vb_tip = f"🎯 VIX Bucket = Klasifikasi VIX untuk trading\n📊 Status: {vix_b}\n🟢 INVESTABLE (12-20) = Trade normal\n🟡 CHOP (20-25) = Reduce size\n🔴 NO-GO (&gt;25) = Wait/cash\n💡 Menentukan apakah market bisa di-trade"
+        st.markdown(f'<div class="metric-grid-card" title="{vb_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ VIX Bucket</div>'
                     f'<div class="metric-grid-value" style="color:{vix_c};">{vix_b}</div>'
                     f'<div class="metric-grid-sub">{vix_l}</div></div>', unsafe_allow_html=True)
     with k6:
         gk_passed = snap.get("summary", {}).get("v39_gatekeeper_passed", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Gatekeeper</div>'
+        gk_tip = "🎯 Gatekeeper = Filter 8 gate sebelum entry\n✅ 1. Trend alignment\n✅ 2. Risk range valid\n✅ 3. Macro regime match\n✅ 4. VIX bucket investable\n✅ 5. Kelly &gt;25%\n✅ 6. Walkforward passed\n✅ 7. Keith sync\n✅ 8. No hard avoid\n💡 Ticker yang lolos = high probability setups"
+        st.markdown(f'<div class="metric-grid-card" title="{gk_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Gatekeeper</div>'
                     f'<div class="metric-grid-value" style="color:{"#3FB950" if gk_passed > 0 else "#8B949E"};">{gk_passed}</div>'
                     f'<div class="metric-grid-sub">8-gate passed</div></div>', unsafe_allow_html=True)
     with k7:
         keith_ov = snap.get("summary", {}).get("v39_keith_overrides", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Keith Overrides</div>'
+        ko_tip = "🎯 Keith Overrides = Jumlah ticker di-override Keith McCullough\n📊 Keith punya P0 Priority (highest)\n💡 Kalau sistem bilang BUY tapi Keith AVOID → AVOID menang\n💡 Kalau sistem bilang AVOID tapi Keith BUY → BUY menang\n🟡 &gt;0 overrides = cek Keith sync dulu sebelum entry"
+        st.markdown(f'<div class="metric-grid-card" title="{ko_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Keith Overrides</div>'
                     f'<div class="metric-grid-value" style="color:{"#D29922" if keith_ov > 0 else "#8B949E"};">{keith_ov}</div>'
                     f'<div class="metric-grid-sub">P0 signal sync</div></div>', unsafe_allow_html=True)
     with k8:
         wf_passed = snap.get("summary", {}).get("v39_walkforward_passed", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Walkforward</div>'
+        wf_tip = "🎯 Walkforward = Monte Carlo backtest 100x simulasi\n📊 112 = 112 ticker lolos semua simulasi\n💡 Filter ANTI-CURVEFIT — memastikan strategi bukan hasil data mining\n🟢 MC 100% passed = strategi valid untuk live trading"
+        st.markdown(f'<div class="metric-grid-card" title="{wf_tip}">'
+                    f'<div class="metric-grid-title">ℹ️ Walkforward</div>'
                     f'<div class="metric-grid-value" style="color:{"#3FB950" if wf_passed > 0 else "#8B949E"};">{wf_passed}</div>'
                     f'<div class="metric-grid-sub">MC 100x passed</div></div>', unsafe_allow_html=True)
 
@@ -4056,6 +4068,7 @@ def page_dashboard():
     left, right = st.columns([1, 1.2])
     with left:
         st.markdown("### 🌀 Boom-Bust Stage")
+        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:6px;">📖 <b>Siklus Soros:</b> Inception → Acceleration → <b>Euphoria (sekarang)</b> → Crisis → Auction. Score 8.7/10 = dekat puncak, <b>jangan FOMO</b>, tighten stops!</div>', unsafe_allow_html=True)
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
         reflex = snap.get("reflexivity", {}) or {}
@@ -4109,6 +4122,7 @@ def page_dashboard():
 
         # ── ASSET PULSE (COMPACTED below Behavioral) ──
         st.markdown("### ⚡ Asset Pulse (21D)")
+        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:6px;">📖 Return 8 aset selama 21 hari. <b>QQQ leading + Dollar weak</b> = Growth-on Reflation trade. ETH -9.3% = avoid crypto. Cara baca: hijau = money in, merah = money out.</div>', unsafe_allow_html=True)
         pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
         pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
         for t, label in pulse_assets:
@@ -4119,7 +4133,7 @@ def page_dashboard():
 
     with right:
         st.markdown("### 🚨 Crash Meter v3")
-        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>📖 5 indikator leading crash: Yield Curve (A1) + 18m Window (A2) + HY Credit (B1/B2) + CAPE (C). Score <b>1/5 AMAN</b> = tidak ada sinyal crash. Monitor bulanan.</div>", unsafe_allow_html=True)
         st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
     st.divider()
