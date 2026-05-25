@@ -445,9 +445,10 @@ class UnifiedGreeksEngine:
     """
     Unified interface for all Greeks analysis.
     Provides one-call access to GEX, Gamma, Vanna, Charm, 0DTE, Skew, and Volga.
+    Optional: enrich with real Barchart options data.
     """
 
-    def __init__(self):
+    def __init__(self, enable_barchart: bool = False):
         self.gex = GEXAnalyzer()
         self.gamma = GammaAnalyzer()
         self.vanna = VannaAnalyzer()
@@ -455,6 +456,42 @@ class UnifiedGreeksEngine:
         self.odte = ODTEMonitor()
         self.skew = SkewAnalyzer()
         self.volga = VolgaAnalyzer()
+        self._barchart = None
+        if enable_barchart:
+            try:
+                from engines.barchart_scraper import BarchartScraper
+                self._barchart = BarchartScraper()
+            except Exception:
+                pass
+
+    def enrich_with_barchart(self, ticker: str, proxy_data: dict) -> dict:
+        """Enrich proxy Greeks data with real Barchart options data."""
+        if self._barchart is None:
+            return proxy_data
+        try:
+            bd = self._barchart.scrape_ticker(ticker)
+            if bd.gamma_flip:
+                proxy_data["barchart_gamma_flip"] = bd.gamma_flip
+            if bd.call_wall:
+                proxy_data["barchart_call_wall"] = bd.call_wall
+            if bd.put_wall:
+                proxy_data["barchart_put_wall"] = bd.put_wall
+            if bd.iv:
+                proxy_data["barchart_iv"] = bd.iv
+            if bd.hv:
+                proxy_data["barchart_hv"] = bd.hv
+            if bd.iv_rank:
+                proxy_data["barchart_iv_rank"] = bd.iv_rank
+            if bd.iv_percentile:
+                proxy_data["barchart_iv_percentile"] = bd.iv_percentile
+            if bd.max_pain:
+                proxy_data["barchart_max_pain"] = bd.max_pain
+            if bd.put_call_ratio:
+                proxy_data["barchart_pc_ratio"] = bd.put_call_ratio
+            proxy_data["barchart_enriched"] = True
+        except Exception:
+            proxy_data["barchart_enriched"] = False
+        return proxy_data
 
     def analyze(self, ticker: str, prices: list, options_data: Optional[dict] = None) -> dict:
         """Run full Greeks analysis on a ticker"""

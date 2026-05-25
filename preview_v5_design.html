@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MacroRegime Ticker Card v5 Preview</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap");
+body { font-family: "Inter", sans-serif; background: #0D1117; color: #E6EDF3; padding: 20px; margin: 0; }
+
+/* Card container */
+.hy-card { background: #161B22; border: 1px solid #30363D; border-radius: 10px; margin: 8px 0; overflow: hidden; max-width: 900px; }
+.hy-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #21262D; }
+.hy-symbol { font-weight: 800; font-size: 1.0rem; color: #E6EDF3; letter-spacing: -0.5px; min-width: 70px; }
+.hy-price { font-weight: 700; font-size: 0.85rem; color: #E6EDF3; font-variant-numeric: tabular-nums; min-width: 55px; }
+.hy-badges { display: flex; gap: 3px; flex-wrap: wrap; flex: 1; }
+.hy-status-bar { display: flex; align-items: center; gap: 6px; padding: 6px 12px; background: #0D1117; border-bottom: 1px solid #21262D; }
+
+/* Badges */
+.badge { display: inline-flex; align-items: center; padding: 1px 5px; border-radius: 10px; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.3px; border: 1px solid transparent; line-height: 1.3; }
+.badge-long { background: rgba(34,197,94,0.12); color: #3FB950; border-color: rgba(34,197,94,0.3); }
+.badge-short { background: rgba(239,68,68,0.12); color: #F85149; border-color: rgba(239,68,68,0.3); }
+.badge-grade-a { background: rgba(34,197,94,0.15); color: #3FB950; border-color: #3FB950; }
+.badge-wait { background: rgba(234,179,8,0.2); color: #D29922; border-color: #D29922; }
+
+/* Status pills */
+.hy-status-pill { padding: 2px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid transparent; }
+.banner-wait { background: rgba(234,179,8,0.12); border: 1px solid rgba(234,179,8,0.35); color: #D29922; }
+
+/* Expander sections */
+.expander { border: 1px solid #30363D; border-radius: 8px; margin: 5px 0; overflow: hidden; }
+.expander-header { padding: 8px 12px; background: #161B22; font-size: 0.78rem; font-weight: 600; cursor: pointer; border-bottom: 1px solid #30363D; }
+.expander-body { padding: 10px 12px; }
+
+/* Target grid */
+.target-grid { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+.target-cell { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 8px; text-align: center; }
+.target-label { font-size: 0.55rem; color: #8B949E; text-transform: uppercase; font-weight: 600; margin-bottom: 4px; }
+.target-value { font-size: 0.85rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Entry zone bar */
+.bar-container { margin: 10px 0; }
+.bar-labels { display: flex; justify-content: space-between; font-size: 0.6rem; color: #8B949E; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+.bar-track { height: 14px; background: #21262D; border-radius: 7px; position: relative; overflow: hidden; }
+.bar-stop { position: absolute; left: 0; height: 100%; background: linear-gradient(90deg, #F85149, #F8514980); border-radius: 7px 0 0 7px; }
+.bar-entry { position: absolute; height: 100%; background: linear-gradient(90deg, #58A6FF, #58A6FF80); }
+.bar-t1 { position: absolute; height: 100%; background: linear-gradient(90deg, #3FB95060, #3FB950); }
+.bar-t2 { position: absolute; height: 100%; background: linear-gradient(90deg, #2EA04360, #2EA043); }
+.bar-t3 { position: absolute; height: 100%; background: linear-gradient(90deg, #23863640, #23863620); border-radius: 0 7px 7px 0; }
+.bar-current { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 8px; height: 8px; background: #fff; border-radius: 50%; border: 2px solid #58A6FF; box-shadow: 0 0 6px rgba(88,166,255,0.6); z-index: 10; }
+.bar-legend { display: flex; justify-content: center; gap: 12px; margin-top: 4px; font-size: 0.55rem; color: #8B949E; }
+.bar-legend span { display: flex; align-items: center; gap: 2px; }
+
+/* Thesis panel */
+.thesis-panel { background: #0D1117; border: 1px solid #21262D; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.thesis-title { font-size: 0.6rem; color: #58A6FF; text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; }
+.thesis-item { display: flex; align-items: flex-start; gap: 6px; margin-bottom: 5px; padding: 3px 0; border-bottom: 1px solid #21262D; font-size: 0.7rem; color: #E6EDF3; line-height: 1.4; }
+
+/* Checklist panel */
+.checklist-panel { background: #0D1117; border: 1px solid #21262D; border-radius: 8px; padding: 10px 12px; margin: 8px 0; }
+.checklist-title { font-size: 0.6rem; color: #D29922; text-transform: uppercase; font-weight: 600; margin-bottom: 8px; letter-spacing: 0.5px; }
+.checklist-item { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.68rem; color: #E6EDF3; }
+
+/* Background data panels */
+.ts-panel { background: #0D1117; border: 1px solid #21262D; border-radius: 8px; padding: 10px 12px; margin: 6px 0; }
+.ts-panel-title { font-size: 0.6rem; color: #8B949E; text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; margin-bottom: 6px; }
+.ts-grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.ts-stat { text-align: center; }
+.ts-stat-label { font-size: 0.52rem; color: #8B949E; text-transform: uppercase; margin-bottom: 2px; }
+.ts-stat-value { font-size: 0.78rem; font-weight: 700; color: #E6EDF3; font-variant-numeric: tabular-nums; }
+
+.sparkline { display: flex; align-items: flex-end; gap: 1px; height: 22px; width: 80px; }
+.spark-bar { width: 3px; border-radius: 1px; opacity: 0.85; }
+
+.tag { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; margin: 2px; }
+</style>
+</head>
+<body>
+
+<h2 style="font-size:1.2rem;color:#E6EDF3;margin-bottom:12px;">🎨 MacroRegime Ticker Card v5 — Redesign Preview</h2>
+<p style="font-size:0.72rem;color:#8B949E;margin-bottom:16px;">This preview shows the redesigned card with multi-target support, visual entry zone bar, thesis panel, and execution checklist.</p>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- CARD HEADER -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="hy-card">
+  <div class="hy-header">
+    <div class="hy-symbol">ADA-USD</div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="hy-price">$0.2418</div>
+      <div style="font-size:0.72rem;color:#F85149;font-weight:700;">-3.1%</div>
+      <div class="sparkline">
+        <div class="spark-bar" style="height:40%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:55%;background:#3FB950;"></div>
+        <div class="spark-bar" style="height:45%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:60%;background:#3FB950;"></div>
+        <div class="spark-bar" style="height:50%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:70%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:65%;background:#3FB950;"></div>
+        <div class="spark-bar" style="height:80%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:75%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:60%;background:#3FB950;"></div>
+        <div class="spark-bar" style="height:70%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:85%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:90%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:78%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:82%;background:#F85149;"></div>
+        <div class="spark-bar" style="height:95%;background:#F85149;"></div>
+      </div>
+    </div>
+    <div class="hy-badges">
+      <span class="badge badge-long">LONG</span>
+      <span class="badge badge-grade-a">A</span>
+      <span class="badge badge-long" style="background:rgba(34,197,94,0.12);color:#3FB950;border-color:rgba(34,197,94,0.3);">📉 OVERSOLD</span>
+      <span class="badge badge-wait">⏳ WAIT</span>
+    </div>
+  </div>
+  <div class="hy-status-bar">
+    <div class="hy-status-pill banner-wait">⏳ WAIT — Pullback needed</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- 📊 TRADE PLAN (EXPANDED) -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="expander">
+  <div class="expander-header">📊 TRADE PLAN</div>
+  <div class="expander-body">
+
+    <!-- Multi-Target Grid -->
+    <div class="target-grid">
+      <div class="target-cell">
+        <div class="target-label">🎯 Entry Zone</div>
+        <div class="target-value" style="color:#58A6FF;">$0.2400</div>
+      </div>
+      <div class="target-cell">
+        <div class="target-label">🛑 Stop Loss</div>
+        <div class="target-value" style="color:#F85149;">$0.2300</div>
+        <div style="font-size:0.55rem;color:#F85149;margin-top:2px;">Risk 4.1%</div>
+      </div>
+      <div class="target-cell">
+        <div class="target-label">🥇 T1 (Swing)</div>
+        <div class="target-value" style="color:#3FB950;">$0.2827</div>
+        <div style="font-size:0.55rem;color:#3FB950;margin-top:2px;">RR 4.3x · 1-4w</div>
+      </div>
+      <div class="target-cell">
+        <div class="target-label">🥈 T2 (Trend)</div>
+        <div class="target-value" style="color:#2EA043;">$0.3200</div>
+        <div style="font-size:0.55rem;color:#2EA043;margin-top:2px;">RR 8.1x · 1-3m</div>
+      </div>
+      <div class="target-cell">
+        <div class="target-label">🥉 T3 (Tail)</div>
+        <div class="target-value" style="color:#238636;">$0.3650</div>
+        <div style="font-size:0.55rem;color:#238636;margin-top:2px;">RR 12.4x · 3-6m+</div>
+      </div>
+    </div>
+
+    <!-- Visual Entry Zone Bar -->
+    <div class="bar-container">
+      <div class="bar-labels">
+        <span>SL $0.230</span>
+        <span>Entry $0.240</span>
+        <span style="color:#E6EDF3;font-weight:700;">Now $0.242</span>
+        <span>T1 $0.283</span>
+        <span>T2 $0.320</span>
+        <span>T3 $0.365</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-stop" style="width:28%;"></div>
+        <div class="bar-entry" style="left:28%;width:5%;"></div>
+        <div class="bar-t1" style="left:48%;width:12%;"></div>
+        <div class="bar-t2" style="left:60%;width:12%;"></div>
+        <div class="bar-t3" style="left:72%;width:28%;"></div>
+        <div class="bar-current" style="left:30%;"></div>
+      </div>
+      <div class="bar-legend">
+        <span><span style="display:inline-block;width:8px;height:8px;background:#F85149;border-radius:2px;"></span> Stop</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#58A6FF;border-radius:2px;"></span> Entry</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#fff;border:1px solid #58A6FF;border-radius:50%;"></span> Current</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#3FB950;border-radius:2px;"></span> T1 Swing</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#2EA043;border-radius:2px;"></span> T2 Trend</span>
+        <span><span style="display:inline-block;width:8px;height:8px;background:#238636;border-radius:2px;"></span> T3 Tail</span>
+      </div>
+    </div>
+
+    <!-- THESIS Panel -->
+    <div class="thesis-panel">
+      <div class="thesis-title">🎯 THESIS: Why This Position</div>
+      <div class="thesis-item">
+        <span>📉</span>
+        <span><b>OVERSOLD SETUP:</b> Price 7% below Trade Low. Mean-reversion play dengan asimetrik upside.</span>
+      </div>
+      <div class="thesis-item">
+        <span>🎯</span>
+        <span><b>ASYMMETRIC RR:</b> Risk/Reward 4.3x — highly asymmetric. Reward lebih besar 4x dari risk.</span>
+      </div>
+      <div class="thesis-item">
+        <span>🔴</span>
+        <span><b>Negative Gamma:</b> Dealer short gamma = trend ACCELERATION on breakout. Target bisa lebih agresif.</span>
+      </div>
+      <div class="thesis-item">
+        <span>📉</span>
+        <span><b>Put Wall Support:</b> Price -5% below max pain + neg gamma. <b>Support holds — buy dips.</b></span>
+      </div>
+      <div class="thesis-item">
+        <span>🟢</span>
+        <span><b>Charm +0.65:</b> Put support strengthening daily. Theta decay mendukung longs.</span>
+      </div>
+      <div class="thesis-item">
+        <span>🟢</span>
+        <span><b>Hidden Accumulation:</b> Dark Pool BUY + Lit Tape SELL. Institutions stealth buying.</span>
+      </div>
+      <div class="thesis-item">
+        <span>⭐</span>
+        <span><b>Grade A Quality (85):</b> High conviction setup — multiple signals align.</span>
+      </div>
+    </div>
+
+    <!-- EXECUTION CHECKLIST -->
+    <div class="checklist-panel">
+      <div class="checklist-title">📋 EXECUTION CHECKLIST</div>
+      <div class="checklist-item">❌ Wait for pullback ke entry ($0.2400)</div>
+      <div class="checklist-item">✅ Stop loss valid — Risk 4.1%</div>
+      <div class="checklist-item">✅ RR ratio bagus — 4.3x (target &gt; 2.0x)</div>
+      <div class="checklist-item">✅ Hedgeye playbook alignment: FAVORED</div>
+      <div class="checklist-item">⬜ Set position size: ~2.5% of portfolio (suggested for RR 4.3x)</div>
+      <div class="checklist-item">⬜ Place stop order at $0.2300</div>
+      <div class="checklist-item">⬜ Set T1 (swing) take-profit at $0.2827</div>
+      <div class="checklist-item">⬜ Set T2 (trend) take-profit at $0.3200</div>
+    </div>
+
+    <!-- Phase row -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:0.7rem;margin:8px 0;">
+      <span style="color:#3FB950;font-weight:700;">📉 TRADE (Below Trade Low — Oversold)</span>
+      <span>·</span>
+      <span style="color:#3FB950;">📉 Formation: Oversold</span>
+    </div>
+
+    <!-- Composite Signal -->
+    <div style="display:flex;align-items:center;gap:8px;font-size:0.7rem;margin:4px 0;">
+      <span style="background:#3FB95018;color:#3FB950;padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:700;border:1px solid #3FB95040;">BUY</span>
+      <span style="color:#8B949E;">Composite Signal · Confidence <b style="color:#3FB950;">78%</b></span>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- ⚙️ BACKGROUND DATA (COLLAPSED) -->
+<!-- ═══════════════════════════════════════════ -->
+<div class="expander">
+  <div class="expander-header">⚙️ Background Data</div>
+  <div class="expander-body">
+
+    <!-- Greeks Panel -->
+    <div class="ts-panel">
+      <div class="ts-panel-title">📊 Greeks · Source: PROXY</div>
+      <div style="font-size:0.7rem;margin-bottom:4px;">Gamma: <b style="color:#F85149;">NEGATIVE</b></div>
+      <div style="font-size:0.65rem;color:#8B949E;">GEX: <b>-0.82</b> · Vanna: <b>+0.65</b> · Charm: <b>+0.71</b> · Skew 30D: <b>-0.12</b></div>
+      <div style="font-size:0.65rem;color:#8B949E;">Max Pain: <b>$0.2550</b></div>
+    </div>
+
+    <!-- Dark Pool -->
+    <div class="ts-panel">
+      <div class="ts-panel-title">🌑 Dark Pool Intelligence</div>
+      <span class="tag" style="background:#3FB95018;color:#3FB950;border:1px solid #3FB95040;">HIDDEN ACCUMULATION</span>
+      <span class="tag" style="background:#3FB95018;color:#3FB950;border:1px solid #3FB95040;">ZERO SELLS</span>
+    </div>
+
+    <!-- Recommendation -->
+    <div class="ts-panel" style="border-color:#3FB95040;">
+      <div>
+        <span style="background:#3FB95020;border:1px solid #3FB95050;border-radius:6px;padding:4px 10px;font-size:0.75rem;color:#3FB950;font-weight:700;">🎯 BELI SPOT / AKUMULASI</span>
+        <span style="font-size:0.7rem;color:#8B949E;margin-left:8px;">Confidence <b style="color:#3FB950;">72%</b></span>
+      </div>
+      <div style="font-size:0.68rem;color:#8B949E;margin-top:8px;line-height:1.5;">
+        • 📉 OVERSOLD: Price below Trade Low. Mean-reversion play. <span style="color:#484F58;font-size:0.6rem;">(+70)</span><br>
+        • 🔴 Negative gamma — trend acceleration on breakout. <span style="color:#484F58;font-size:0.6rem;">(+65)</span><br>
+        • 🟢 Vanna +0.65: Rally = vol crush. Buy spot on dips. <span style="color:#484F58;font-size:0.6rem;">(+60)</span><br>
+        • 🟢 Hidden Accumulation detected. <span style="color:#484F58;font-size:0.6rem;">(+20)</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- LEGEND / EXPLANATION -->
+<!-- ═══════════════════════════════════════════ -->
+<div style="margin-top:20px;padding:12px;background:#161B22;border:1px solid #30363D;border-radius:8px;max-width:900px;">
+  <div style="font-size:0.7rem;color:#58A6FF;font-weight:600;margin-bottom:8px;">📖 Design Changes Summary</div>
+  <div style="font-size:0.65rem;color:#8B949E;line-height:1.6;">
+    <b>1. Multi-Target Support:</b> T1 (Swing, 1-4w), T2 (Trend, 1-3m), T3 (Tail, 3-6m+) — calculated from Risk Range levels (trade_top, trend_top, tail_top)<br>
+    <b>2. Visual Entry Zone Bar:</b> Color-coded horizontal bar showing Stop (red) → Entry (blue) → Current (white dot) → T1/T2/T3 (green shades) with legend<br>
+    <b>3. THESIS Panel:</b> Bullet-point explanation of why the trade — prioritizing: setup type, RR ratio, Greeks signals, Dark Pool, Max Pain, Macro narrative<br>
+    <b>4. EXECUTION CHECKLIST:</b> Actionable items with ✅/❌/⬜ status — entry zone, stop validity, RR check, Hedgeye alignment, position sizing, order placement<br>
+    <b>5. Colors:</b> #58A6FF (blue entry), #F85149 (red stop), #3FB950 (green T1), #2EA043 (green T2), #238636 (green T3), #D29922 (yellow wait)
+  </div>
+</div>
+
+</body>
+</html>

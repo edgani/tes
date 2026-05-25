@@ -520,6 +520,35 @@ except Exception as e:
     QUAD_ASSET_PERFORMANCE = {}; TICKER_SECTOR = {}; MARKET_CLASSIFICATION = {}; BOTTLENECK_PROFILES = {}
 
 # ═══════════════════════════════════════════════════════════════════════
+# V41: External Data Scraper Imports (Barchart, DeFiLlama, CFTC COT)
+# ═══════════════════════════════════════════════════════════════════════
+_V41_SCRAPERS = {}
+
+try:
+    from engines.barchart_scraper import BarchartScraper
+    _V41_SCRAPERS["barchart"] = True
+except Exception as e:
+    logger.error(f"Failed to import barchart_scraper: {e}")
+    _V41_SCRAPERS["barchart"] = False
+    BarchartScraper = None
+
+try:
+    from engines.defillama_scraper import DeFiLlamaFetcher
+    _V41_SCRAPERS["defillama"] = True
+except Exception as e:
+    logger.error(f"Failed to import defillama_scraper: {e}")
+    _V41_SCRAPERS["defillama"] = False
+    DeFiLlamaFetcher = None
+
+try:
+    from engines.cftc_cot_scraper import CFTCCOTScraper
+    _V41_SCRAPERS["cftc_cot"] = True
+except Exception as e:
+    logger.error(f"Failed to import cftc_cot_scraper: {e}")
+    _V41_SCRAPERS["cftc_cot"] = False
+    CFTCCOTScraper = None
+
+# ═══════════════════════════════════════════════════════════════════════
 # TIER S ENGINE IMPORTS (v39 fix — previously uncalled, now wired)
 # ═══════════════════════════════════════════════════════════════════════
 _V39_TIER_S = {}
