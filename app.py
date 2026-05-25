@@ -1004,6 +1004,44 @@ def _catalyst_monitor_v2(snap, sq="Q3", mq="Q2", next_q=None):
     return items, proj
 
 
+def _economic_calendar_mini(sq="Q3", mq="Q2"):
+    """v49: Economic calendar mini — event minggu depan yang bisa trigger transisi.
+    Hardcoded placeholder (bisa diganti dengan API real-time)."""
+    # Event ekonomi penting (placeholder — update sesuai kalender real)
+    events = [
+        ("📅", "Fed Meeting", "19 Jun", "Rate decision — hawkish = Q3→Q4"),
+        ("📊", "CPI Inflasi", "25 Jun", ">3.5% = Q2→Q3, <3% = Q3→Q1"),
+        ("🏭", "PMI Manufaktur", "23 Jun", ">50 = Q3→Q2, <47 = Q4 risk"),
+        ("💼", "Nonfarm Payroll", "6 Jul", ">250K = Q2 overheat, <100K = Q3"),
+        ("🏦", "GDP Q2 Adv", "25 Jul", ">2% = Q3→Q2, negatif = Q4"),
+    ]
+
+    # Filter event yang relevan dengan transisi saat ini
+    pair = (sq, mq)
+    if sq != mq:
+        title = f"📰 ECONOMIC CALENDAR — Transisi {sq}→{mq}"
+    else:
+        title = f"📰 ECONOMIC CALENDAR — Stabil {sq}"
+
+    html = (
+        f'<div style="background:#161b22;border:1px solid #58A6FF30;border-radius:8px;padding:8px 10px;margin-top:4px;">'
+        f'<div style="font-size:0.6rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">{title}</div>'
+    )
+    for emoji, name, date, impact in events[:4]:
+        html += (
+            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+            f'padding:3px 0;border-bottom:1px solid #21262d;">'
+            f'<div><span style="font-size:0.6rem;color:#c9d1d9;">{emoji} <b>{name}</b></span>'
+            f'<span style="font-size:0.5rem;color:#8b949e;margin-left:6px;">{date}</span></div>'
+            f'<div style="font-size:0.5rem;color:#484f58;max-width:120px;text-align:right;">{impact}</div></div>'
+        )
+    html += (
+        f'<div style="font-size:0.48rem;color:#484f58;margin-top:3px;text-align:center;">'
+        f'📖 Data: ForexFactory · Update harian · Event bisa mengubah regime</div></div>'
+    )
+    return html
+
+
 def _plotly_regime_dashboard(snap):
     """v43: Split layout — kiri cards, kanan horizontal bar.
     Fix: GIP data access via _GipProxy + getattr (gip adalah object, bukan dict).
@@ -1065,7 +1103,7 @@ def _plotly_regime_dashboard(snap):
             else:
                 next_est = ">90hari"
 
-    # ── Horizontal bar chart Q1-Q4 ──
+    # ── Horizontal bar Q1-Q4: v49 — 1 bar Structural, Monthly/Forward jadi marker ──
     fig = go.Figure()
     labels = list(reversed(quads))  # Q4 di atas, Q1 di bawah
     label_colors = [quad_colors[q] for q in labels]
@@ -1076,63 +1114,66 @@ def _plotly_regime_dashboard(snap):
     m_rev = list(reversed(mo_vals))
     f_rev = list(reversed(f1m_vals))
 
-    # v44: Hover lengkap dengan penjelasan quad
-    def _hover(label, layer, v):
-        q = label
+    # Hover: semua 3 data dalam 1 tooltip
+    hover_texts = []
+    for i, q in enumerate(labels):
         desc = quad_desc.get(q, "")
-        return f"<b>{q}</b> — {desc}<br>{layer}: <b>{v*100:.0f}%</b><extra></extra>"
+        hover_texts.append(
+            f"<b>{q}</b> — {desc}<br>"
+            f"📊 Structural: <b>{s_rev[i]*100:.0f}%</b><br>"
+            f"📅 Monthly: <b>{m_rev[i]*100:.0f}%</b><br>"
+            f"🔮 Forward 1M: <b>{f_rev[i]*100:.0f}%</b><extra></extra>"
+        )
 
+    # 1 Bar: Structural (solid, utama)
     fig.add_trace(go.Bar(
         y=labels, x=[v * 100 for v in s_rev], orientation="h",
-        name="<b>■</b> Structural (solid)",
-        marker={"color": label_colors, "opacity": 1.0,
-                "line": {"width": 0}},
-        text=[f"{v*100:.0f}%" for v in s_rev],
+        name="📊 Structural",
+        marker={"color": label_colors, "opacity": 1.0, "line": {"width": 0}},
+        text=[f"<b>{v*100:.0f}%</b>" for v in s_rev],
         textposition="outside",
-        textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
-        hovertemplate=[_hover(l, "Structural", v) for l, v in zip(labels, s_rev)],
-        width=0.25, offsetgroup=0,
-    ))
-    fig.add_trace(go.Bar(
-        y=labels, x=[v * 100 for v in m_rev], orientation="h",
-        name="<b>▨</b> Monthly (transparan)",
-        marker={"color": label_colors, "opacity": 0.5,
-                "line": {"width": 0}},
-        text=[f"{v*100:.0f}%" for v in m_rev],
-        textposition="outside",
-        textfont={"size": 9, "color": "#8b949e"},
-        hovertemplate=[_hover(l, "Monthly", v) for l, v in zip(labels, m_rev)],
-        width=0.25, offsetgroup=1,
-    ))
-    fig.add_trace(go.Bar(
-        y=labels, x=[v * 100 for v in f_rev], orientation="h",
-        name="<b>□</b> Forward 1M (prediksi)",
-        marker={"color": label_colors, "opacity": 0.15,
-                "line": {"width": 1, "color": "#8b949e"}},
-        text=[f"{v*100:.0f}%" for v in f_rev],
-        textposition="outside",
-        textfont={"size": 9, "color": "#8b949e"},
-        hovertemplate=[_hover(l, "Forward 1M (prediksi Markov)", v) for l, v in zip(labels, f_rev)],
-        width=0.25, offsetgroup=2,
+        textfont={"size": 11, "color": "#c9d1d9", "weight": 700},
+        hovertemplate=hover_texts,
+        width=0.4,
     ))
 
-    # Annotation: penjelasan di dalam chart
+    # Monthly: garis vertikal tipis di posisi monthly value
+    fig.add_trace(go.Scatter(
+        y=labels, x=[v * 100 for v in m_rev],
+        mode="markers",
+        name="📅 Monthly",
+        marker={"symbol": "line-ns", "size": 16, "color": "#E6EDF3",
+                "line": {"width": 2, "color": "#E6EDF3"}},
+        hovertemplate=[f"📅 Monthly {q}: <b>{v*100:.0f}%</b><extra></extra>" for q, v in zip(labels, m_rev)],
+    ))
+
+    # Forward 1M: diamond marker di posisi forward value
+    fig.add_trace(go.Scatter(
+        y=labels, x=[v * 100 for v in f_rev],
+        mode="markers",
+        name="🔮 Forward 1M",
+        marker={"symbol": "diamond", "size": 10, "color": label_colors,
+                "line": {"width": 1.5, "color": "#E6EDF3"}},
+        hovertemplate=[f"🔮 Forward 1M {q}: <b>{v*100:.0f}%</b><extra></extra>" for q, v in zip(labels, f_rev)],
+    ))
+
+    # Annotation transisi
     anno_text = ""
     if next_q:
-        anno_text = f"🔮 Transisi <b>{sq}→{next_q}</b>: {next_prob:.0%} · {next_est}"
+        anno_text = f"🔮 Next: <b>{sq}→{next_q}</b> · {next_prob:.0%} · {next_est}"
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 32, "b": 22, "l": 35, "r": 50},
-        height=190, barmode="group", bargap=0.15, bargroupgap=0.1,
+        margin={"t": 28, "b": 20, "l": 35, "r": 50},
+        height=180, barmode="relative",
         showlegend=True,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1.0,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
         yaxis={"tickfont": {"size": 11, "color": "#c9d1d9", "weight": 700},
                "gridcolor": "#21262d"},
         xaxis={"range": [0, 100], "tickformat": ".0f", "ticksuffix": "%",
-               "gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#8b949e"}},
+               "gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"}},
         annotations=[{
             "text": anno_text,
             "x": 0.01, "y": -0.12, "xref": "paper", "yref": "paper",
@@ -1373,8 +1414,8 @@ def _what_if_regime_html(structural_quad, monthly_quad):
     )
 
 def _boombust_timeline_html(snap):
-    """Boom-Bust Stage Timeline horizontal — INCEPTION → ACCELERATION → EUPHORIA → CRISIS → AUCTION.
-    Lebih deskriptif dari gauge. Return HTML string (bukan Plotly)."""
+    """v49: Boom-Bust Stage Timeline — redesign intuitif dengan penjelasan tiap stage.
+    User bisa mengerti: posisi saat ini + artinya + sinyal apa yang diwaspadai."""
     bb = snap.get("boom_bust", {}) or {}
     stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
     reflex = snap.get("reflexivity", {}) or {}
@@ -1383,49 +1424,79 @@ def _boombust_timeline_html(snap):
     stages = ["INCEPTION", "ACCELERATION", "EUPHORIA", "CRISIS", "AUCTION"]
     idx = stages.index(stage) if stage in stages else 0
 
-    # Build timeline nodes
-    nodes_html = ""
-    labels_html = ""
-    for i, s in enumerate(stages):
-        if i < idx:
-            node_color, node_bg = "#3FB950", "#3FB950"  # past
-        elif i == idx:
-            node_color, node_bg = "#58A6FF", "#58A6FF"  # active
-        else:
-            node_color, node_bg = "#30363D", "#21262D"  # future
+    # Penjelasan tiap stage (untuk user ngerti)
+    stage_desc = {
+        "INCEPTION": "🌱 Awal tren — volume naik pelan",
+        "ACCELERATION": "🚀 Trend kuat — FOMO mulai",
+        "EUPHORIA": "🎰 Greed ekstrem — retail masuk massal",
+        "CRISIS": "💥 Panic — margin call, forced selling",
+        "AUCTION": "🔨 Capitulation — bottom fishing",
+    }
+    stage_warna = {
+        "INCEPTION": ("#3FB950", "Aman — mulai pantau"),
+        "ACCELERATION": ("#D29922", "Waspada — FOMO terdeteksi"),
+        "EUPHORIA": ("#F85149", "🚨 BAHAYA — jangan beli"),
+        "CRISIS": ("#F85149", "🔴 CRASH — tunggu bottom"),
+        "AUCTION": ("#A371F7", "⏳ Akhir jatuh — siap masuk"),
+    }
+    sc, sd = stage_warna.get(stage, ("#8b949e", "?"))
 
-        # Connector line
+    # Timeline nodes
+    nodes_html = ""
+    for i, s in enumerate(stages):
+        is_past = i < idx
+        is_active = i == idx
+        nc = "#3FB950" if is_past else sc if is_active else "#30363D"
+        emoji = "✓" if is_past else "●" if is_active else "○"
+        ns = f"<span style='font-size:0.5rem;'>{emoji}</span>" if is_past or is_active else ""
+
         if i < len(stages) - 1:
-            line_color = "#58A6FF" if i < idx else "#30363D"
+            lc = "#3FB950" if is_past else "#30363D"
             nodes_html += (
                 f'<div style="display:flex;align-items:center;">'
-                f'<div style="width:20px;height:20px;border-radius:50%;border:3px solid {node_color};'
-                f'background:{node_bg};display:flex;align-items:center;justify-content:center;">'
-                f'</div>'
-                f'<div style="width:30px;height:2px;background:{line_color};"></div>'
-                f'</div>'
+                f'<div style="width:22px;height:22px;border-radius:50%;border:2.5px solid {nc};'
+                f'background:{"#3FB95020" if is_past else sc+"30" if is_active else "#21262D"};'
+                f'display:flex;align-items:center;justify-content:center;">{ns}</div>'
+                f'<div style="width:28px;height:2px;background:{lc};"></div></div>'
             )
         else:
             nodes_html += (
-                f'<div style="width:20px;height:20px;border-radius:50%;border:3px solid {node_color};'
-                f'background:{node_bg};display:flex;align-items:center;justify-content:center;">'
-                f'</div>'
+                f'<div style="width:22px;height:22px;border-radius:50%;border:2.5px solid {nc};'
+                f'background:{"#3FB95020" if is_past else sc+"30" if is_active else "#21262D"};'
+                f'display:flex;align-items:center;justify-content:center;">{ns}</div>'
             )
 
-        labels_html += f'<div style="width:52px;text-align:center;font-size:0.55rem;color:#8b949e;font-weight:600;">{s}</div>'
-
-    stage_color = GREEN if score <= 2 else AMBER if score <= 5 else RED
+    # Survival score interpretasi
+    if score <= 2:
+        surv_emoji, surv_text = "🟢", "Aman — pasar stabil"
+    elif score <= 4:
+        surv_emoji, surv_text = "🟡", "Waspada — mulai panas"
+    elif score <= 6:
+        surv_emoji, surv_text = "🟠", "Panas — jangan tambah posisi"
+    elif score <= 8:
+        surv_emoji, surv_text = "🔴", "Bahaya — pertimbangkan cash"
+    else:
+        surv_emoji, surv_text = "🚨", "Kritis — crash mungkin terjadi"
 
     return (
-        f'<div style="padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
-        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-        f'<span style="font-size:0.9rem;">🌀</span>'
-        f'<div><div style="font-size:0.68rem;color:#8b949e;font-weight:600;">BOOM-BUST STAGE</div>'
-        f'<div style="font-size:0.82rem;color:{stage_color};font-weight:800;">{stage}</span>'
-        f' <span style="color:#484f58;font-size:0.7rem;">·</span>'
-        f' <span style="font-size:0.7rem;color:#8b949e;">Score: <b style="color:#c9d1d9;">{score:.1f}</b>/10</span></div></div>'
-        f'<div style="display:flex;align-items:center;gap:0;padding:4px 0;">{nodes_html}</div>'
-        f'<div style="display:flex;gap:0;margin-top:2px;">{labels_html}</div>'
+        f'<div style="padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:10px;">'
+        # Header: Stage + Score
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+        f'<div><div style="font-size:0.55rem;color:#8b949e;font-weight:600;">📊 FASE PASAR (Boom-Bust)</div>'
+        f'<div style="font-size:0.9rem;color:{sc};font-weight:800;">{stage}</div></div>'
+        f'<div style="text-align:right;"><div style="font-size:0.55rem;color:#8b949e;">SURVIVAL SCORE</div>'
+        f'<div style="font-size:0.85rem;color:{sc};font-weight:800;">{score:.1f}/10 {surv_emoji}</div></div></div>'
+        # Penjelasan stage
+        f'<div style="font-size:0.6rem;color:#c9d1d9;background:{sc}15;border-radius:6px;padding:5px 8px;margin-bottom:6px;">'
+        f'<b style="color:{sc};">{sd}</b><br><span style="color:#8b949e;">{stage_desc.get(stage, "")}</span></div>'
+        # Timeline
+        f'<div style="display:flex;align-items:center;padding:2px 0;">{nodes_html}</div>'
+        f'<div style="display:flex;gap:0;margin-top:3px;">'
+        + ''.join([f'<div style="width:50px;text-align:center;font-size:0.5rem;color:{"#3FB950" if i<idx else sc if i==idx else "#484f58"};font-weight:{"700" if i==idx else "600"};">{s[:4]}</div>' for i, s in enumerate(stages)])
+        + f'</div>'
+        # Survival interpretasi
+        f'<div style="font-size:0.55rem;color:#8b949e;margin-top:5px;border-top:1px solid #21262d;padding-top:4px;">'
+        f'{surv_emoji} <b>{surv_text}</b> · Score 0-2=aman · 3-4=waspada · 5-6=panas · 7-8=bahaya · 9-10=kritis</div>'
         f'</div>'
     )
 
@@ -4764,6 +4835,9 @@ def page_dashboard():
             )
         cat_html += '</div>'
         st.markdown(cat_html, unsafe_allow_html=True)
+
+        # ── Economic Calendar Mini (Next Catalyst) ──
+        st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
 
     with rc2:
         st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v48")
