@@ -1060,7 +1060,7 @@ def _plotly_regime_dashboard(snap):
 
 
 def _plotly_crash_meter(snap):
-    """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 150px."""
+    """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 115px."""
     cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
     inds = [
         {"name": "Yield<br>Curve", "key": "yield_curve_score"},
@@ -1069,7 +1069,7 @@ def _plotly_crash_meter(snap):
         {"name": "VIX<br>%ile", "key": "vix_percentile_score"},
         {"name": "Margin<br>Debt", "key": "margin_score"},
     ]
-    fig = make_subplots(rows=1, cols=5, specs=[[{"type": "indicator"}] * 5], horizontal_spacing=0.06)
+    fig = make_subplots(rows=1, cols=5, specs=[[{"type": "indicator"}] * 5], horizontal_spacing=0.05)
     total = 0
     for i, ind in enumerate(inds):
         val = cm.get(ind["key"], 1)
@@ -1077,11 +1077,11 @@ def _plotly_crash_meter(snap):
         color = GREEN if val <= 1 else AMBER if val <= 2 else RED
         fig.add_trace(go.Indicator(
             mode="gauge+number", value=val,
-            title={"text": ind["name"], "font": {"size": 9, "color": "#8b949e"}},
-            number={"font": {"size": 14, "color": "#c9d1d9", "weight": 700}},
+            title={"text": ind["name"], "font": {"size": 7, "color": "#8b949e"}},
+            number={"font": {"size": 11, "color": "#c9d1d9", "weight": 700}},
             gauge={
-                "axis": {"range": [0, 5], "tickwidth": 0, "tickfont": {"size": 7, "color": "#484f58"}},
-                "bar": {"color": color, "thickness": 0.8},
+                "axis": {"range": [0, 5], "tickwidth": 0, "tickfont": {"size": 6, "color": "#484f58"}},
+                "bar": {"color": color, "thickness": 0.85},
                 "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
                 "steps": [
                     {"range": [0, 1.5], "color": "rgba(63,185,80,0.08)"},
@@ -1095,12 +1095,12 @@ def _plotly_crash_meter(snap):
     ol = "AMAN" if total <= 7 else "WASPADA" if total <= 12 else "KRITIS"
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 9},
-        margin={"t": 25, "b": 25, "l": 15, "r": 15}, height=150,
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
+        margin={"t": 18, "b": 18, "l": 12, "r": 12}, height=115,
         annotations=[{
-            "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2 hijau=AMAN · 3 kuning=WASPADA · 4-5 merah=KRITIS",
-            "x": 0.5, "y": -0.06, "showarrow": False,
-            "font": {"size": 9, "color": "#8b949e"},
+            "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
+            "x": 0.5, "y": -0.08, "showarrow": False,
+            "font": {"size": 8, "color": "#8b949e"},
         }],
     )
     return fig
@@ -4658,20 +4658,10 @@ def page_dashboard():
     with rc2:
         # Horizontal bar Q1-Q4
         st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v41")
-
-    st.caption("📖 Bar solid = Structural, bar transparan = Monthly, bar ghost = Forward 1M. "
-               "🐂 = Q1+Q2 (growth naik), 🐻 = Q3+Q4 (growth turun). "
-               "⚡ Catalyst = indikator yang paling deket mengubah quad.")
-
-    # ── Narrative ──
-    narrative = snap.get("narrative", {}) or {}
-    macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
-    if macro_nar.get("headline") or macro_nar.get("narrative"):
-        headline = macro_nar.get("headline", macro_nar.get("narrative", ""))
-        nar_html = ('<div class="narrative-card">'
-                    '<div class="narrative-headline">' + str(headline)[:180] + ("..." if len(str(headline)) > 180 else "") + '</div>'
-                    '<div class="narrative-sub">' + str(macro_nar.get("sub_narrative", ""))[:120] + '</div></div>')
-        st.markdown(nar_html, unsafe_allow_html=True)
+        # Caption di bawah bar graph (attachment 4 → bawah attachment 5)
+        st.caption("📖 Bar solid = Structural, bar transparan = Monthly, bar ghost = Forward 1M. "
+                   "🐂 = Q1+Q2 (growth naik), 🐻 = Q3+Q4 (growth turun). "
+                   "⚡ Catalyst = indikator yang paling deket mengubah quad.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 2: 4 KEY GAUGES
@@ -4740,11 +4730,11 @@ def page_dashboard():
         st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin-bottom:4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="crash_meter")
-        st.caption("📖 5 indikator: Yield Curve, Credit Spread, CAPE, VIX %ile, Margin Debt. "
-                  "1-2 hijau=AMAN · 3 kuning=WASPADA · 4-5 merah=KRITIS.")
+        st.caption("📖 Yield Curve · Credit Spread · CAPE · VIX %ile · Margin Debt. "
+                  "Score = rate-of-change (bukan absolute). Margin Debt score 1 = YoY masih normal, bukan debt US rendah.")
 
-        # Asset Pulse (pindah ke kiri — space optimal)
-        st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:8px 0 4px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        # Asset Pulse — naik sejajar sentiment (margin rapat)
+        st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:6px 0 3px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="asset_pulse")
         st.caption("📖 Return 21 hari. Hijau=masuk Merah=keluar. QQQ+DXY weak=Growth-on Reflation.")
