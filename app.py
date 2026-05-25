@@ -344,62 +344,6 @@ def _derive_tickers_from_config(quad, bias):
         pass
     return list(dict.fromkeys(tickers))[:20]
 
-# ═══════════════════════════════════════════════════════════════════
-# SCRAPER ENGINE IMPORTS (v46 — wired to market pages)
-# ═══════════════════════════════════════════════════════════════════
-_SCRAPERS = {}
-
-# Barchart — US Stocks options data (GEX, IV Rank, Max Pain)
-try:
-    from engines.barchart_scraper import BarchartScraper
-    _barchart = BarchartScraper()
-    _SCRAPERS["barchart"] = True
-except Exception as e:
-    logger.warning(f"Barchart scraper not available: {e}")
-    _barchart = None
-    _SCRAPERS["barchart"] = False
-
-# DeFiLlama — Crypto on-chain data (TVL, DEX volume)
-try:
-    from engines.defillama_scraper import DeFiLlamaFetcher
-    _defillama = DeFiLlamaFetcher()
-    _SCRAPERS["defillama"] = True
-except Exception as e:
-    logger.warning(f"DeFiLlama scraper not available: {e}")
-    _defillama = None
-    _SCRAPERS["defillama"] = False
-
-# CFTC COT — Forex/Commodities positioning
-try:
-    from engines.cftc_cot_scraper import CFTCCOTScraper
-    _cot_scraper = CFTCCOTScraper()
-    _SCRAPERS["cot"] = True
-except Exception as e:
-    logger.warning(f"CFTC COT scraper not available: {e}")
-    _cot_scraper = None
-    _SCRAPERS["cot"] = False
-
-# Laevitas — Crypto options GEX (BTC/ETH)
-try:
-    from engines.laevitas_scraper import LaevitasScraper
-    _laevitas = LaevitasScraper()
-    _SCRAPERS["laevitas"] = True
-except Exception as e:
-    logger.warning(f"Laevitas scraper not available: {e}")
-    _laevitas = None
-    _SCRAPERS["laevitas"] = False
-
-# CME — Commodities futures data
-try:
-    from engines.cme_scraper import CMEScraper
-    _cme = CMEScraper()
-    _SCRAPERS["cme"] = True
-except Exception as e:
-    logger.warning(f"CME scraper not available: {e}")
-    _cme = None
-    _SCRAPERS["cme"] = False
-
-
 def _get_bottleneck_quad_map(snap):
     """Dynamic bottleneck-to-quad mapping from orchestrator supply_chain_chains."""
     chains = snap.get("supply_chain_chains", [])
@@ -3971,162 +3915,6 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
-    # ═══════════════════════════════════════════════════════════════════
-    # TOP BAR: Data sources + VIX info + refresh
-    # ═══════════════════════════════════════════════════════════════════
-    st.markdown('<div style="font-size:0.6rem;color:#484F58;margin-bottom:8px;">'
-                '📡 Data: Yahoo Finance (delayed 15m) · FRED · CFTC · Barchart · DeFiLlama · Laevitas · CME | '
-                'VIX Spot=16.70 (VIX Futures=19.45 beda instrument) | '
-                '🕐 Refresh: Auto tiap 12 jam</div>', unsafe_allow_html=True)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # ROW 1: REGIME COMPASS (kiri) + QUAD PROB MINI (kanan)
-    # ═══════════════════════════════════════════════════════════════════
-    # Get data
-    gip_val = snap.get("gip", {}) or {}
-    structural_q = gip_val.get("structural_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
-    monthly_q = gip_val.get("monthly_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
-    forward_q = gip_val.get("forward_3m_quad", "Q3") if isinstance(gip_val, dict) else "Q3"
-    markov = snap.get("markov_v3", {}) or {}
-    behavioral = snap.get("behavioral_macro", {}) or {}
-    health = snap.get("health", {}) or {}
-    
-    # Determine overall regime
-    quad_counts = {"Q1": 0, "Q2": 0, "Q3": 0, "Q4": 0}
-    for q, w in [(structural_q, 0.5), (monthly_q, 0.3), (forward_q, 0.2)]:
-        if q in quad_counts:
-            quad_counts[q] += w
-    overall_q = max(quad_counts, key=quad_counts.get)
-    q_names = {"Q1": "GOLDILOCKS", "Q2": "REFLATION", "Q3": "STAGFLATION", "Q4": "DEFLATION"}
-    q_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#8B5CF6"}
-    
-    # Regime Compass row
-    rc1, rc2 = st.columns([1.2, 1])
-    with rc1:
-        # Regime compass card
-        conf = markov.get("confidence", 0.68) * 100 if isinstance(markov, dict) else 68
-        kelly = markov.get("kelly_fraction", 0.36) if isinstance(markov, dict) else 0.36
-        st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:10px;padding:12px 16px;display:flex;gap:16px;align-items:center;">'
-            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Structural</div>'
-            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(structural_q, "#8B949E")};">{structural_q}</div></div>'
-            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Monthly</div>'
-            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(monthly_q, "#8B949E")};">{monthly_q}</div></div>'
-            f'<div style="text-align:center;"><div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">Markov</div>'
-            f'<div style="font-size:1.1rem;font-weight:800;color:{q_colors.get(overall_q, "#8B949E")};">{overall_q} {q_names.get(overall_q, "?")}</div>'
-            f'<div style="font-size:0.6rem;color:#8B949E;">Conf {conf:.0f}% · Kelly {kelly:.0%}</div></div>'
-            f'<div style="flex:1;"><div style="height:6px;background:#21262D;border-radius:3px;overflow:hidden;">'
-            f'<div style="height:100%;width:{conf:.0f}%;background:linear-gradient(90deg,{q_colors.get(overall_q, "#3FB950")},#3FB950);border-radius:3px;"></div></div></div>'
-            f'</div>', unsafe_allow_html=True)
-    with rc2:
-        # Mini quad prob horizontal bars
-        st.markdown(
-            f'<div style="background:#161B22;border:1px solid #30363D;border-radius:10px;padding:10px 14px;">'
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-            f'<span style="font-size:0.55rem;color:#8B949E;">Q1</span>'
-            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
-            f'<div style="height:100%;width:15%;background:#3FB950;border-radius:5px;"></div></div>'
-            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">15%</span></div>'
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-            f'<span style="font-size:0.55rem;color:#8B949E;">Q2</span>'
-            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
-            f'<div style="height:100%;width:27%;background:#D29922;border-radius:5px;"></div></div>'
-            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">27%</span></div>'
-            f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-            f'<span style="font-size:0.55rem;color:#8B949E;">Q3</span>'
-            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
-            f'<div style="height:100%;width:43%;background:#F85149;border-radius:5px;"></div></div>'
-            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">43%</span></div>'
-            f'<div style="display:flex;align-items:center;gap:8px;">'
-            f'<span style="font-size:0.55rem;color:#8B949E;">Q4</span>'
-            f'<div style="flex:1;height:10px;background:#21262D;border-radius:5px;overflow:hidden;">'
-            f'<div style="height:100%;width:15%;background:#8B5CF6;border-radius:5px;"></div></div>'
-            f'<span style="font-size:0.6rem;color:#8B949E;min-width:30px;">15%</span></div>'
-            f'<div style="display:flex;gap:12px;margin-top:6px;">'
-            f'<span style="font-size:0.5rem;color:#3FB950;">■ Structural</span>'
-            f'<span style="font-size:0.5rem;color:#56D364;">■ Monthly</span>'
-            f'<span style="font-size:0.5rem;color:#1A7F37;">■ Forward 3M</span></div>'
-            f'</div>', unsafe_allow_html=True)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # STATUS BADGE
-    # ═══════════════════════════════════════════════════════════════════
-    st.markdown(
-        f'<div style="display:flex;align-items:center;gap:8px;margin:10px 0;padding:6px 12px;'
-        f'background:rgba(63,185,80,0.08);border:1px solid rgba(63,185,80,0.2);border-radius:8px;">'
-        f'<span style="font-size:0.8rem;">🟢</span>'
-        f'<span style="font-size:0.75rem;color:#3FB950;font-weight:700;">{q_names.get(overall_q, "NEUTRAL")} + AI CAPITAL ROTATION VALIDATED</span>'
-        f'</div>', unsafe_allow_html=True)
-    
-    # ═══════════════════════════════════════════════════════════════════
-    # 8 METRIC CARDS (1 baris)
-    # ═══════════════════════════════════════════════════════════════════
-    mk1, mk2, mk3, mk4, mk5, mk6, mk7, mk8 = st.columns(8)
-    
-    vix_now = 16.7
-    
-    with mk1:
-        vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">📊 Volatility (VIX)</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:{vix_color};">{vix_now:.1f}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">Moderate</div>'
-                    f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=4, label_left="Low", label_right="High")}'
-                    f'</div>', unsafe_allow_html=True)
-    with mk2:
-        hs = health.get("composite_score", 50) if isinstance(health, dict) else 50
-        hc = "#3FB950" if hs >= 70 else "#D29922" if hs >= 50 else "#F85149"
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🏥 Market Health</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:{hc};">{hs:.0f}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">0-100 Composite</div>'
-                    f'{_gauge_html(hs, max_val=100, color=hc, height=4, label_left="Weak", label_right="Strong")}'
-                    f'</div>', unsafe_allow_html=True)
-    with mk3:
-        n_alerts = 0
-        ac = "#3FB950"
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🧠 Behavioral Alerts</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:{ac};">{n_alerts}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">Yves / AAII</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with mk4:
-        kf = markov.get("kelly_fraction", 0.36) if isinstance(markov, dict) else 0.36
-        kc = "#3FB950" if kf >= 0.5 else "#D29922" if kf >= 0.25 else "#F85149"
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">💰 Kelly Fraction</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:{kc};">{kf:.0%}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">Optimal bet size</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with mk5:
-        vb = "INVESTABLE"
-        vc = "#3FB950"
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">📈 VIX Bucket</div>'
-                    f'<div style="font-size:1rem;font-weight:800;color:{vc};">{vb}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">Investable — Normal</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with mk6:
-        gk = snap.get("summary", {}).get("v39_gatekeeper_passed", 106)
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🛡️ Gatekeeper</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:#3FB950;">{gk}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">8-gate passed</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with mk7:
-        ko = snap.get("summary", {}).get("v39_keith_overrides", 13)
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🎙️ Keith Overrides</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:#D29922;">{ko}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">P0 signal sync</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with mk8:
-        wf = snap.get("summary", {}).get("v39_walkforward_passed", 112)
-        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;text-align:center;">'
-                    f'<div style="font-size:0.55rem;color:#8B949E;text-transform:uppercase;">🎲 Walkforward</div>'
-                    f'<div style="font-size:1.3rem;font-weight:800;color:#3FB950;">{wf}</div>'
-                    f'<div style="font-size:0.55rem;color:#8B949E;">MC 100x passed</div>'
-                    f'</div>', unsafe_allow_html=True)
     render_regime_compass(snap)
 
     narrative = snap.get("narrative", {}) or {}
@@ -4147,22 +3935,17 @@ def page_dashboard():
     k1, k2, k3, k4, k5, k6, k7, k8 = st.columns(8)
     with k1:
         vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
-        vix_zone = "Moderate" if 15 <= vix_now < 20 else "Low" if vix_now < 15 else "Elevated" if vix_now < 25 else "High"
-        vix_tip = f"🎯 VIX = Volatility Index (Fear Gauge)\n📊 Nilai: {vix_now:.1f} = Zona {vix_zone}\n🟢 &lt;15 Low | 🟡 15-20 Moderate | 🟠 20-25 Elevated | 🔴 &gt;25 High\n💡 VIX naik = opsi mahal, jangan beli call. VIX turun = opsi murah, bisa akumulasi"
-        st.markdown(f'<div class="metric-grid-card" title="{vix_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Volatility (VIX)</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Volatility (VIX)</div>'
                     f'<div class="metric-grid-value" style="color:{vix_color};">{vix_now:.1f}</div>'
-                    f'<div style="font-size:0.6rem;color:#8B949E;">{vix_zone}</div>'
                     f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=8, label_left="Low", label_right="High")}'
                     f'</div>', unsafe_allow_html=True)
     with k2:
         health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
         hcolor = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
-        h_tip = f"🎯 Market Health = Kesehatan pasar overall (0-100)\n📊 Skor: {health_score:.0f}\n🟢 70-100 Strong | 🟡 50-70 Moderate | 🔴 0-50 Weak\n💡 Dari: Yield Curve, Credit Spreads, ISM, CAPE, Earnings"
-        st.markdown(f'<div class="metric-grid-card" title="{h_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Market Health</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Market Health</div>'
                     f'<div class="metric-grid-value" style="color:{hcolor};">{health_score:.0f}</div>'
-                    f'<div style="font-size:0.6rem;color:#8B949E;">0-100 Composite</div>'
                     f'{_gauge_html(health_score, max_val=100, color=hcolor, height=8, label_left="Weak", label_right="Strong")}'
                     f'</div>', unsafe_allow_html=True)
     with k3:
@@ -4170,18 +3953,16 @@ def page_dashboard():
         alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
         alert_color = "#F85149" if alert_level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if alert_level == "MEDIUM" or n_alerts > 0 else "#3FB950"
-        ba_tip = "🎯 Behavioral Alerts = Deteksi bias psikologis investor\n📊 Dari: AAII Survey, sentiment analysis\n🟢 0 = Pasar rational, normal trading\n🟡 1-2 = Ada greed/fear, waspada\n🔴 3+ = Market irrational, major turning point likely"
-        st.markdown(f'<div class="metric-grid-card" title="{ba_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Behavioral Alerts</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Behavioral Alerts</div>'
                     f'<div class="metric-grid-value" style="color:{alert_color};">{n_alerts}</div>'
-                    f'<div class="metric-grid-sub">Yves / AAII</div>'
+                    f'<div class="metric-grid-sub">Yves / AAII · {alert_level}</div>'
                     f'</div>', unsafe_allow_html=True)
     with k4:
         kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
         kelly_color = "#3FB950" if kelly >= 0.5 else "#D29922" if kelly >= 0.25 else "#F85149"
-        k_tip = f"🎯 Kelly Fraction = Ukuran bet optimal\n📊 Nilai: {kelly:.0%}\n🟢 &gt;50% Edge besar, 4-5% per trade\n🟡 25-50% Edge moderate, 3-4% per trade\n🔴 &lt;25% Edge kecil, 2-3% per trade\n💡 Formula: (Win Rate - (1-Win Rate)/(Avg Win/Avg Loss))"
-        st.markdown(f'<div class="metric-grid-card" title="{k_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Kelly Fraction</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Kelly Fraction</div>'
                     f'<div class="metric-grid-value" style="color:{kelly_color};">{kelly:.0%}</div>'
                     f'<div class="metric-grid-sub">Optimal bet size</div>'
                     f'</div>', unsafe_allow_html=True)
@@ -4189,116 +3970,66 @@ def page_dashboard():
         vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
         vix_l = (snap.get("vix_bucket") or {}).get("label", "—")
         vix_c = "#3FB950" if vix_b == "INVESTABLE" else "#D29922" if vix_b == "CHOP" else "#F85149"
-        vb_tip = f"🎯 VIX Bucket = Klasifikasi VIX untuk trading\n📊 Status: {vix_b}\n🟢 INVESTABLE (12-20) = Trade normal\n🟡 CHOP (20-25) = Reduce size\n🔴 NO-GO (&gt;25) = Wait/cash\n💡 Menentukan apakah market bisa di-trade"
-        st.markdown(f'<div class="metric-grid-card" title="{vb_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ VIX Bucket</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">VIX Bucket</div>'
                     f'<div class="metric-grid-value" style="color:{vix_c};">{vix_b}</div>'
                     f'<div class="metric-grid-sub">{vix_l}</div></div>', unsafe_allow_html=True)
     with k6:
         gk_passed = snap.get("summary", {}).get("v39_gatekeeper_passed", 0)
-        gk_tip = "🎯 Gatekeeper = Filter 8 gate sebelum entry\n✅ 1. Trend alignment\n✅ 2. Risk range valid\n✅ 3. Macro regime match\n✅ 4. VIX bucket investable\n✅ 5. Kelly &gt;25%\n✅ 6. Walkforward passed\n✅ 7. Keith sync\n✅ 8. No hard avoid\n💡 Ticker yang lolos = high probability setups"
-        st.markdown(f'<div class="metric-grid-card" title="{gk_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Gatekeeper</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Gatekeeper</div>'
                     f'<div class="metric-grid-value" style="color:{"#3FB950" if gk_passed > 0 else "#8B949E"};">{gk_passed}</div>'
                     f'<div class="metric-grid-sub">8-gate passed</div></div>', unsafe_allow_html=True)
     with k7:
         keith_ov = snap.get("summary", {}).get("v39_keith_overrides", 0)
-        ko_tip = "🎯 Keith Overrides = Jumlah ticker di-override Keith McCullough\n📊 Keith punya P0 Priority (highest)\n💡 Kalau sistem bilang BUY tapi Keith AVOID → AVOID menang\n💡 Kalau sistem bilang AVOID tapi Keith BUY → BUY menang\n🟡 &gt;0 overrides = cek Keith sync dulu sebelum entry"
-        st.markdown(f'<div class="metric-grid-card" title="{ko_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Keith Overrides</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Keith Overrides</div>'
                     f'<div class="metric-grid-value" style="color:{"#D29922" if keith_ov > 0 else "#8B949E"};">{keith_ov}</div>'
                     f'<div class="metric-grid-sub">P0 signal sync</div></div>', unsafe_allow_html=True)
     with k8:
         wf_passed = snap.get("summary", {}).get("v39_walkforward_passed", 0)
-        wf_tip = "🎯 Walkforward = Monte Carlo backtest 100x simulasi\n📊 112 = 112 ticker lolos semua simulasi\n💡 Filter ANTI-CURVEFIT — memastikan strategi bukan hasil data mining\n🟢 MC 100% passed = strategi valid untuk live trading"
-        st.markdown(f'<div class="metric-grid-card" title="{wf_tip}">'
-                    f'<div class="metric-grid-title">ℹ️ Walkforward</div>'
+        st.markdown(f'<div class="metric-grid-card">'
+                    f'<div class="metric-grid-title">Walkforward</div>'
                     f'<div class="metric-grid-value" style="color:{"#3FB950" if wf_passed > 0 else "#8B949E"};">{wf_passed}</div>'
                     f'<div class="metric-grid-sub">MC 100x passed</div></div>', unsafe_allow_html=True)
 
     st.divider()
 
     # ═══════════════════════════════════════════════════════════════════
-    # VISUAL CHARTS (matplotlib PNG) + PENJELASAN
+    # MATPLOTLIB CHARTS v2 — Proper Visualization Layout
     # ═══════════════════════════════════════════════════════════════════
-    
-    # Check if chart assets exist
-    _assets_dir = os.path.join(os.path.dirname(__file__), "assets")
-    _has_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob.png"))
-    
-    if _has_charts:
-        c1, c2 = st.columns([1.3, 1])
+    # Try local assets first, then fallback to output dir
+    _assets_dir_local = os.path.join(os.path.dirname(__file__), "assets")
+    _assets_dir_output = "/mnt/agents/output/assets"
+    _assets_dir = _assets_dir_local if os.path.exists(os.path.join(_assets_dir_local, "quad_prob_v2.png")) else _assets_dir_output
+    _has_v2_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob_v2.png"))
+
+    if _has_v2_charts:
+        # Row 1: Quad Probability (left, wider) | Crash Meter (right)
+        c1, c2 = st.columns([1.4, 1])
         with c1:
-            # QUAD PROBABILITY CHART
             st.markdown("### 📊 Quad Probability Distribution")
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 <b>Q2=Reflation</b>(Growth📈Infl📈) <b>Q3=Stagflation</b>(Growth📉Infl📈). Hijau=Structural(6-12bln), Kuning=Monthly(1-3bln), Merah=Forward 3M. Klik bar untuk detail tema. Score tinggi = kuadran dominan.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "quad_prob.png"), use_container_width=True)
-            
-            # VIX GAUGE
-            st.markdown("### 📊 VIX Volatility Gauge")
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 <b>VIX=Fear Gauge.</b> 16.7=Zona Moderate(15-20). VIX naik=opsi mahal jangan beli call. VIX turun=opsi murah bisa akumulasi. Beda dengan VIX Futures(19.45) = beda instrument!</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "vix_gauge.png"), use_container_width=True)
-        
+            st.image(os.path.join(_assets_dir, "quad_prob_v2.png"), use_container_width=True)
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 Probabilitas 4 kuadran makro: Q1=Slowdown, Q2=Reflation, Q3=Stagflation, Q4=Goldilocks. Score tinggi = kuadran dominan saat ini.</div>', unsafe_allow_html=True)
         with c2:
-            # CRASH METER GAUGE
             st.markdown("### 🚨 Crash Meter Gauge")
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 5 indikator leading crash: Yield Curve(A1) + 18m Window(A2) + HY Credit(B1/B2) + CAPE(C). <b>1/5 AMAN</b> = tidak ada sinyal crash. Monitor bulanan. A2=Dalam Window(1bln sisa) = waspada.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "crash_meter.png"), use_container_width=True)
-            
-            # ASSET PULSE BAR CHART
-            st.markdown("### ⚡ Asset Pulse (21D)")
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 Return 8 aset 21 hari. <b>QQQ leading+Dollar weak</b>=Growth-on Reflation trade. ETH-9.3%=avoid crypto. Hijau=money in, Merah=money out.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "asset_pulse.png"), use_container_width=True)
-        
+            st.image(os.path.join(_assets_dir, "crash_meter_v2.png"), use_container_width=True)
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 5 indikator leading crash: Yield Curve + Credit Spread + Valuasi. 1/5 AMAN = tidak ada sinyal crash. Monitor bulanan.</div>', unsafe_allow_html=True)
+
         st.divider()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # VISUAL CHARTS: Quad Prob (kiri) + Crash Meter + Asset Pulse (kanan)
-    # ═══════════════════════════════════════════════════════════════════
-    _assets_dir = os.path.join(os.path.dirname(__file__), "assets")
-    _has_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob.png"))
-    
-    if _has_charts:
-        ch1, ch2 = st.columns([1.3, 1])
-        
-        with ch1:
-            # Quad Probability Distribution
-            st.markdown("### 📊 Quad Probability Distribution")
-            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
-                        '📖 <b>Q2=Reflation</b>(Growth📈Infl📈) <b>Q3=Stagflation</b>(Growth📉Infl📈). '
-                        'Hijau=Structural(6-12bln), Kuning=Monthly(1-3bln), Merah=Forward 3M. '
-                        'Score tinggi = kuadran dominan. Klik bar untuk detail tema.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "quad_prob.png"), use_container_width=True)
-            
-            # Legend
-            st.markdown('<div style="display:flex;gap:12px;margin-top:-8px;">'
-                        '<span style="font-size:0.55rem;color:#3FB950;">■ Structural (6-12bln trend)</span>'
-                        '<span style="font-size:0.55rem;color:#D29922;">■ Monthly (1-3bln data)</span>'
-                        '<span style="font-size:0.55rem;color:#F85149;">■ Forward 3M (proyeksi)</span></div>', unsafe_allow_html=True)
-        
-        with ch2:
-            # Crash Meter Gauge
-            st.markdown("### 🚨 Crash Meter Gauge")
-            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
-                        '📖 5 indikator: Yield Curve(A1) + 18m Window(A2) + HY Credit(B1/B2) + CAPE(C). '
-                        '<b>1/5 AMAN</b> = tidak ada sinyal crash. A2=Dalam Window(1bln sisa) = waspada.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "crash_meter.png"), use_container_width=True)
-            
-            # Asset Pulse
-            st.markdown("### ⚡ Asset Pulse (21D)")
-            st.markdown('<div style="font-size:0.6rem;color:#8B949E;margin-bottom:4px;">'
-                        '📖 Return 8 aset 21 hari. <b>QQQ leading+Dollar weak</b>=Growth-on Reflation. '
-                        'ETH-9.3%=avoid crypto. Hijau=money in, Merah=money out.</div>', unsafe_allow_html=True)
-            st.image(os.path.join(_assets_dir, "asset_pulse.png"), use_container_width=True)
-        
+        # Row 2: Asset Pulse (full width)
+        st.markdown("### ⚡ Asset Pulse (21D)")
+        st.image(os.path.join(_assets_dir, "asset_pulse_v2.png"), use_container_width=True)
+        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 Return 8 aset 21 hari terakhir. Hijau = money in, Merah = money out. QQQ leading + Dollar weak = Growth-on Reflation trade. ETH merah = avoid crypto.</div>', unsafe_allow_html=True)
+
         st.divider()
-    
+
     # ── LEFT COLUMN: Boom-Bust + Behavioral + Asset Pulse ──
     # ── RIGHT COLUMN: Crash Meter ──
     left, right = st.columns([1, 1.2])
     with left:
         st.markdown("### 🌀 Boom-Bust Stage")
-        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:6px;">📖 <b>Siklus Soros:</b> Inception → Acceleration → <b>Euphoria (sekarang)</b> → Crisis → Auction. Score 8.7/10 = dekat puncak, <b>jangan FOMO</b>, tighten stops!</div>', unsafe_allow_html=True)
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
         reflex = snap.get("reflexivity", {}) or {}
@@ -4352,7 +4083,6 @@ def page_dashboard():
 
         # ── ASSET PULSE (COMPACTED below Behavioral) ──
         st.markdown("### ⚡ Asset Pulse (21D)")
-        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:6px;">📖 Return 8 aset selama 21 hari. <b>QQQ leading + Dollar weak</b> = Growth-on Reflation trade. ETH -9.3% = avoid crypto. Cara baca: hijau = money in, merah = money out.</div>', unsafe_allow_html=True)
         pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
         pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
         for t, label in pulse_assets:
@@ -4363,7 +4093,7 @@ def page_dashboard():
 
     with right:
         st.markdown("### 🚨 Crash Meter v3")
-        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>📖 5 indikator leading crash: Yield Curve (A1) + 18m Window (A2) + HY Credit (B1/B2) + CAPE (C). Score <b>1/5 AMAN</b> = tidak ada sinyal crash. Monitor bulanan.</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
         st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
     st.divider()
@@ -5044,26 +4774,6 @@ def page_us_stocks():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
 
-    # ── BARCHART OPTIONS INTELLIGENCE ──
-    st.markdown("### 📊 Options Intelligence (Barchart)")
-    if _barchart:
-        bcol1, bcol2, bcol3 = st.columns(3)
-        # Sample tickers for options data
-        for i, t in enumerate(["AAPL", "NVDA", "MSFT", "TSLA", "AMZN"]):
-            try:
-                bd = _barchart.scrape_ticker(t)
-                if bd.iv_rank:
-                    with [bcol1, bcol2, bcol3][i % 3]:
-                        iv_zone = "🟢 Cheap" if bd.iv_rank < 30 else "🟡 Fair" if bd.iv_rank < 70 else "🔴 Expensive"
-                        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;margin:3px 0;">'
-                                    f'<span style="font-weight:700;font-size:0.85rem;">{t}</span> '
-                                    f'<span style="font-size:0.65rem;color:#8B949E;">IV Rank {bd.iv_rank:.0f}% {iv_zone}</span>'
-                                    f'</div>', unsafe_allow_html=True)
-            except Exception:
-                pass
-    else:
-        st.caption("Barchart scraper not available")
-
     st.divider()
     st.markdown("### 📊 Index / ETF Setups (SPY · QQQ · IWM · GLD · TLT)")
     key_etfs = ["SPY", "QQQ", "IWM", "GLD", "TLT"]
@@ -5147,32 +4857,6 @@ def page_forex():
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
         st.divider()
-
-    # ── CFTC COT POSITIONING (Real Data) ──
-    st.markdown("### 🏛️ CFTC Commitment of Traders")
-    if _cot_scraper:
-        try:
-            cot_eur = _cot_scraper.get_cot("EUR/USD")
-            cot_gbp = _cot_scraper.get_cot("GBP/USD")
-            cot_jpy = _cot_scraper.get_cot("JPY/USD")
-
-            for cot in [cot_eur, cot_gbp, cot_jpy]:
-                if cot and "non_commercial" in cot:
-                    nc = cot["non_commercial"]
-                    nc_net = nc.get("long", 0) - nc.get("short", 0)
-                    signal = cot.get("signal", "NEUTRAL")
-                    sig_color = "#3FB950" if "BULLISH" in signal else "#F85149" if "BEARISH" in signal else "#8B949E"
-                    st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:5px 0;">'
-                                f'<span style="font-weight:700;min-width:80px;">{cot.get("product", "?")}</span>'
-                                f'<span style="font-size:0.75rem;">Spec Net: <b style="color:{"#3FB950" if nc_net > 0 else "#F85149"};">{nc_net:+,.0f}</b></span>'
-                                f'<span style="font-size:0.65rem;color:{sig_color};margin-left:auto;">{signal}</span>'
-                                f'</div>', unsafe_allow_html=True)
-        except Exception as e:
-            st.caption(f"COT error: {e}")
-    else:
-        st.caption("CFTC COT scraper not available")
-
-    st.divider()
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
@@ -5223,43 +4907,6 @@ def page_commodities():
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
-
-    # ── CFTC COT + CME DATA ──
-    ccol1, ccol2 = st.columns(2)
-    with ccol1:
-        st.markdown("**COT Positioning**")
-        if _cot_scraper:
-            try:
-                cot_gold = _cot_scraper.get_cot("GOLD")
-                cot_oil = _cot_scraper.get_cot("CRUDE_OIL")
-                for cot in [cot_gold, cot_oil]:
-                    if cot and "non_commercial" in cot:
-                        nc = cot["non_commercial"]
-                        nc_net = nc.get("long", 0) - nc.get("short", 0)
-                        st.markdown(f'<div style="font-size:0.75rem;padding:2px 0;">'
-                                    f'<b>{cot.get("product", "?")}</b> Spec Net: '
-                                    f'<span style="color:{"#3FB950" if nc_net > 0 else "#F85149"};">{nc_net:+,.0f}</span>'
-                                    f'</div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.caption(f"COT error: {e}")
-        else:
-            st.caption("COT scraper not available")
-
-    with ccol2:
-        st.markdown("**CME Settlements**")
-        if _cme:
-            try:
-                gold_settle = _cme.get_settlements("133")  # Gold
-                if gold_settle:
-                    latest = gold_settle[0]
-                    st.markdown(f'<div style="font-size:0.75rem;">'
-                                f'<b>Gold</b> Settle: <span style="color:#E6EDF3;font-weight:600;">${latest.get("settle", "N/A")}</span>'
-                                f'</div>', unsafe_allow_html=True)
-            except Exception as e:
-                st.caption(f"CME error: {e}")
-        else:
-            st.caption("CME scraper not available")
-
     st.divider()
     comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
@@ -5334,50 +4981,6 @@ def page_crypto():
         if isinstance(narrative_crypto, dict) and narrative_crypto.get("fear_greed"):
             fg = narrative_crypto.get("fear_greed", {})
             st.markdown(f'<div style="margin-top:6px;font-size:0.78rem;color:#8B949E;">Fear & Greed: <span style="color:#E6EDF3;font-weight:700;">{fg.get("value",50)}</span> ({fg.get("label","Neutral")})</div>', unsafe_allow_html=True)
-
-    # ── DEFILLAMA ON-CHAIN DATA ──
-    st.markdown("### 🔗 DeFiLlama On-Chain Metrics")
-    if _defillama:
-        try:
-            regime = _defillama.get_crypto_liquidity_regime()
-            dcol1, dcol2, dcol3 = st.columns(3)
-            with dcol1:
-                st.metric("Liquidity Regime", regime.get("regime", "N/A"))
-            with dcol2:
-                st.metric("DEX Trend", regime.get("dex_volume_trend", "N/A"))
-            with dcol3:
-                st.metric("Confidence", f"{regime.get('confidence', 0):.0f}%")
-        except Exception as e:
-            st.caption(f"DeFiLlama error: {e}")
-    else:
-        st.caption("DeFiLlama scraper not available")
-
-    # ── LAEVITAS GEX ──
-    st.markdown("### ⚡ Laevitas GEX (BTC/ETH)")
-    if _laevitas:
-        try:
-            gex_btc = _laevitas.get_gex("BTC", "DERIBIT")
-            gex_eth = _laevitas.get_gex("ETH", "DERIBIT")
-            lcol1, lcol2 = st.columns(2)
-            with lcol1:
-                gamma = gex_btc.get("gamma_exposure_index", 0)
-                zone = "NEGATIVE 🟢" if gamma < 0 else "POSITIVE 🔴"
-                st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;">'
-                            f'<div style="font-weight:700;">BTC GEX</div>'
-                            f'<div style="font-size:0.8rem;color:#8B949E;">Gamma: {gamma:.2f} ({zone})</div>'
-                            f'</div>', unsafe_allow_html=True)
-            with lcol2:
-                gamma = gex_eth.get("gamma_exposure_index", 0)
-                zone = "NEGATIVE 🟢" if gamma < 0 else "POSITIVE 🔴"
-                st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;">'
-                            f'<div style="font-weight:700;">ETH GEX</div>'
-                            f'<div style="font-size:0.8rem;color:#8B949E;">Gamma: {gamma:.2f} ({zone})</div>'
-                            f'</div>', unsafe_allow_html=True)
-        except Exception as e:
-            st.caption(f"Laevitas error: {e}")
-    else:
-        st.caption("Laevitas scraper not available")
-
     st.divider()
     crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
@@ -6325,14 +5928,6 @@ with st.sidebar:
                     f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
                     f'<div style="font-size:1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
                     f'<div style="font-size:0.65rem;color:#8B949E;">{_quad_name(_sq)}</div></div>', unsafe_allow_html=True)
-
-    # Scraper status
-    if any(_SCRAPERS.values()):
-        scraper_badges = ""
-        for name, ok in _SCRAPERS.items():
-            color = "#3FB950" if ok else "#484F58"
-            scraper_badges += f'<span style="color:{color};font-size:0.65rem;margin-right:8px;">● {name.title()}</span>'
-        st.markdown(f'<div style="margin:4px 0;">{scraper_badges}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
 # DATA LOADING
