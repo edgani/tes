@@ -1183,7 +1183,7 @@ def _plotly_crash_meter(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
-        margin={"t": 18, "b": 18, "l": 12, "r": 12}, height=115,
+        margin={"t": 14, "b": 14, "l": 10, "r": 10}, height=100,
         annotations=[{
             "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
             "x": 0.5, "y": -0.08, "showarrow": False,
@@ -1218,11 +1218,11 @@ def _plotly_asset_pulse(snap, prices):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 25, "b": 20, "l": 35, "r": 50},
-        xaxis={"gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"},
+        margin={"t": 18, "b": 12, "l": 30, "r": 45},
+        xaxis={"gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#8b949e"},
                "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
-        yaxis={"gridcolor": "#21262d", "tickfont": {"size": 10, "color": "#c9d1d9"}},
-        showlegend=False, height=100,
+        yaxis={"gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#c9d1d9"}},
+        showlegend=False, height=85,
     )
     return fig
 
@@ -1288,13 +1288,13 @@ def _plotly_behavioral_bar(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 11},
-        margin={"t": 30, "b": 25, "l": 60, "r": 20},
+        margin={"t": 22, "b": 18, "l": 55, "r": 18},
         xaxis={"range": [0, 100], "visible": False},
-        yaxis={"visible": True, "tickfont": {"size": 11, "color": "#8b949e", "weight": 600}},
+        yaxis={"visible": True, "tickfont": {"size": 10, "color": "#8b949e", "weight": 600}},
         barmode="stack", showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 10, "color": "#8b949e"}},
-        height=120,
+        height=100,
         annotations=[
             {
                 "text": f"<span style='color:{cs_color};font-size:0.72rem;'>🎰 <b>Casino Score: {casino_score:.0f}/100</b> · {cs_label}</span>",
@@ -4800,49 +4800,40 @@ def page_dashboard():
     yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
     n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
 
+    # v46: Compact gauges — height 80px, no caption, tight margin
     g1, g2, g3, g4 = st.columns(4)
     with g1:
         vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
         vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
-        fig_vix = _plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix="")
+        fig_vix = _plotly_gauge(vix_now, f"VIX<br><span style='font-size:8px'>{vix_cond}</span>", max_val=40, color=vc, suffix="", height=80)
         st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="gauge_vix")
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>📊 Volatilitas: <b style='color:{vc};'>{vix_cond}</b></div>", unsafe_allow_html=True)
     with g2:
         hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
         h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
-        fig_hlth = _plotly_gauge(health_score, "HEALTH", max_val=100, color=hc)
+        fig_hlth = _plotly_gauge(health_score, f"HEALTH<br><span style='font-size:8px'>{h_cond}</span>", max_val=100, color=hc, height=80)
         st.plotly_chart(fig_hlth, use_container_width=True, config={"displayModeBar": False}, key="gauge_health")
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>❤️ Kesehatan Pasar: <b style='color:{hc};'>{h_cond}</b></div>", unsafe_allow_html=True)
     with g3:
         kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
         k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
-        fig_kly = _plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%")
+        fig_kly = _plotly_gauge(kelly*100, f"KELLY<br><span style='font-size:8px'>{k_cond}</span>", max_val=100, color=kc, suffix="%", height=80)
         st.plotly_chart(fig_kly, use_container_width=True, config={"displayModeBar": False}, key="gauge_kelly")
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>🎯 Taruhan Optimal: <b style='color:{kc};'>{k_cond}</b></div>", unsafe_allow_html=True)
     with g4:
         ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
         a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
         fig_a = go.Figure(go.Indicator(
             mode="gauge+number", value=n_alerts,
-            title={"text": "ALERTS", "font": {"size": 10, "color": "#8b949e"}},
-            number={"font": {"size": 20, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
-            gauge={"axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
+            title={"text": f"ALERTS<br><span style='font-size:8px'>{a_cond}</span>", "font": {"size": 9, "color": "#8b949e"}},
+            number={"font": {"size": 16, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
+            gauge={"axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 7, "color": "#484f58"}},
                    "bar": {"color": ac, "thickness": 0.75}, "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
                    "steps": [{"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
                              {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
                              {"range": [4, 10], "color": "rgba(248,81,73,0.06)"}]},
         ))
         fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-                           height=90, margin={"t": 5, "b": 5, "l": 5, "r": 5})
+                           font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 9},
+                           height=80, margin={"t": 5, "b": 5, "l": 5, "r": 5})
         st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="gauge_alerts")
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>🧠 Behavioral: <b style='color:{ac};'>{a_cond}</b></div>", unsafe_allow_html=True)
-
-    st.markdown(_penjelasan(
-        "<b>VIX</b> = Volatilitas pasar. &lt;20 hijau=tenang, 20-25 kuning=waspada, &gt;25 merah=panik. "
-        "<b>Health</b> = Skor komposit kesehatan pasar 0-100. <b>Kelly</b> = Ukuran taruhan optimal (36%=normal, &gt;50%=aggresif). "
-        "<b>Alerts</b> = Sinyal behavioral Yves/AAII. 0=aman, &gt;2=bahaya."
-    ), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
     # ROW 3: QUAD PROB + CRASH (kiri) | BUBBLE + ASSET + SENTIMENT (kanan)
@@ -4850,31 +4841,25 @@ def page_dashboard():
     left, right = st.columns([1, 1])
 
     with left:
-        # Crash Meter
-        st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin-bottom:4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        # Crash Meter — compact
+        st.markdown("<div style='font-size:0.65rem;color:#F85149;font-weight:700;margin:0 0 2px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="crash_meter")
-        st.caption("📖 Yield Curve · Credit Spread · CAPE · VIX %ile · Margin Debt. "
-                  "Score = rate-of-change (bukan absolute). Margin Debt score 1 = YoY masih normal, bukan debt US rendah.")
 
-        # Asset Pulse — naik sejajar sentiment (margin rapat)
-        st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:6px 0 3px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        # Asset Pulse — tight margin
+        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:4px 0 2px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="asset_pulse")
-        st.caption("📖 Return 21 hari. Hijau=masuk Merah=keluar. QQQ+DXY weak=Growth-on Reflation.")
 
     with right:
-        # Boom-Bust Timeline
-        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        # Boom-Bust Timeline — tight margin
+        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:0 0 2px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-        st.caption("📖 SURVIVAL=kuat pasar bertahan sebelum crash. 0-2=aman · 3-4=accel · 5-7=euphoria · 8-10=crisis")
 
-        # Sentiment — LANGSUNG panggil fungsi, gak perlu pre-check
-        st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
+        # Sentiment — tight margin
+        st.markdown("<div style='font-size:0.65rem;color:#D29922;font-weight:700;margin:4px 0 2px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
         fig_bh = _plotly_behavioral_bar(snap)
         st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
-        st.caption("📖 🎰 Casino Score = greed/fear retail (0=seimbang, 100=casino). "
-                   "Bullish&gt;45%=FOMO · Bearish&gt;35%=kontrarian buy · Casino&gt;60=raise cash 50%.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
