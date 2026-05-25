@@ -813,34 +813,27 @@ def _plotly_quad_probabilities(snap):
     return fig
 
 
-def _plotly_regime_unified(snap):
-    """1 UNIFIED GRAPH: Regime info + Quad Probability + Next Quad Forecast.
-    Design baru yang merge 3 elemen jadi 1 Plotly figure + penjelasan.
+def _plotly_regime_radar(snap):
+    """RADAR CHART: Visualisasi 4 Kuadran Makro sebagai radar/spider chart.
+    Jauh lebih premium dan intuitif dari bar chart biasa.
     """
     # ── Data extraction (defensive) ──
     gip_data = snap.get("gip")
-    if gip_data is None or not isinstance(gip_data, dict):
+    if not isinstance(gip_data, dict):
         gip_data = {}
     q_probs = gip_data.get("structural_probs") or {}
     m_probs = gip_data.get("monthly_probs") or {}
-    sq = (gip_data.get("structural_quad") or "Q3").upper()
-    mq = (gip_data.get("monthly_quad") or "Q2").upper()
-    sq_conf = gip_data.get("structural_confidence", 0) or 0
+    sq = str(gip_data.get("structural_quad") or "Q3").upper()
+    mq = str(gip_data.get("monthly_quad") or "Q2").upper()
+    sq_conf = float(gip_data.get("structural_confidence", 0) or 0)
 
-    if not isinstance(q_probs, dict):
-        q_probs = {}
-    if not isinstance(m_probs, dict):
-        m_probs = {}
-
-    markov = snap.get("markov_v3", {}) or {}
+    markov = snap.get("markov_v3")
     if not isinstance(markov, dict):
         markov = {}
-    mk_conf = markov.get("confidence", 0) or 0
-    mk_kelly = markov.get("kelly_fraction", 0.25) or 0.25
-    mk_regime = (markov.get("current_regime") or "UNKNOWN").replace("_", " ")
-    cp_alert = markov.get("change_point_alert", False) or False
-    f1m = markov.get("forecast_1m", {}) or {}
-    f3m = markov.get("forecast_3m", {}) or {}
+    mk_conf = float(markov.get("confidence", 0) or 0)
+    mk_kelly = float(markov.get("kelly_fraction", 0.25) or 0.25)
+    f1m = markov.get("forecast_1m") or {}
+    f3m = markov.get("forecast_3m") or {}
     if not isinstance(f1m, dict):
         f1m = {}
     if not isinstance(f3m, dict):
@@ -849,10 +842,11 @@ def _plotly_regime_unified(snap):
     quads = ["Q1", "Q2", "Q3", "Q4"]
     quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
     quad_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+    quad_desc = {"Q1": "Growth↑ Inflasi↓", "Q2": "Growth↑ Inflasi↑", "Q3": "Growth↓ Inflasi↑", "Q4": "Growth↓ Inflasi↓"}
 
-    s_vals = [q_probs.get(q, 0) or 0 for q in quads]
-    mo_vals = [m_probs.get(q, 0) or 0 for q in quads]
-    f1m_vals = [f1m.get(q, 0) or 0 for q in quads]
+    s_vals = [float(q_probs.get(q, 0) or 0) for q in quads]
+    mo_vals = [float(m_probs.get(q, 0) or 0) for q in quads]
+    f1m_vals = [float(f1m.get(q, 0) or 0) for q in quads]
 
     for arr in [s_vals, mo_vals, f1m_vals]:
         total = sum(arr)
@@ -862,91 +856,84 @@ def _plotly_regime_unified(snap):
             arr[:] = [v / total for v in arr]
 
     # ── Next Quad Forecast ──
-    next_candidates = []
+    next_q, next_prob, next_est = None, 0, ""
     for q in quads:
         if q == sq:
             continue
-        p1m = f1m.get(q, 0) or 0
-        p3m = f3m.get(q, 0) or 0
+        p1m = float(f1m.get(q, 0) or 0)
+        p3m = float(f3m.get(q, 0) or 0)
         p_combined = p1m * 0.6 + p3m * 0.4
-        if p_combined > 0.05:
-            next_candidates.append((q, p_combined, p1m))
-    next_candidates.sort(key=lambda x: x[1], reverse=True)
-
-    forecast_text = ""
-    if next_candidates:
-        best_q, best_p, best_1m = next_candidates[0]
-        qcolor = quad_colors.get(best_q, "#8b949e")
-        if best_1m > 0.25:
-            est_days = max(7, int(30 * (1 - best_1m) + 7))
-        elif best_1m > 0.15:
-            est_days = max(14, int(45 * (1 - best_1m)))
-        elif f3m.get(best_q, 0) > 0.20:
-            est_days = max(30, int(90 * (1 - f3m.get(best_q, 0))))
-        else:
-            est_days = 90
-        est_label = f"~{est_days}h" if est_days <= 90 else ">90h"
-        forecast_text = f"🔮 Next: <b>{best_q}</b> {quad_names.get(best_q)} · {best_p:.0%} · {est_label}"
+        if p_combined > next_prob:
+            next_prob = p_combined
+            next_q = q
+            if p1m > 0.25:
+                next_est = f"~{max(7, int(30 * (1 - p1m) + 7))}h"
+            elif p1m > 0.15:
+                next_est = f"~{max(14, int(45 * (1 - p1m)))}h"
+            elif p3m > 0.20:
+                next_est = f"~{max(30, int(90 * (1 - p3m)))}h"
+            else:
+                next_est = ">90h"
 
     sq_color = quad_colors.get(sq, "#8b949e")
     mq_color = quad_colors.get(mq, "#8b949e")
-    cp_warn = " ⚠️CHANGE" if cp_alert else ""
+    theta_labels = [f"{q}<br>{quad_names[q]}" for q in quads] + [f"{quads[0]}<br>{quad_names[quads[0]]}"]
 
     fig = go.Figure()
-    fig.add_trace(go.Bar(
-        x=quads, y=s_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=1.0,
-        text=[f"{v:.0%}" for v in s_vals],
-        textposition="outside", textfont={"size": 11, "color": "#c9d1d9", "weight": 700},
-        name="📊 Structural (kuadran saat ini)", showlegend=True,
-        hovertemplate="%{x}<br>Structural: %{y:.1%}<extra></extra>",
+
+    # 3 filled radar layers
+    fig.add_trace(go.Scatterpolar(
+        r=s_vals + [s_vals[0]], theta=theta_labels,
+        mode="lines+markers", fill="toself", fillcolor="rgba(88,166,255,0.15)",
+        line={"color": "#58A6FF", "width": 2},
+        marker={"size": 8, "color": "#58A6FF", "symbol": "diamond"},
+        name="📊 Structural (sekarang)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
     ))
-    fig.add_trace(go.Bar(
-        x=quads, y=mo_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=0.45,
-        text=[f"{v:.0%}" for v in mo_vals],
-        textposition="outside", textfont={"size": 9, "color": "#8b949e"},
-        name="📅 Monthly (tren terbaru)", showlegend=True,
-        hovertemplate="%{x}<br>Monthly: %{y:.1%}<extra></extra>",
+    fig.add_trace(go.Scatterpolar(
+        r=mo_vals + [mo_vals[0]], theta=theta_labels,
+        mode="lines+markers", fill="toself", fillcolor="rgba(210,153,34,0.10)",
+        line={"color": "#D29922", "width": 1.5, "dash": "dash"},
+        marker={"size": 6, "color": "#D29922"},
+        name="📅 Monthly (tren)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
     ))
-    fig.add_trace(go.Bar(
-        x=quads, y=f1m_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=0.2,
-        text=[f"{v:.0%}" for v in f1m_vals],
-        textposition="outside", textfont={"size": 8, "color": "#484f58"},
-        name="🔮 Forward 1M (prediksi)", showlegend=True,
-        hovertemplate="%{x}<br>Forward 1M: %{y:.1%}<extra></extra>",
+    fig.add_trace(go.Scatterpolar(
+        r=f1m_vals + [f1m_vals[0]], theta=theta_labels,
+        mode="lines", fill="toself", fillcolor="rgba(163,113,247,0.07)",
+        line={"color": "#A371F7", "width": 1, "dash": "dot"},
+        name="🔮 Forward 1M (prediksi)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
     ))
 
-    # Top: Regime info
+    # Central annotation: current regime
+    conf_pct = max(sq_conf, mk_conf)
     fig.add_annotation(
-        x=0.01, y=1.18, xref="paper", yref="paper",
-        text=f"🎯 <b>REGIME:</b> <span style='color:{sq_color};font-size:14px;'>{sq} {quad_names.get(sq)}</span> "
-             f"· <span style='color:{mq_color};'>{mq}</span> · {mk_regime}{cp_warn} · Conf {max(sq_conf, mk_conf):.0%} · Kelly {mk_kelly:.0%}",
-        showarrow=False, align="left",
-        font={"size": 11, "color": "#c9d1d9", "family": "Inter"},
+        x=0.5, y=0.5, xref="paper", yref="paper",
+        text=f"<b style='color:{sq_color};font-size:16px;'>{sq}</b><br><span style='font-size:10px;color:#8b949e;'>{quad_names.get(sq)}</span><br><span style='font-size:9px;color:#484f58;'>Conf {conf_pct:.0%}</span>",
+        showarrow=False, align="center",
     )
-
-    # Bottom: Next Quad Forecast
-    if forecast_text:
-        fig.add_annotation(
-            x=0.99, y=-0.22, xref="paper", yref="paper",
-            text=forecast_text, showarrow=False, align="right",
-            font={"size": 10, "color": "#8b949e"},
-            bgcolor="rgba(13,17,23,0.8)", bordercolor="#30363d",
-            borderwidth=1, borderpad=5,
-        )
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 55, "b": 40, "l": 50, "r": 30},
-        height=230, barmode="group", bargap=0.25, bargroupgap=0.15,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
+        margin={"t": 50, "b": 30, "l": 60, "r": 60},
+        height=300, showlegend=True,
+        legend={"orientation": "h", "yanchor": "bottom", "y": -0.05, "xanchor": "center", "x": 0.5,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        xaxis={"tickfont": {"size": 11, "color": "#c9d1d9", "weight": 700}, "gridcolor": "#21262d"},
-        yaxis={"tickformat": ".0%", "range": [0, 1.25], "gridcolor": "#21262d",
-               "tickfont": {"size": 9, "color": "#8b949e"}},
+        polar={
+            "radialaxis": {"visible": True, "range": [0, 1], "tickformat": ".0%", "tickfont": {"size": 8, "color": "#484f58"},
+                          "gridcolor": "#21262d", "linecolor": "#30363d"},
+            "angularaxis": {"tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700}, "linecolor": "#30363d", "gridcolor": "#30363d"},
+            "bgcolor": "rgba(0,0,0,0)",
+        },
+    )
+
+    # Title + subtitle
+    sq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(sq, "⚪")
+    forecast_text = f" | 🔮 Next: <b>{next_q}</b> {quad_names.get(next_q)} {next_prob:.0%} ({next_est})" if next_q else ""
+    fig.update_layout(
+        title={
+            "text": f"{sq_emoji} REGIME: <b>{sq} {quad_names.get(sq)}</b> · {quad_desc.get(sq)} · Kelly {mk_kelly:.0%}{forecast_text}",
+            "font": {"size": 11, "color": "#c9d1d9"}, "x": 0.5, "xanchor": "center",
+        },
     )
     return fig
 
@@ -4416,14 +4403,14 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: 1 UNIFIED REGIME GRAPH (merge regime + quad prob + forecast)
+    # ROW 1: RADAR CHART REGIME (visual premium + informatif)
     # ═══════════════════════════════════════════════════════════
-    fig_regime = _plotly_regime_unified(snap)
-    st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_unified")
-    st.caption("📖 **Regime Makro:** Q1=Goldilocks(growth↑inflasi↓/saham naik) · Q2=Reflation(growth↑inflasi↑/commodity naik) · "
-              "Q3=Stagflation(growth↓inflasi↑/gold+bonds) · Q4=Deflation(growth↓inflasi↓/crash mode). "
-              "**Structural** = kuadran saat ini. **Monthly** = tren terbaru. **Forward 1M** = prediksi model Markov. "
-              "**Next Quad** = kuadran berikutnya yang diprediksi + estimasi waktu transisi.")
+    fig_regime = _plotly_regime_radar(snap)
+    st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_radar")
+    st.caption("📖 **Radar Regime Makro:** 3 area — Biru solid=Structural(kuadran saat ini), Kuning dash=Monthly(tren), Ungu dot=Forward 1M(prediksi Markov). "
+              "**Q1** Goldilocks=growth↑inflasi↓(saham naik) · **Q2** Reflation=growth↑inflasi↑(commodity naik) · "
+              "**Q3** Stagflation=growth↓inflasi↑(gold+bonds) · **Q4** Deflation=growth↓inflasi↓(crash mode). "
+              "Tengah=regime aktif. 🔮 Next Quad=prediksi transisi + estimasi hari.")
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
@@ -4438,10 +4425,13 @@ def page_dashboard():
     # ═══════════════════════════════════════════════════════════
     # ROW 2: 4 KEY GAUGES
     # ═══════════════════════════════════════════════════════════
+    # Re-fetch markov dengan aman (fix NameError)
+    _mk = snap.get("markov_v3")
+    markov_local = _mk if isinstance(_mk, dict) else {}
     health = snap.get("health", {}) or {}
     behavioral = snap.get("behavioral_macro", {}) or {}
-    health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
-    kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
+    health_score = float(health.get("composite_score", 50)) if isinstance(health, dict) else 50
+    kelly = float(markov_local.get("kelly_fraction", 0.25) or 0.25)
     yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
     n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
 
