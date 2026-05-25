@@ -960,10 +960,12 @@ def _catalyst_monitor_v2(snap, sq="Q3", mq="Q2", next_q=None):
         items.append(("AAII Sentiment", "—", "🟡", "No data", "Data belum tersedia"))
 
     # ── Transition Projection ──
+    mk = snap.get("markov_v3") or {}
+    f1m_local = (mk.get("forecast_1m") or {}) if isinstance(mk, dict) else {}
     proj = {"from": sq, "to": next_q or mq, "days": "", "triggers": []}
     if next_q and next_q != sq:
         # Estimasi hari berdasarkan probabilitas
-        p1m_next = float(f1m.get(next_q, 0) or 0)
+        p1m_next = float(f1m_local.get(next_q, 0) or 0)
         if p1m_next > 0.3:
             proj["days"] = "~7-14 hari"
         elif p1m_next > 0.2:
@@ -4709,59 +4711,75 @@ def page_dashboard():
     with rc1:
         st.markdown(_regime_left_cards(snap, s_vals), unsafe_allow_html=True)
 
-        # ── Next Quad Forecast — SELALU tampil ──
+        # ── v45: Proyeksi Transisi (attachment 5 style, pindah ke atas) ──
         qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
-        target_q = next_q or mq if mq != sq_current else None
-        if target_q and target_q != sq_current:
-            nqc = qc.get(target_q, "#8b949e")
-            prob_text = f"{next_prob:.0%}" if next_prob > 0 else "TBC"
-            est_text = next_est if next_est else proj.get("days", "")
-            st.markdown(
-                f'<div style="background:#161b22;border:1px solid {nqc}40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 NEXT QUAD FORECAST</div>'
-                f'<div style="font-size:0.9rem;font-weight:800;color:{nqc};line-height:1.2;">{sq_current} → {target_q}</div>'
-                f'<div style="font-size:0.6rem;color:#c9d1d9;">Prob: <b>{prob_text}</b> · Est: <b>{est_text}</b></div>'
-                f'</div>', unsafe_allow_html=True)
-        elif sq_current == mq:
-            sq_c = qc.get(sq_current, "#8b949e")
-            st.markdown(
-                f'<div style="background:#161b22;border:1px solid {sq_c}40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 STATUS</div>'
-                f'<div style="font-size:0.8rem;font-weight:700;color:{sq_c};">{sq_current} = Stabil</div>'
-                f'<div style="font-size:0.6rem;color:#8b949e;">Structural = Monthly · No transisi</div>'
-                f'</div>', unsafe_allow_html=True)
+
+        # Hitung prob & est dari data REAL (bukan "TBC")
+        target_q = next_q or (mq if mq != sq_current else None)
+        if not target_q:
+            # Fallback: quad dengan prob kedua tertinggi
+            sorted_quads = sorted([(q, v) for q, v in zip(["Q1","Q2","Q3","Q4"], s_vals) if q != sq_current], key=lambda x: -x[1])
+            target_q = sorted_quads[0][0] if sorted_quads else mq
+
+        # Probabilitas: dari markov forecast, atau dari gap structural-monthly
+        if next_prob > 0:
+            prob_val = next_prob
+            est_val = next_est if next_est else proj.get("days", "")
         else:
-            st.markdown(
-                f'<div style="background:#161b22;border:1px solid #D2992240;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 TRANSISI AKTIF</div>'
-                f'<div style="font-size:0.8rem;font-weight:700;color:#D29922;">{sq_current} → {mq}</div>'
-                f'<div style="font-size:0.6rem;color:#8b949e;">Structural ≠ Monthly · Gap terbuka</div>'
-                f'</div>', unsafe_allow_html=True)
+            # Hitung dari gap Structural vs Monthly
+            gip_raw = snap.get("gip")
+            gip_obj = _GipProxy(gip_raw) if gip_raw is not None else _GipProxy({})
+            mq_val = str(getattr(gip_obj, "monthly_quad", mq) or mq)
+            if mq_val != sq_current:
+                # Gap = seberapa beda Structural vs Monthly
+                gap = abs(s_vals[["Q1","Q2","Q3","Q4"].index(mq_val)] - s_vals[["Q1","Q2","Q3","Q4"].index(sq_current)])
+                prob_val = min(0.95, max(0.15, gap * 2))
+                # Estimasi hari: dari momentum (gap besar = transisi cepat)
+                if gap > 0.3:
+                    est_val = "~14-30 hari"
+                elif gap > 0.15:
+                    est_val = "~30-60 hari"
+                else:
+                    est_val = "~60-90 hari"
+            else:
+                prob_val = 0
+                est_val = "Stabil"
+
+        tq = target_q or mq
+        tqc = qc.get(tq, "#8b949e")
+
+        st.markdown(
+            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:8px;padding:8px 10px;margin-top:6px;">'
+            f'<div style="font-size:0.55rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI</div>'
+            f'<div style="font-size:1.0rem;font-weight:800;color:{tqc};line-height:1.2;">{sq_current} → {tq}</div>'
+            f'<div style="font-size:0.62rem;color:#c9d1d9;margin-top:2px;">'
+            f'Prob: <b>{prob_val:.0%}</b> · Estimasi: <b>{est_val}</b></div>'
+            f'<div style="font-size:0.52rem;color:#8b949e;margin-top:3px;border-top:1px solid #21262d;padding-top:3px;">'
+            f'Structural=<b>{sq_current}</b> · Monthly=<b>{mq}</b> · Gap {"terbuka" if sq_current != mq else "tutup"}</div>'
+            + (f'<div style="font-size:0.5rem;color:#484f58;margin-top:2px;">Next kemungkinan ke <b style="color:{tqc};">{tq}</b></div>' if tq != mq else '')
+            + f'</div>', unsafe_allow_html=True)
 
         # ── Catalyst Monitor ──
         cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-        cat_html += '<div style="font-size:0.55rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">⚡ CATALYST MONITOR</div>'
-        cat_html += '<div style="font-size:0.5rem;color:#484f58;margin-bottom:4px;">Data ekonomi yang bisa trigger transisi:</div>'
+        cat_html += '<div style="font-size:0.55rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:3px;">⚡ CATALYST</div>'
+        cat_html += '<div style="font-size:0.5rem;color:#484f58;margin-bottom:3px;">Data ekonomi yang bisa trigger transisi:</div>'
         for name, val, emoji, desc, impact in catalysts[:5]:
             cat_html += (
-                f'<div style="font-size:0.55rem;padding:2px 0;border-bottom:1px solid #21262d;">'
+                f'<div style="font-size:0.55rem;padding:1.5px 0;border-bottom:1px solid #21262d;">'
                 f'<div style="display:flex;justify-content:space-between;">'
                 f'<span style="color:#c9d1d9;">{name}</span>'
                 f'<span>{emoji} <span style="color:#8b949e;">{desc}</span></span></div>'
-                f'<div style="font-size:0.5rem;color:#484f58;padding-left:8px;">{impact}</div></div>'
+                f'<div style="font-size:0.5rem;color:#484f58;padding-left:6px;">{impact}</div></div>'
             )
         cat_html += '</div>'
         st.markdown(cat_html, unsafe_allow_html=True)
 
-        # ── Transition Projection ──
+        # ── 3 Trigger Transisi ──
         if proj.get("triggers"):
-            tq = proj.get("to", "?")
-            tqc = qc.get(tq, "#8b949e") if tq != "?" else "#8b949e"
             st.markdown(
                 f'<div style="background:#161b22;border:1px solid #58A6FF40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-                f'<div style="font-size:0.55rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI</div>'
-                f'<div style="font-size:0.7rem;color:#c9d1d9;">{sq_current} → <b style="color:{tqc};">{tq}</b> · {proj.get("days", "")}</div>'
-                f'<div style="font-size:0.52rem;color:#8b949e;margin-top:3px;">'
+                f'<div style="font-size:0.55rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📰 TRIGGER TERDEKAT</div>'
+                f'<div style="font-size:0.55rem;color:#8b949e;margin-top:2px;">'
                 + ''.join([f'<div style="margin:1px 0;">• {t}</div>' for t in proj["triggers"][:3]])
                 + f'</div></div>', unsafe_allow_html=True)
 
