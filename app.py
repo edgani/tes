@@ -744,7 +744,7 @@ def _asset_pulse_box_h(label, ret, sub=""):
 # ═══════════════════════════════════════════════════════════════════
 # PLOTLY CHART HELPERS — Dashboard Visualizations v40
 # ═══════════════════════════════════════════════════════════════════
-def _plotly_gauge(value, title, max_val=100, color=None, subtitle="", suffix="%", height=200):
+def _plotly_gauge(value, title, max_val=100, color=None, subtitle="", suffix="%", height=130):
     """Buat Plotly gauge chart untuk metric cards."""
     if color is None:
         color = GREEN if value >= 70 else AMBER if value >= 40 else RED
@@ -817,7 +817,7 @@ def _plotly_quad_probabilities(snap):
         yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#c9d1d9", "size": 11}},
         barmode="group",
         showlegend=False,
-        height=250,
+        height=130,
     )
     return fig
 
@@ -867,7 +867,7 @@ def _plotly_crash_meter(snap):
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
         margin={"t": 40, "b": 60, "l": 30, "r": 30},
         title={"text": "🚨 Crash Meter v3 — 5 Indikator Sistemik", "font": {"size": 13, "color": "#c9d1d9"}},
-        height=260,
+        height=130,
     )
     fig.add_annotation(
         text="<b>📖 Penjelasan:</b> Skor 1-2 (hijau) = AMAN. Skor 3-5 (merah) = WASPADA. Crash mungkin terjadi jika ≥3 indikator merah.",
@@ -909,7 +909,7 @@ def _plotly_asset_pulse(snap, prices):
                "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
         yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#c9d1d9", "size": 11}},
         showlegend=False,
-        height=300,
+        height=140,
     )
     fig.add_annotation(
         text="<b>📖 Penjelasan:</b> Hijau = money IN (return positif). Merah = money OUT (return negatif). QQQ leading + Dollar weak = Growth-on Reflation trade.",
@@ -967,7 +967,7 @@ def _plotly_behavioral_bar(snap):
         barmode="stack",
         showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5, "font": {"color": "#8b949e"}},
-        height=190,
+        height=90,
     )
     fig.add_annotation(
         text=f"<b>📖 Penjelasan:</b> {status_text}. Score casino = {casino_score:.0f}. Bullish >45% = crowd behavior.",
@@ -1011,7 +1011,7 @@ def _plotly_boombust_gauge(snap):
         plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
         margin={"t": 40, "b": 40, "l": 10, "r": 10},
-        height=230,
+        height=130,
     )
     fig.add_annotation(
         text="<b>📖 Penjelasan:</b> Skor 0-2 = akumulasi aman. 5-7 = waspada gelembung. 8-10 = euphoria/risiko koreksi tinggi.",
@@ -1078,9 +1078,9 @@ def _plotly_deep_technical(snap):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
-        margin={"t": 40, "b": 50, "l": 40, "r": 20},
-        height=270,
-        title={"text": "🔬 Deep Technical — Engine Output", "font": {"size": 14, "color": "#c9d1d9"}},
+        margin={"t": 30, "b": 35, "l": 40, "r": 20},
+        height=140,
+        title={"text": "🔬 Deep Technical", "font": {"size": 12, "color": "#c9d1d9"}},
     )
     fig.add_annotation(
         text="<b>📖 Penjelasan:</b> CRI = options velocity (tinggi = ekstrem). Squeeze = kemungkinan short squeeze. VRP tinggi = jual premium.",
@@ -4291,16 +4291,17 @@ def _render_crash_meter(snap):
     return html
 
 # ═══════════════════════════════════════════════════════════════════
-# PAGE: DASHBOARD
-# ═══════════════════════════════════════════════════════════════════
-# ═══════════════════════════════════════════════════════════════════
-# PAGE: DASHBOARD
+# PAGE: DASHBOARD — Compact v40
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
+    """Macro Dashboard v40 — Compact Layout, Merged Correlated Charts.
+    Semua visual terlihat dalam 1 frame tanpa scroll.
+    Merge: Vol+Crash | Health+Kelly | Quad+Behavioral | BoomBust+AssetPulse
+    """
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
 
-    # Narrative card (tetap sama)
+    # ── Narrative (compact, 1 baris) ──
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
     if macro_nar.get("headline") or macro_nar.get("narrative"):
@@ -4310,17 +4311,13 @@ def page_dashboard():
                     '<div class="narrative-sub">' + str(macro_nar.get("sub_narrative", ""))[:120] + '</div></div>')
         st.markdown(nar_html, unsafe_allow_html=True)
 
-    st.divider()
-
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: KEY METRICS — 4 Plotly gauges di atas
+    # ROW 1: 4 KEY GAUGES — Volatility | Health | Kelly | Alerts
     # ═══════════════════════════════════════════════════════════
     summary = snap.get("summary", {}) or {}
     health = snap.get("health", {}) or {}
     markov = snap.get("markov_v3", {}) or {}
     behavioral = snap.get("behavioral_macro", {}) or {}
-
-    # Hitung metric values
     health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
     kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
     yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
@@ -4328,115 +4325,95 @@ def page_dashboard():
     n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
     vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
     vix_b_label = (snap.get("vix_bucket") or {}).get("label", "—")
-    gk_passed = summary.get("v39_gatekeeper_passed", 0)
-    keith_ov = summary.get("v39_keith_overrides", 0)
-    wf_passed = summary.get("v39_walkforward_passed", 0)
 
-    # Render 4 gauges
     g1, g2, g3, g4 = st.columns(4)
     with g1:
-        vix_color = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
-        fig = _plotly_gauge(vix_now, "Volatility (VIX)", max_val=40, color=vix_color, subtitle=f"{vix_b} · {vix_b_label}", suffix="", height=200)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
+        st.plotly_chart(_plotly_gauge(vix_now, "VIX", max_val=40, color=vc, subtitle=f"{vix_b}", suffix=""),
+                       use_container_width=True, config={"displayModeBar": False})
     with g2:
-        hcolor = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
-        fig = _plotly_gauge(health_score, "Market Health", max_val=100, color=hcolor, subtitle="Composite score", height=200)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
+        st.plotly_chart(_plotly_gauge(health_score, "Health", max_val=100, color=hc, subtitle="Composite"),
+                       use_container_width=True, config={"displayModeBar": False})
     with g3:
-        kcolor = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
-        fig = _plotly_gauge(kelly*100, "Kelly Fraction", max_val=100, color=kcolor, subtitle="Optimal bet size", suffix="%", height=200)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
+        st.plotly_chart(_plotly_gauge(kelly*100, "Kelly", max_val=100, color=kc, subtitle="Bet size", suffix="%"),
+                       use_container_width=True, config={"displayModeBar": False})
     with g4:
-        acolor = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
-        fig = _plotly_gauge(n_alerts, "Behavioral Alerts", max_val=10, color=acolor, subtitle=f"Level: {alert_level}", suffix="", height=200)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
+        st.plotly_chart(_plotly_gauge(n_alerts, "Alerts", max_val=10, color=ac, subtitle=f"{alert_level}"),
+                       use_container_width=True, config={"displayModeBar": False})
 
-    # Penjelasan Row 1
+    # ═══════════════════════════════════════════════════════════
+    # ROW 2: MERGED — Macro Regime & Crash | Bubble & Asset Flow
+    # ═══════════════════════════════════════════════════════════
+    left, right = st.columns([1, 1])
+
+    with left:
+        st.markdown("<div style='font-size:0.72rem;color:#58A6FF;font-weight:700;margin-bottom:2px;'>📊 MACRO REGIME + CRASH RISK</div>", unsafe_allow_html=True)
+        fig_q = _plotly_quad_probabilities(snap)
+        st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False})
+        # Crash meter sebagai bar indicator compact di bawah quad
+        cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
+        cm_total = sum([
+            cm.get("yield_curve_score", 1), cm.get("credit_spread_score", 1),
+            cm.get("cape_score", 1), cm.get("vix_percentile_score", 1), cm.get("margin_score", 1)
+        ])
+        cm_color = GREEN if cm_total <= 7 else AMBER if cm_total <= 10 else RED
+        cm_label = "AMAN" if cm_total <= 7 else "WASPADA" if cm_total <= 10 else "KRITIS"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:6px;padding:4px 8px;background:#161b22;border:1px solid #30363d;border-radius:6px;margin-top:2px;">'
+            f'<span style="font-size:0.65rem;color:#8b949e;">🚨 Crash Meter:</span>'
+            f'<div style="flex:1;height:8px;background:#21262d;border-radius:4px;overflow:hidden;">'
+            f'<div style="width:{min(100,cm_total*4)}%;height:100%;background:{cm_color};border-radius:4px;"></div></div>'
+            f'<span style="font-size:0.7rem;color:{cm_color};font-weight:700;">{cm_total}/25 · {cm_label}</span></div>',
+            unsafe_allow_html=True)
+
+    with right:
+        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:2px;'>🌀 BUBBLE STAGE + ASSET FLOW</div>", unsafe_allow_html=True)
+        # Boom-bust gauge compact
+        bb = snap.get("boom_bust", {}) or {}
+        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
+        reflex = snap.get("reflexivity", {}) or {}
+        bubble_score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
+        fig_bb = _plotly_boombust_gauge(snap)
+        st.plotly_chart(fig_bb, use_container_width=True, config={"displayModeBar": False})
+        # Asset pulse compact bar
+        fig_ap = _plotly_asset_pulse(snap, prices)
+        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False})
+
+    # Penjelasan gabungan Row 2
     st.markdown(_penjelasan(
-        "<b>VIX</b> = volatilitas pasar. <20 hijau (tenang), 20-25 kuning (waspada), >25 merah (panik). "
-        "<b>Market Health</b> = skor komposit kesehatan pasar 0-100. <b>Kelly Fraction</b> = ukuran taruhan optimal "
-        "berdasarkan probabilitas menang (20-50% normal, >50% agresif). <b>Behavioral Alerts</b> = sinyal behavioral "
-        "dari Yves/AAII. Alert >0 = crowd behavior terdeteksi, pertimbangkan raise cash."
+        "<b>Kiri — Macro Regime:</b> Probabilitas 4 kuadran (Q1=Goldilocks/saham naik, Q2=Reflation/commodity naik, "
+        "Q3=Stagflation/gold+bonds, Q4=Deflation/crash mode). Crash Meter ≤7 AMAN, 8-10 WASPADA, ≥11 KRITIS.<br>"
+        "<b>Kanan — Bubble & Flow:</b> Super Bubble Score 0-2=akumulasi aman, 5-7=waspada gelembung, 8-10=euphoria+risiko koreksi. "
+        "Asset Pulse hijau=uang masuk, merah=uang keluar. QQQ leading+Dollar weak=Growth-on Reflation."
     ), unsafe_allow_html=True)
 
-    st.divider()
-
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: QUAD PROBABILITY + CRASH METER
+    # ROW 3: BEHAVIORAL SENTIMENT (compact, full width)
     # ═══════════════════════════════════════════════════════════
-    q1, q2 = st.columns([1.2, 1])
-    with q1:
-        fig = _plotly_quad_probabilities(snap)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(_penjelasan(
-            "Probabilitas 4 kuadran makro berdasarkan model Markov + GIP. <b>Q1 Goldilocks</b> = growth naik, inflasi turun (saham naik). "
-            "<b>Q2 Reflation</b> = growth naik, inflasi naik (commodity/energy naik). <b>Q3 Stagflation</b> = growth turun, inflasi naik (gold/bonds). "
-            "<b>Q4 Deflation</b> = growth turun, inflasi turun (crash mode). Kuadran dominan menentukan playbook."
-        ), unsafe_allow_html=True)
-    with q2:
-        fig = _plotly_crash_meter(snap)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(_penjelasan(
-            "<b>Crash Meter v3</b> — 5 indikator leading crash: Yield Curve (inversi = recession), Credit Spread (melebar = default risk), "
-            "CAPE (valuasi tinggi = bubble), VIX Percentile (volatilitas ekstrem), Margin Debt (leverage tinggi). "
-            "<b>Skor 1-2 AMAN</b> (hijau). <b>Skor 3 WASPADA</b> (kuning). <b>Skor 4-5 KRITIS</b> (merah = potensi crash)."
-        ), unsafe_allow_html=True)
-
-    st.divider()
-
-    # ═══════════════════════════════════════════════════════════
-    # ROW 3: BOOM-BUST GAUGE + ASSET PULSE
-    # ═══════════════════════════════════════════════════════════
-    b1, b2 = st.columns([1, 1.8])
-    with b1:
-        fig = _plotly_boombust_gauge(snap)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(_penjelasan(
-            "<b>Super Bubble Score</b> mengukur tahapan gelembung: 0-2 INCEPTION (akumulasi aman), 3-4 ACCELERATION (momentum naik), "
-            "5-7 EUPHORIA (waspada, pertimbangkan take profit), 8-10 CRISIS/AUCTION (koreksi besar mungkin terjadi). "
-            "Berdasarkan framework George Soros + Hyman Minsky."
-        ), unsafe_allow_html=True)
-    with b2:
-        fig = _plotly_asset_pulse(snap, prices)
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(_penjelasan(
-            "<b>Asset Pulse</b> menunjukkan return 21 hari terakhir untuk 8 aset kunci. Hijau = uang masuk (performa positif), "
-            "Merah = uang keluar (performa negatif). <b>Pola yang perlu diperhatikan:</b> QQQ leading + Dollar weak = Growth-on Reflation trade aktif. "
-            "ETH merah sementara BTC hijau = crypto selectivity, hindari alt-coin. Gold hijau = flight to safety."
-        ), unsafe_allow_html=True)
-
-    st.divider()
-
-    # ═══════════════════════════════════════════════════════════
-    # ROW 4: BEHAVIORAL MACRO
-    # ═══════════════════════════════════════════════════════════
-    fig = _plotly_behavioral_bar(snap)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin-bottom:2px;'>🧠 BEHAVIORAL SENTIMENT</div>", unsafe_allow_html=True)
+    fig_bh = _plotly_behavioral_bar(snap)
+    st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
     st.markdown(_penjelasan(
-        "<b>AAII Sentiment</b> = survei investor retail Amerika. <b>Bullish >45%</b> = crowd behavior / FOMO (hati-hati). "
-        "<b>Bearish >35%</b> = fear extreme (peluang beli kontrarian). <b>Casino Score</b> dihitung dari deviasi bullish vs normal. "
-        "Score >40 = pertimbangkan raise cash 20-50% dan tunggu washout."
+        "AAII Sentiment: Bullish >45% = crowd FOMO (hati-hati), Bearish >35% = fear extreme (beli kontrarian). "
+        "Casino Score >40 = pertimbangkan raise cash 20-50%."
     ), unsafe_allow_html=True)
 
-    st.divider()
-
     # ═══════════════════════════════════════════════════════════
-    # ROW 5: DEEP TECHNICAL (expander)
+    # ROW 4: DEEP TECHNICAL (expander, compact)
     # ═══════════════════════════════════════════════════════════
     with st.expander("🔬 Deep Technical", expanded=False):
-        fig = _plotly_deep_technical(snap)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        fig_dt = _plotly_deep_technical(snap)
+        if fig_dt:
+            st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False})
             st.markdown(_penjelasan(
-                "<b>CRI v2</b> (Options Velocity) = kecepatan perubahan options flow. EXTREME = market stress. "
-                "<b>Squeeze Score</b> = probabilitas short squeeze (score >70 = imminent). "
-                "<b>VRP</b> (Volatility Risk Premium) tinggi = options mahal = strategi jual premium (sell call/put)."
+                "CRI = options velocity (EXTREME = market stress). Squeeze >70 = short squeeze imminent. VRP tinggi = jual premium."
             ), unsafe_allow_html=True)
         else:
             st.caption("Deep Technical data unavailable")
-
-        # Engine status table
-        st.markdown("**Engine Status**")
+        # Engine status dots (compact)
         engines = [
             ("GIP v10", snap.get("gip_v10") is not None), ("Markov V3", snap.get("markov_v3") is not None),
             ("Yves v2", snap.get("yves_v2") is not None), ("Cascade", snap.get("cascade_analysis") is not None),
@@ -4445,10 +4422,11 @@ def page_dashboard():
             ("Supply Chain", snap.get("supply_chain_chains") is not None), ("Front-Run", len(snap.get("front_run_candidates",[]))>0),
             ("Crypto Whale", len(snap.get("crypto_tokens",{}))>0), ("IHSG Broker", len(snap.get("ihsg_broker_proxy",{}))>0),
         ]
-        cols = st.columns(4)
-        for i, (name, ok) in enumerate(engines):
+        st.markdown("<div style='display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;'>", unsafe_allow_html=True)
+        for name, ok in engines:
             color = "#3FB950" if ok else "#F85149"
-            cols[i % 4].markdown(f"<span style='color:{color};font-size:0.75rem;'>● {name}</span>", unsafe_allow_html=True)
+            st.markdown(f'<span style="font-size:0.65rem;color:{color};">● {name}</span>', unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
