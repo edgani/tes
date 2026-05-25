@@ -901,57 +901,100 @@ def _regime_left_cards(snap, s_vals):
     return html
 
 
-def _catalyst_monitor_v2(snap):
-    """v42: Tampilin SEMUA indikator dengan statusnya (bukan cuma yang kritis).
-    Supaya user lihat lengkap, bukan kosong."""
+def _catalyst_monitor_v2(snap, sq="Q3", mq="Q2", next_q=None):
+    """v44: Catalyst detail dengan proyeksi transisi + trigger ekonomi.
+    Return: items + transition_projection dict."""
     items = []
     vix_val = vix_now if 'vix_now' in globals() else 20
 
-    # 1. VIX — selalu tampil
+    # 1. VIX
     if vix_val > 25:
-        items.append(("VIX", f"{vix_val:.1f}", "🔴", "Panik", "Transisi ke Q3/Q4"))
+        items.append(("VIX", f"{vix_val:.1f}", "🔴", "Panik", f"VIX>25 = flight to safety → {sq} ke Q3/Q4"))
     elif vix_val > 18:
-        items.append(("VIX", f"{vix_val:.1f}", "🟡", "Waspada", "Monitor"))
+        items.append(("VIX", f"{vix_val:.1f}", "🟡", "Waspada", f"VIX naik ke 25 = transisi {sq}→Q3"))
     else:
-        items.append(("VIX", f"{vix_val:.1f}", "🟢", "Tenang", "Stabil"))
+        items.append(("VIX", f"{vix_val:.1f}", "🟢", "Tenang", f"VIX rendah = {sq} stabil"))
 
     # 2. Yield Curve
     cm = snap.get("crash_meter") or {}
     yc = cm.get("yield_curve_score", 1) if isinstance(cm, dict) else 1
-    labels_yc = {1: ("🟢", "Normal"), 2: ("🟡", "Flat"), 3: ("🟡", "Flat"), 4: ("🔴", "Inverted"), 5: ("🔴", "Inverted")}
-    ec, ed = labels_yc.get(yc, ("🟢", "Normal"))
-    items.append(("Yield Curve", f"sc{yc}", ec, ed, "Q4 risk" if yc >= 4 else "OK"))
+    yc_map = {1: ("🟢", "Normal", f"Yield OK = {sq} stabil"),
+              2: ("🟡", "Flat", "Yield flat = monitor inflasi"),
+              3: ("🟡", "Flat", "Yield flat = waspada Q3→Q4"),
+              4: ("🔴", "Inverted", "⚠️ Yield inverted = Q4 Deflation dalam 6-18 bulan"),
+              5: ("🔴", "Deep Inv", "🚨 CRASH SIGNAL — Q4 segera")}
+    ec, ed, e_impact = yc_map.get(yc, ("🟢", "Normal", "OK"))
+    items.append(("Yield Curve", f"sc{yc}", ec, ed, e_impact))
 
     # 3. Credit Spread
     cs = cm.get("credit_spread_score", 1) if isinstance(cm, dict) else 1
-    labels_cs = {1: ("🟢", "Tight"), 2: ("🟡", "Wide"), 3: ("🟡", "Wide"), 4: ("🔴", "Extreme"), 5: ("🔴", "Extreme")}
-    ec2, ed2 = labels_cs.get(cs, ("🟢", "Tight"))
-    items.append(("Credit Spread", f"sc{cs}", ec2, ed2, "Crash risk" if cs >= 4 else "OK"))
+    cs_map = {1: ("🟢", "Tight", "Credit OK"),
+              2: ("🟡", "Wide", "Credit melebar = waspada"),
+              3: ("🟡", "Wide", "Credit melebar = Q3 risk"),
+              4: ("🔴", "Extreme", "🚨 Credit crash = Q4 segera"),
+              5: ("🔴", "Crisis", "🚨🚨 LIQUIDITY CRISIS")}
+    ec2, ed2, e2_impact = cs_map.get(cs, ("🟢", "Tight", "OK"))
+    items.append(("Credit Spread", f"sc{cs}", ec2, ed2, e2_impact))
 
     # 4. Inflasi trend
     gip = snap.get("gip") or {}
     trend = str(gip.get("inflation_trend", "") if isinstance(gip, dict) else "").lower()
     if "up" in trend or "naik" in trend:
-        items.append(("Inflasi", "—", "🔴", "Naik", "Q2→Q3"))
+        items.append(("Inflasi CPI", "—", "🔴", "Naik", f"📈 Inflasi naik = {sq}→Q3 Stagflation risk"))
     elif "down" in trend or "turun" in trend:
-        items.append(("Inflasi", "—", "🟢", "Turun", "Q3→Q1"))
+        items.append(("Inflasi CPI", "—", "🟢", "Turun", f"📉 Inflasi turun = {sq}→Q1 Goldilocks"))
     else:
-        items.append(("Inflasi", "—", "🟡", "Stabil", "Monitor"))
+        items.append(("Inflasi CPI", "—", "🟡", "Stabil", f"Inflasi flat = {sq} bertahan"))
 
     # 5. AAII Sentiment
     beh = snap.get("behavioral_macro") or {}
     bull = beh.get("bullish") if isinstance(beh, dict) else None
     bear = beh.get("bearish") if isinstance(beh, dict) else None
     if isinstance(bull, (int, float)) and bull > 50:
-        items.append(("AAII", f"B{bull:.0f}%", "🔴", "FOMO", "Top"))
+        items.append(("AAII Sentiment", f"Bull {bull:.0f}%", "🔴", "Extreme FOMO", "🎯 Contrarian SELL — top signal"))
     elif isinstance(bear, (int, float)) and bear > 45:
-        items.append(("AAII", f"Be{bear:.0f}%", "🟢", "Fear", "Bottom"))
+        items.append(("AAII Sentiment", f"Bear {bear:.0f}%", "🟢", "Extreme Fear", "🎯 Contrarian BUY — bottom signal"))
     elif isinstance(bull, (int, float)) and isinstance(bear, (int, float)):
-        items.append(("AAII", f"B{bull:.0f}/Be{bear:.0f}", "🟡", "Mix", "Monitor"))
+        items.append(("AAII Sentiment", f"B{bull:.0f}/N{100-bull-bear:.0f}/B{bear:.0f}", "🟡", "Normal", f"Sentimen netral = {sq} stabil"))
     else:
-        items.append(("AAII", "—", "🟡", "No data", "—"))
+        items.append(("AAII Sentiment", "—", "🟡", "No data", "Data belum tersedia"))
 
-    return items
+    # ── Transition Projection ──
+    proj = {"from": sq, "to": next_q or mq, "days": "", "triggers": []}
+    if next_q and next_q != sq:
+        # Estimasi hari berdasarkan probabilitas
+        p1m_next = float(f1m.get(next_q, 0) or 0)
+        if p1m_next > 0.3:
+            proj["days"] = "~7-14 hari"
+        elif p1m_next > 0.2:
+            proj["days"] = "~14-30 hari"
+        elif p1m_next > 0.1:
+            proj["days"] = "~30-60 hari"
+        else:
+            proj["days"] = ">60 hari"
+
+        # Trigger spesifik berdasarkan arah transisi
+        pair = (sq, next_q)
+        trigger_map = {
+            ("Q3", "Q2"): ["📈 Growth recovery (PMI > 50)", "📉 Inflasi turun (CPI < 3%)", "🟢 VIX turun < 18"],
+            ("Q3", "Q1"): ["🚀 GDP surprise +", "📉 CPI turun drastis", "🟢🟢 Risk-on kuat"],
+            ("Q3", "Q4"): ["📉 GDP kontraksi", "📉 CPI turun tapi growth juga turun", "🔴 VIX > 30"],
+            ("Q2", "Q1"): ["📉 Inflasi turun tanpa growth turun", "🟢 Soft landing confirmed"],
+            ("Q2", "Q3"): ["📈 Inflasi spike", "📉 GDP turun", "🔴 Stagflation risk"],
+            ("Q1", "Q2"): ["📈 Inflasi naik", "📈 Commodity rally", "🟡 Overheat signal"],
+            ("Q1", "Q3"): ["📉 GDP turun tiba-tiba", "📈 Inflasi tetap naik", "🔴🔴 Stagflation shock"],
+            ("Q4", "Q1"): ["🟢 Recovery signal", "📈 Leading indicators naik", "🟢 Dovish Fed"],
+            ("Q4", "Q3"): ["📈 Inflasi naik saat growth lemah", "🔴🔴 Worst case"],
+        }
+        proj["triggers"] = trigger_map.get(pair, ["Monitor data ekonomi utama"])
+    elif sq == mq:
+        proj["days"] = "Stabil"
+        proj["triggers"] = [f"{sq} konsisten Structural=Monthly", "Tidak ada transisi jangka pendek"]
+    else:
+        proj["days"] = "Transisi aktif"
+        proj["triggers"] = [f"Structural={sq} vs Monthly={mq} — gap terbuka", f"Next: kemungkinan ke {mq}"]
+
+    return items, proj
 
 
 def _plotly_regime_dashboard(snap):
@@ -1019,59 +1062,81 @@ def _plotly_regime_dashboard(snap):
     fig = go.Figure()
     labels = list(reversed(quads))  # Q4 di atas, Q1 di bawah
     label_colors = [quad_colors[q] for q in labels]
+    quad_desc = {"Q1": "Growth↑ Inflasi↓", "Q2": "Growth↑ Inflasi↑",
+                 "Q3": "Growth↓ Inflasi↑", "Q4": "Growth↓ Inflasi↓"}
 
-    # FIX: text = v*100 supaya 0.25 jadi "25%", bukan "0%"
     s_rev = list(reversed(s_vals))
     m_rev = list(reversed(mo_vals))
     f_rev = list(reversed(f1m_vals))
 
+    # v44: Hover lengkap dengan penjelasan quad
+    def _hover(label, layer, v):
+        q = label
+        desc = quad_desc.get(q, "")
+        return f"<b>{q}</b> — {desc}<br>{layer}: <b>{v*100:.0f}%</b><extra></extra>"
+
     fig.add_trace(go.Bar(
         y=labels, x=[v * 100 for v in s_rev], orientation="h",
-        name="Structural",
-        marker={"color": label_colors, "opacity": 1.0},
+        name="<b>■</b> Structural (solid)",
+        marker={"color": label_colors, "opacity": 1.0,
+                "line": {"width": 0}},
         text=[f"{v*100:.0f}%" for v in s_rev],
         textposition="outside",
         textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
-        hovertemplate="<b>%{y}</b><br>Structural: %{x:.0f}%<extra></extra>",
+        hovertemplate=[_hover(l, "Structural", v) for l, v in zip(labels, s_rev)],
         width=0.25, offsetgroup=0,
     ))
     fig.add_trace(go.Bar(
         y=labels, x=[v * 100 for v in m_rev], orientation="h",
-        name="Monthly",
-        marker={"color": label_colors, "opacity": 0.55},
+        name="<b>▨</b> Monthly (transparan)",
+        marker={"color": label_colors, "opacity": 0.5,
+                "line": {"width": 0}},
         text=[f"{v*100:.0f}%" for v in m_rev],
         textposition="outside",
         textfont={"size": 9, "color": "#8b949e"},
-        hovertemplate="<b>%{y}</b><br>Monthly: %{x:.0f}%<extra></extra>",
+        hovertemplate=[_hover(l, "Monthly", v) for l, v in zip(labels, m_rev)],
         width=0.25, offsetgroup=1,
     ))
     fig.add_trace(go.Bar(
         y=labels, x=[v * 100 for v in f_rev], orientation="h",
-        name="Forward 1M",
-        marker={"color": label_colors, "opacity": 0.2},
+        name="<b>□</b> Forward 1M (ghost)",
+        marker={"color": "#484f58", "opacity": 0.3,
+                "line": {"width": 0}},
         text=[f"{v*100:.0f}%" for v in f_rev],
         textposition="outside",
         textfont={"size": 8, "color": "#484f58"},
-        hovertemplate="<b>%{y}</b><br>Forward 1M: %{x:.0f}%<extra></extra>",
+        hovertemplate=[_hover(l, "Forward 1M", v) for l, v in zip(labels, f_rev)],
         width=0.25, offsetgroup=2,
     ))
+
+    # Annotation: penjelasan di dalam chart
+    anno_text = ""
+    if next_q:
+        anno_text = f"🔮 Transisi <b>{sq}→{next_q}</b>: {next_prob:.0%} · {next_est}"
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 28, "b": 12, "l": 30, "r": 45},
-        height=170, barmode="group", bargap=0.15, bargroupgap=0.1,
+        margin={"t": 32, "b": 22, "l": 35, "r": 50},
+        height=190, barmode="group", bargap=0.15, bargroupgap=0.1,
         showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1.0,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        yaxis={"tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700},
+        yaxis={"tickfont": {"size": 11, "color": "#c9d1d9", "weight": 700},
                "gridcolor": "#21262d"},
         xaxis={"range": [0, 100], "tickformat": ".0f", "ticksuffix": "%",
                "gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#8b949e"}},
+        annotations=[{
+            "text": anno_text,
+            "x": 0.01, "y": -0.12, "xref": "paper", "yref": "paper",
+            "showarrow": False,
+            "font": {"size": 10, "color": "#58A6FF"},
+            "align": "left",
+        }] if anno_text else [],
     )
     if not has_real_data:
         fig.add_annotation(
-            text="<span style='color:#8b949e;font-size:10px;'>📖 Data regime belum tersedia — menampilkan distribusi equal-weight</span>",
+            text="<span style='color:#8b949e;font-size:10px;'>📖 Data regime belum tersedia — equal-weight 25%</span>",
             x=0.5, y=0.5, xref="paper", yref="paper",
             showarrow=False,
         )
@@ -4637,39 +4702,72 @@ def page_dashboard():
     # ROW 1: REGIME DASHBOARD — Split kiri (cards) + kanan (bar)
     # ═══════════════════════════════════════════════════════════
     fig_regime, sq_current, s_vals, next_q, next_prob, next_est = _plotly_regime_dashboard(snap)
-    catalysts = _catalyst_monitor_v2(snap)
+    catalysts, proj = _catalyst_monitor_v2(snap, sq=sq_current, mq=mq, next_q=next_q)
 
-    # Layout: cards kiri (1.5) | bar kanan (4)
     rc1, rc2 = st.columns([1, 3])
 
     with rc1:
         st.markdown(_regime_left_cards(snap, s_vals), unsafe_allow_html=True)
 
-        if next_q:
-            qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
-            nqc = qc.get(next_q, "#8b949e")
+        # ── Next Quad Forecast — SELALU tampil ──
+        qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+        target_q = next_q or mq if mq != sq_current else None
+        if target_q and target_q != sq_current:
+            nqc = qc.get(target_q, "#8b949e")
+            prob_text = f"{next_prob:.0%}" if next_prob > 0 else "TBC"
+            est_text = next_est if next_est else proj.get("days", "")
             st.markdown(
                 f'<div style="background:#161b22;border:1px solid {nqc}40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 NEXT QUAD</div>'
-                f'<div style="font-size:1.0rem;font-weight:800;color:{nqc};line-height:1.2;">{next_q}</div>'
-                f'<div style="font-size:0.6rem;color:#c9d1d9;">Prob: <b>{next_prob:.0%}</b> · {next_est}</div>'
+                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 NEXT QUAD FORECAST</div>'
+                f'<div style="font-size:0.9rem;font-weight:800;color:{nqc};line-height:1.2;">{sq_current} → {target_q}</div>'
+                f'<div style="font-size:0.6rem;color:#c9d1d9;">Prob: <b>{prob_text}</b> · Est: <b>{est_text}</b></div>'
+                f'</div>', unsafe_allow_html=True)
+        elif sq_current == mq:
+            sq_c = qc.get(sq_current, "#8b949e")
+            st.markdown(
+                f'<div style="background:#161b22;border:1px solid {sq_c}40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
+                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 STATUS</div>'
+                f'<div style="font-size:0.8rem;font-weight:700;color:{sq_c};">{sq_current} = Stabil</div>'
+                f'<div style="font-size:0.6rem;color:#8b949e;">Structural = Monthly · No transisi</div>'
+                f'</div>', unsafe_allow_html=True)
+        else:
+            st.markdown(
+                f'<div style="background:#161b22;border:1px solid #D2992240;border-radius:8px;padding:7px 8px;margin-top:6px;">'
+                f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 TRANSISI AKTIF</div>'
+                f'<div style="font-size:0.8rem;font-weight:700;color:#D29922;">{sq_current} → {mq}</div>'
+                f'<div style="font-size:0.6rem;color:#8b949e;">Structural ≠ Monthly · Gap terbuka</div>'
                 f'</div>', unsafe_allow_html=True)
 
-        # Catalyst table — compact
+        # ── Catalyst Monitor ──
         cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:7px 8px;margin-top:6px;">'
-        cat_html += '<div style="font-size:0.55rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">⚡ CATALYST</div>'
+        cat_html += '<div style="font-size:0.55rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">⚡ CATALYST MONITOR</div>'
+        cat_html += '<div style="font-size:0.5rem;color:#484f58;margin-bottom:4px;">Data ekonomi yang bisa trigger transisi:</div>'
         for name, val, emoji, desc, impact in catalysts[:5]:
             cat_html += (
-                f'<div style="display:flex;justify-content:space-between;font-size:0.55rem;padding:1.5px 0;border-bottom:1px solid #21262d;">'
+                f'<div style="font-size:0.55rem;padding:2px 0;border-bottom:1px solid #21262d;">'
+                f'<div style="display:flex;justify-content:space-between;">'
                 f'<span style="color:#c9d1d9;">{name}</span>'
                 f'<span>{emoji} <span style="color:#8b949e;">{desc}</span></span></div>'
+                f'<div style="font-size:0.5rem;color:#484f58;padding-left:8px;">{impact}</div></div>'
             )
         cat_html += '</div>'
         st.markdown(cat_html, unsafe_allow_html=True)
 
+        # ── Transition Projection ──
+        if proj.get("triggers"):
+            tq = proj.get("to", "?")
+            tqc = qc.get(tq, "#8b949e") if tq != "?" else "#8b949e"
+            st.markdown(
+                f'<div style="background:#161b22;border:1px solid #58A6FF40;border-radius:8px;padding:7px 8px;margin-top:6px;">'
+                f'<div style="font-size:0.55rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI</div>'
+                f'<div style="font-size:0.7rem;color:#c9d1d9;">{sq_current} → <b style="color:{tqc};">{tq}</b> · {proj.get("days", "")}</div>'
+                f'<div style="font-size:0.52rem;color:#8b949e;margin-top:3px;">'
+                + ''.join([f'<div style="margin:1px 0;">• {t}</div>' for t in proj["triggers"][:3]])
+                + f'</div></div>', unsafe_allow_html=True)
+
     with rc2:
-        st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v42")
-        st.caption("📖 Bar solid=Structural · transparan=Monthly · ghost=Forward 1M")
+        st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v44")
+        st.caption("📖 ■ Structural (solid quad) · ▨ Monthly (transparan) · □ Forward 1M (grey ghost)")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 2: 4 KEY GAUGES
