@@ -1229,7 +1229,7 @@ def _plotly_crash_meter(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
-        margin={"t": 14, "b": 14, "l": 10, "r": 10}, height=100,
+        margin={"t": 12, "b": 12, "l": 8, "r": 8}, height=90,
         annotations=[{
             "text": f"<b>🚨 Crash Meter: {total}/25 · <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
             "x": 0.5, "y": -0.08, "showarrow": False,
@@ -1268,7 +1268,7 @@ def _plotly_asset_pulse(snap, prices):
         xaxis={"gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#8b949e"},
                "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
         yaxis={"gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#c9d1d9"}},
-        showlegend=False, height=85,
+        showlegend=False, height=75,
     )
     return fig
 
@@ -1414,8 +1414,9 @@ def _what_if_regime_html(structural_quad, monthly_quad):
     )
 
 def _boombust_timeline_html(snap):
-    """v49: Boom-Bust Stage Timeline — redesign intuitif dengan penjelasan tiap stage.
-    User bisa mengerti: posisi saat ini + artinya + sinyal apa yang diwaspadai."""
+    """v50: Balik ke design attachment 4 — simple Boom-Bust Stage + progress bar.
+    User ngerti: INCEPTION→ACCELERATION→EUPHORIA→CRISIS→AUCTION + Super Bubble Score.
+    Jauh lebih intuitif dari 'SURVIVAL' yang membingungkan."""
     bb = snap.get("boom_bust", {}) or {}
     stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
     reflex = snap.get("reflexivity", {}) or {}
@@ -1424,79 +1425,58 @@ def _boombust_timeline_html(snap):
     stages = ["INCEPTION", "ACCELERATION", "EUPHORIA", "CRISIS", "AUCTION"]
     idx = stages.index(stage) if stage in stages else 0
 
-    # Penjelasan tiap stage (untuk user ngerti)
-    stage_desc = {
-        "INCEPTION": "🌱 Awal tren — volume naik pelan",
-        "ACCELERATION": "🚀 Trend kuat — FOMO mulai",
-        "EUPHORIA": "🎰 Greed ekstrem — retail masuk massal",
-        "CRISIS": "💥 Panic — margin call, forced selling",
-        "AUCTION": "🔨 Capitulation — bottom fishing",
+    # Stage warna + penjelasan 1 baris
+    stage_info = {
+        "INCEPTION":      ("#58A6FF", "💡 Awal tren naik — masih aman untuk masuk"),
+        "ACCELERATION":   ("#D29922", "⚠️ Tren memanas — FOMO mulai, hati-hati beli"),
+        "EUPHORIA":       ("#F85149", "🚨 Greed ekstrem — JANGAN BELI, siapkan cash"),
+        "CRISIS":         ("#F85149", "💥 Panic selling — TUNGGU, jangan tangkap pisau jatuh"),
+        "AUCTION":        ("#A371F7", "🔨 Capitulation — mulai pantau entry point"),
     }
-    stage_warna = {
-        "INCEPTION": ("#3FB950", "Aman — mulai pantau"),
-        "ACCELERATION": ("#D29922", "Waspada — FOMO terdeteksi"),
-        "EUPHORIA": ("#F85149", "🚨 BAHAYA — jangan beli"),
-        "CRISIS": ("#F85149", "🔴 CRASH — tunggu bottom"),
-        "AUCTION": ("#A371F7", "⏳ Akhir jatuh — siap masuk"),
-    }
-    sc, sd = stage_warna.get(stage, ("#8b949e", "?"))
+    sc, sp = stage_info.get(stage, ("#8b949e", ""))
 
-    # Timeline nodes
-    nodes_html = ""
+    # Timeline: dot + garis horizontal
+    nodes = []
     for i, s in enumerate(stages):
         is_past = i < idx
         is_active = i == idx
-        nc = "#3FB950" if is_past else sc if is_active else "#30363D"
-        emoji = "✓" if is_past else "●" if is_active else "○"
-        ns = f"<span style='font-size:0.5rem;'>{emoji}</span>" if is_past or is_active else ""
+        color = sc if is_active else ("#58A6FF" if is_past else "#30363d")
+        size = "14px" if is_active else "10px"
+        z = "2" if is_active else "1"
+        nodes.append(
+            f'<div style="display:flex;flex-direction:column;align-items:center;flex:1;position:relative;">'
+            f'<div style="width:{size};height:{size};border-radius:50%;background:{color};'
+            f'border:2px solid {"#E6EDF3" if is_active else color};z-index:{z};'
+            f'box-shadow:{"0 0 6px " + color if is_active else "none"};"></div>'
+            f'<div style="font-size:0.55rem;color:{color};margin-top:4px;font-weight:{"700" if is_active else "500"};">{s}</div></div>'
+        )
+    # Garis penghubung
+    line_html = '<div style="position:absolute;top:5px;left:7%;right:7%;height:2px;background:#30363d;z-index:0;"></div>'
 
-        if i < len(stages) - 1:
-            lc = "#3FB950" if is_past else "#30363D"
-            nodes_html += (
-                f'<div style="display:flex;align-items:center;">'
-                f'<div style="width:22px;height:22px;border-radius:50%;border:2.5px solid {nc};'
-                f'background:{"#3FB95020" if is_past else sc+"30" if is_active else "#21262D"};'
-                f'display:flex;align-items:center;justify-content:center;">{ns}</div>'
-                f'<div style="width:28px;height:2px;background:{lc};"></div></div>'
-            )
-        else:
-            nodes_html += (
-                f'<div style="width:22px;height:22px;border-radius:50%;border:2.5px solid {nc};'
-                f'background:{"#3FB95020" if is_past else sc+"30" if is_active else "#21262D"};'
-                f'display:flex;align-items:center;justify-content:center;">{ns}</div>'
-            )
-
-    # Survival score interpretasi
-    if score <= 2:
-        surv_emoji, surv_text = "🟢", "Aman — pasar stabil"
-    elif score <= 4:
-        surv_emoji, surv_text = "🟡", "Waspada — mulai panas"
-    elif score <= 6:
-        surv_emoji, surv_text = "🟠", "Panas — jangan tambah posisi"
-    elif score <= 8:
-        surv_emoji, surv_text = "🔴", "Bahaya — pertimbangkan cash"
-    else:
-        surv_emoji, surv_text = "🚨", "Kritis — crash mungkin terjadi"
+    # Progress bar warna
+    bar_pct = min(100, score / 10 * 100)
+    bar_color = "#3FB950" if score <= 3 else "#D29922" if score <= 6 else "#F85149"
 
     return (
-        f'<div style="padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:10px;">'
-        # Header: Stage + Score
-        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
-        f'<div><div style="font-size:0.55rem;color:#8b949e;font-weight:600;">📊 FASE PASAR (Boom-Bust)</div>'
-        f'<div style="font-size:0.9rem;color:{sc};font-weight:800;">{stage}</div></div>'
-        f'<div style="text-align:right;"><div style="font-size:0.55rem;color:#8b949e;">SURVIVAL SCORE</div>'
-        f'<div style="font-size:0.85rem;color:{sc};font-weight:800;">{score:.1f}/10 {surv_emoji}</div></div></div>'
-        # Penjelasan stage
-        f'<div style="font-size:0.6rem;color:#c9d1d9;background:{sc}15;border-radius:6px;padding:5px 8px;margin-bottom:6px;">'
-        f'<b style="color:{sc};">{sd}</b><br><span style="color:#8b949e;">{stage_desc.get(stage, "")}</span></div>'
+        f'<div style="padding:10px 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
+        # Header
+        f'<div style="font-size:0.6rem;color:#A371F7;font-weight:600;margin-bottom:6px;">🌀 Boom-Bust Stage</div>'
         # Timeline
-        f'<div style="display:flex;align-items:center;padding:2px 0;">{nodes_html}</div>'
-        f'<div style="display:flex;gap:0;margin-top:3px;">'
-        + ''.join([f'<div style="width:50px;text-align:center;font-size:0.5rem;color:{"#3FB950" if i<idx else sc if i==idx else "#484f58"};font-weight:{"700" if i==idx else "600"};">{s[:4]}</div>' for i, s in enumerate(stages)])
-        + f'</div>'
-        # Survival interpretasi
-        f'<div style="font-size:0.55rem;color:#8b949e;margin-top:5px;border-top:1px solid #21262d;padding-top:4px;">'
-        f'{surv_emoji} <b>{surv_text}</b> · Score 0-2=aman · 3-4=waspada · 5-6=panas · 7-8=bahaya · 9-10=kritis</div>'
+        f'<div style="position:relative;display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">'
+        f'{line_html}' + ''.join(nodes) + f'</div>'
+        # Score + Progress bar
+        f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+        f'<div><span style="font-size:0.75rem;color:{sc};font-weight:800;">Super Bubble Score: {score:.1f}</span><span style="font-size:0.65rem;color:#484f58;">/10</span></div>'
+        f'<div style="font-size:0.55rem;color:{bar_color};font-weight:600;">{stage}</div></div>'
+        # Progress bar
+        f'<div style="height:8px;background:#21262d;border-radius:4px;overflow:hidden;margin-bottom:6px;">'
+        f'<div style="width:{bar_pct:.0f}%;height:100%;background:{bar_color};border-radius:4px;transition:width 0.3s;"></div></div>'
+        # Penjelasan 1 baris
+        f'<div style="font-size:0.58rem;color:#8b949e;background:#0d1117;border-radius:4px;padding:4px 6px;">'
+        f'{sp}</div>'
+        # Skala
+        f'<div style="font-size:0.5rem;color:#484f58;margin-top:4px;display:flex;justify-content:space-between;">'
+        f'<span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span></div>'
         f'</div>'
     )
 
@@ -4903,23 +4883,23 @@ def page_dashboard():
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: CRASH METER (kiri) | BUBBLE (kanan)
+    # ROW 2: CRASH METER (kiri) | BUBBLE (kanan) — compact
     # ═══════════════════════════════════════════════════════════
     r2_left, r2_right = st.columns([1, 1])
 
     with r2_left:
-        st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin:0 0 3px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.7rem;color:#F85149;font-weight:700;margin:2px 0 2px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v50")
 
     with r2_right:
-        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin:0 0 3px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.7rem;color:#A371F7;font-weight:700;margin:2px 0 2px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
     # ROW 3: ASSET PULSE (full width, compact)
     # ═══════════════════════════════════════════════════════════
-    st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:4px 0 3px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+    st.markdown("<div style='font-size:0.7rem;color:#3FB950;font-weight:700;margin:2px 0 2px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
     fig_ap = _plotly_asset_pulse(snap, prices)
     st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v50")
 
