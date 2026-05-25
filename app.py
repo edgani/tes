@@ -1029,55 +1029,131 @@ def _plotly_asset_pulse(snap, prices):
     return fig
 
 def _plotly_behavioral_bar(snap):
-    """Buat stacked bar chart untuk AAII Sentiment."""
+    """AAII Sentiment stacked bar — height cukup buat render jelas."""
     behavioral = snap.get("behavioral_macro", {}) or {}
-    bullish = behavioral.get("bullish", 30)
-    bearish = behavioral.get("bearish", 30)
-    neutral = behavioral.get("neutral", 40)
-    total = bullish + bearish + neutral
-    if total == 0:
-        total = 1
-
+    # Defensive: handle None values (common from orchestrator default)
+    bullish = behavioral.get("bullish") or 30
+    bearish = behavioral.get("bearish") or 30
+    neutral = behavioral.get("neutral") or 40
+    is_placeholder = (behavioral.get("bullish") is None)
+    
+    total = bullish + bearish + neutral or 1
+    b_pct = bullish / total * 100
+    n_pct = neutral / total * 100
+    be_pct = bearish / total * 100
+    
     fig = go.Figure()
     fig.add_trace(go.Bar(
-        name="Bullish", y=["Sentimen"], x=[bullish/total*100],
-        marker={"color": GREEN, "opacity": 0.85},
-        text=[f"🐂 {bullish:.0f}%"], textposition="inside",
-        textfont={"color": "white", "size": 12},
+        name="Bullish", y=[""], x=[b_pct],
+        marker={"color": "#3FB950", "opacity": 0.9},
+        text=[f"🐂 {b_pct:.0f}%"], textposition="inside",
+        textfont={"color": "#fff", "size": 12, "weight": 700},
         hovertemplate="Bullish: %{x:.1f}%<extra></extra>",
     ))
     fig.add_trace(go.Bar(
-        name="Neutral", y=["Sentimen"], x=[neutral/total*100],
-        marker={"color": TEXT_SECONDARY, "opacity": 0.7},
-        text=[f"⚖ {neutral:.0f}%"], textposition="inside",
-        textfont={"color": "white", "size": 12},
+        name="Neutral", y=[""], x=[n_pct],
+        marker={"color": "#8B949E", "opacity": 0.7},
+        text=[f"⚖ {n_pct:.0f}%"], textposition="inside",
+        textfont={"color": "#fff", "size": 12, "weight": 700},
         hovertemplate="Neutral: %{x:.1f}%<extra></extra>",
     ))
     fig.add_trace(go.Bar(
-        name="Bearish", y=["Sentimen"], x=[bearish/total*100],
-        marker={"color": RED, "opacity": 0.85},
-        text=[f"🐻 {bearish:.0f}%"], textposition="inside",
-        textfont={"color": "white", "size": 12},
+        name="Bearish", y=[""], x=[be_pct],
+        marker={"color": "#F85149", "opacity": 0.9},
+        text=[f"🐻 {be_pct:.0f}%"], textposition="inside",
+        textfont={"color": "#fff", "size": 12, "weight": 700},
         hovertemplate="Bearish: %{x:.1f}%<extra></extra>",
     ))
-
-    casino_score = min(100, max(0, (bullish - 45) * 3))
-    cash_raise = min(50, max(0, casino_score * 0.4))
-
-    status_text = "✅ Sentimen seimbang — tidak ada casino behavior" if casino_score <= 40 else f"⚠️ Casino Behavior — pertimbangkan raise {cash_raise:.0f}% cash"
-
+    
+    # Status
+    casino_score = min(100, max(0, (b_pct - 45) * 3))
+    if is_placeholder:
+        status_text = "⏳ Menunggu data AAII..."
+        status_color = "#484f58"
+    elif casino_score <= 30:
+        status_text = "✅ Seimbang"
+        status_color = "#3FB950"
+    elif casino_score <= 60:
+        status_text = f"⚠️ Waspada — raise {min(50, casino_score * 0.4):.0f}% cash"
+        status_color = "#D29922"
+    else:
+        status_text = f"🚨 Casino — raise {min(50, casino_score * 0.4):.0f}% cash"
+        status_color = "#F85149"
+    
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 20, "b": 5, "l": 30, "r": 20},
-        xaxis={"range": [0, 100], "gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#8b949e"}},
+        margin={"t": 35, "b": 25, "l": 10, "r": 10},
+        xaxis={"range": [0, 100], "visible": False},
         yaxis={"visible": False},
         barmode="stack", showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 9, "color": "#8b949e"}},
-        height=85,
+        height=90,
+        annotations=[{
+            "text": f"<span style='color:{status_color};font-size:0.65rem;'>{status_text}</span>",
+            "x": 0.5, "y": -0.20, "xref": "paper", "yref": "paper",
+            "showarrow": False,
+        }],
     )
     return fig
+
+def _what_if_regime_html(structural_quad, monthly_quad):
+    """Penjelasan 'What If' — apa yang terjadi kalau Structural=A tapi Monthly=B.
+    Ini yang paling penting buat user ngerti regime makro.
+    """
+    if structural_quad == monthly_quad:
+        # Sama — trend konsisten
+        explain_map = {
+            "Q1": "🟢 Trend kuat Goldilocks — growth naik, inflasi turun. Saham tech/growth naik paling kencang. Full deploy.",
+            "Q2": "🟡 Trend kuat Reflation — growth naik, inflasi naik. Commodity, energy, cyclical naik. Full deploy.",
+            "Q3": "🔴 Trend kuat Stagflation — growth turun, inflasi naik. Defensive (gold, bonds, utilities). Reduce equity.",
+            "Q4": "🟣 Trend kuat Deflation — growth turun, inflasi turun. Cash/bonds aman. Avoid risky assets.",
+        }
+        return (
+            f'<div style="padding:6px 10px;background:#161b22;border-left:3px solid #58A6FF;border-radius:0 6px 6px 0;margin:6px 0;">'
+            f'<div style="font-size:0.65rem;color:#8b949e;">📖 <b>Structural = Monthly</b> = Trend konsisten, tidak ada transisi</div>'
+            f'<div style="font-size:0.72rem;color:#c9d1d9;margin-top:2px;">{explain_map.get(structural_quad, "")}</div></div>'
+        )
+
+    # Beda — fase transisi
+    pair = (structural_quad, monthly_quad)
+    explain_map = {
+        # Q3 → Q2 (yang paling umum sekarang)
+        ("Q3", "Q2"): "🔴🟡 <b>Transisi: Stagflation → Reflation.</b> Growth mulai recovery (Monthly Q2) meski trend panjang masih Stagflation (Structural Q3). Inflasi masih tinggi tapi ekonomi mulai naik. <b>Strategi:</b> Rotate dari defensive ke cyclical. Commodity & energy masih ok, tapi mulai lirik growth.",
+        # Q3 → Q1
+        ("Q3", "Q1"): "🔴🟢 <b>Transisi cepat: Stagflation → Goldilocks.</b> Ekonomi recovery kencang, inflasi turun drastis. Ini fase paling bullish. <b>Strategi:</b> Full deploy ke saam growth/tech. Jangan sampai ketinggalan.",
+        # Q3 → Q4
+        ("Q3", "Q4"): "🔴🟣 <b>Bahaya: Stagflation → Deflation.</b> Growth turun, inflasi juga turun. Ini jalan ke crash/recession. <b>Strategi:</b> MAX DEFENSIVE. Cash, bonds, gold. Avoid equity.",
+        # Q2 → Q1
+        ("Q2", "Q1"): "🟡🟢 <b>Transisi: Reflation → Goldilocks.</b> Inflasi mulai turun, growth tetap kuat. Fase paling bullish. <b>Strategi:</b> Rotate dari commodity/energy ke tech/growth. Full deploy.",
+        # Q2 → Q3
+        ("Q2", "Q3"): "🟡🔴 <b>Bahaya: Reflation → Stagflation.</b> Growth turun tapi inflasi tetap naik. Stagflation = worst for stocks. <b>Strategi:</b> Defensive. Gold, bonds, utilities. Reduce equity.",
+        # Q1 → Q2
+        ("Q1", "Q2"): "🟢🟡 <b>Peringatan: Goldilocks → Reflation.</b> Growth tetap kuat tapi inflasi mulai naik lagi. Bisa jadi overheat. <b>Strategi:</b> Mulai rotate ke commodity/energy/infrastructure. Jangan terlalu tech-heavy.",
+        # Q1 → Q3
+        ("Q1", "Q3"): "🟢🔴 <b>Shock: Goldilocks → Stagflation.</b> Growth tiba-tiba turun, inflasi naik. Stagflation shock. <b>Strategi:</b> EMERGENCY defensive. Cash, gold, bonds. Cut equity exposure.",
+        # Q4 → Q1
+        ("Q4", "Q1"): "🟣🟢 <b>Recovery: Deflation → Goldilocks.</b> Ekonomi mulai recovery dari bottom. Ini fase awal bull market. <b>Strategi:</b> Accumulate slowly. DCA ke quality stocks. Jangan FOMO.",
+        # Q4 → Q3
+        ("Q4", "Q3"): "🟣🔴 <b>Bahaya: Deflation → Stagflation.</b> Inflasi naik tapi growth tetap lemah. Worst case. <b>Strategi:</b> MAX defensive. Cash is king.",
+        # Q2 → Q4
+        ("Q2", "Q4"): "🟡🟣 <b>Crash: Reflation → Deflation.</b> Growth dan inflasi turun bersama. Hard landing. <b>Strategi:</b> EMERGENCY. Cash, bonds, gold. Avoid cyclical.",
+        # Q1 → Q4
+        ("Q1", "Q4"): "🟢🟣 <b>Crash: Goldilocks → Deflation.</b> Bull market tiba-tiba crash. Black swan event. <b>Strategi:</b> PANIC MODE. Cash only. Wait for bottom.",
+    }
+
+    text = explain_map.get(pair, f"<b>Transisi: {structural_quad} → {monthly_quad}</b>. Watch for regime change signals.")
+    color = "#D29922"  # default warning
+    if "Bahaya" in text or "Crash" in text or "Shock" in text or "EMERGENCY" in text:
+        color = "#F85149"
+    elif "🟢" in text or "bullish" in text or "Full deploy" in text:
+        color = "#3FB950"
+
+    return (
+        f'<div style="padding:6px 10px;background:#161b22;border-left:3px solid {color};border-radius:0 6px 6px 0;margin:6px 0;">'
+        f'<div style="font-size:0.72rem;color:#c9d1d9;line-height:1.4;">{text}</div></div>'
+    )
 
 def _boombust_timeline_html(snap):
     """Boom-Bust Stage Timeline horizontal — INCEPTION → ACCELERATION → EUPHORIA → CRISIS → AUCTION.
@@ -4413,12 +4489,118 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: RADAR CHART REGIME (visual premium + informatif)
+    # ROW 1: REGIME CARDS (kembali ke original — lebih jelas)
     # ═══════════════════════════════════════════════════════════
+    gip_data = snap.get("gip")
+    if not isinstance(gip_data, dict):
+        gip_data = {}
+    _sq = str(gip_data.get("structural_quad") or "Q3").upper()
+    _mq = str(gip_data.get("monthly_quad") or "Q2").upper()
+    _mk = snap.get("markov_v3")
+    _mk = _mk if isinstance(_mk, dict) else {}
+    _mk_regime = (_mk.get("current_regime") or "Q1_GOLDILOCKS").replace("_", " ")
+    _mk_conf = float(_mk.get("confidence", 0) or 0)
+    _mk_kelly = float(_mk.get("kelly_fraction", 0.25) or 0.25)
+
+    quad_names_l = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+    quad_colors_l = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+    sq_c = quad_colors_l.get(_sq, "#8b949e")
+    mq_c = quad_colors_l.get(_mq, "#8b949e")
+    mk_c = quad_colors_l.get(str(_mk.get("current_regime", "Q1")).replace("_GOLDILOCKS", "").replace("_REFLATION", "").replace("_STAGFLATION", "").replace("_DEFLATION", ""), "#8b949e")
+
+    # 3 Cards: Structural | Monthly | Markov
+    c1, c2, c3, c4 = st.columns([1, 1, 1, 1.2])
+    with c1:
+        st.markdown(
+            f'<div style="padding:8px 10px;background:#161b22;border:1px solid {sq_c}60;border-radius:8px;text-align:center;">'
+            f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">STRUCTURAL</div>'
+            f'<div style="font-size:1.1rem;color:{sq_c};font-weight:800;margin:2px 0;">{_sq} {quad_names_l.get(_sq)}</div>'
+            f'<div style="font-size:0.55rem;color:#484f58;">Trend jangka panjang</div></div>',
+            unsafe_allow_html=True)
+    with c2:
+        st.markdown(
+            f'<div style="padding:8px 10px;background:#161b22;border:1px solid {mq_c}60;border-radius:8px;text-align:center;">'
+            f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MONTHLY</div>'
+            f'<div style="font-size:1.1rem;color:{mq_c};font-weight:800;margin:2px 0;">{_mq} {quad_names_l.get(_mq)}</div>'
+            f'<div style="font-size:0.55rem;color:#484f58;">Momentum bulan ini</div></div>',
+            unsafe_allow_html=True)
+    with c3:
+        st.markdown(
+            f'<div style="padding:8px 10px;background:#161b22;border:1px solid {mk_c}60;border-radius:8px;text-align:center;">'
+            f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MARKOV FORECAST</div>'
+            f'<div style="font-size:1.1rem;color:{mk_c};font-weight:800;margin:2px 0;">{_mk_regime}</div>'
+            f'<div style="font-size:0.55rem;color:#484f58;">Prediksi model Markov</div></div>',
+            unsafe_allow_html=True)
+    with c4:
+        # Confidence + Kelly gauge
+        conf_color = "#3FB950" if _mk_conf >= 0.7 else "#D29922" if _mk_conf >= 0.4 else "#F85149"
+        st.markdown(
+            f'<div style="padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;text-align:center;">'
+            f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;">CONFIDENCE · KELLY</div>'
+            f'<div style="display:flex;align-items:center;gap:4px;justify-content:center;margin:3px 0;">'
+            f'<div style="flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden;">'
+            f'<div style="width:{_mk_conf*100:.0f}%;height:100%;background:{conf_color};border-radius:3px;"></div></div>'
+            f'<span style="font-size:0.6rem;color:{conf_color};font-weight:700;min-width:28px;">{_mk_conf:.0%}</span></div>'
+            f'<div style="font-size:0.7rem;color:#c9d1d9;font-weight:700;">{_mk_kelly:.0%} Bet Size</div></div>',
+            unsafe_allow_html=True)
+
+    # ── What If Penjelasan (baru — ini yang user minta!) ──
+    st.markdown(_what_if_regime_html(_sq, _mq), unsafe_allow_html=True)
+
+    # ── Quad Probability Bar (simplified) ──
     fig_regime = _plotly_regime_merged(snap)
     st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_merged")
-    st.caption("📖 **📊 Structural**=kuadran aktif saat ini · **📅 Monthly**=tren saat ini · **🔮 Forward 1M**=prediksi model Markov · "
-              "🔮 Next Quad=kuadran berikutnya yang diprediksi + estimasi waktu transisi dalam hari")
+
+    # ── Quad Transition Timeline (baru — user minta!) ──
+    _mk2 = snap.get("markov_v3")
+    _mk2 = _mk2 if isinstance(_mk2, dict) else {}
+    _f1m = _mk2.get("forecast_1m", {}) or {}
+    _f3m = _mk2.get("forecast_3m", {}) or {}
+    if not isinstance(_f1m, dict):
+        _f1m = {}
+    if not isinstance(_f3m, dict):
+        _f3m = {}
+    _sq2 = str(gip_data.get("structural_quad") or "Q3").upper()
+    _next_q, _next_prob, _next_est = None, 0, ""
+    for _q in ["Q1", "Q2", "Q3", "Q4"]:
+        if _q == _sq2:
+            continue
+        _p1m = float(_f1m.get(_q, 0) or 0)
+        _p3m = float(_f3m.get(_q, 0) or 0)
+        _pc = _p1m * 0.6 + _p3m * 0.4
+        if _pc > _next_prob:
+            _next_prob = _pc
+            _next_q = _q
+            if _p1m > 0.25:
+                _next_est = f"~{max(7, int(30 * (1 - _p1m) + 7))} hari"
+            elif _p1m > 0.15:
+                _next_est = f"~{max(14, int(45 * (1 - _p1m)))} hari"
+            elif _p3m > 0.20:
+                _next_est = f"~{max(30, int(90 * (1 - _p3m)))} hari"
+            else:
+                _next_est = ">90 hari"
+
+    if _next_q:
+        _tl_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+        _c1 = _tl_colors.get(_sq2, "#8b949e")
+        _c2 = _tl_colors.get(_next_q, "#8b949e")
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:0;padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;margin-top:6px;">'
+            f'<div style="text-align:center;min-width:80px;">'
+            f'<div style="font-size:0.55rem;color:#8b949e;">SEKARANG</div>'
+            f'<div style="font-size:0.9rem;color:{_c1};font-weight:800;">{_sq2}</div>'
+            f'<div style="font-size:0.55rem;color:#484f58;">{quad_names_l.get(_sq2)}</div></div>'
+            f'<div style="flex:1;display:flex;align-items:center;gap:4px;padding:0 12px;">'
+            f'<div style="flex:1;height:3px;background:linear-gradient(to right,{_c1},{_c2});border-radius:2px;"></div>'
+            f'<div style="font-size:0.7rem;color:#58A6FF;font-weight:700;white-space:nowrap;">🔮 {_next_est}</div></div>'
+            f'<div style="text-align:center;min-width:80px;">'
+            f'<div style="font-size:0.55rem;color:#8b949e;">PREDIKSI</div>'
+            f'<div style="font-size:0.9rem;color:{_c2};font-weight:800;">{_next_q}</div>'
+            f'<div style="font-size:0.55rem;color:#484f58;">{quad_names_l.get(_next_q)}</div></div>'
+            f'<div style="text-align:center;min-width:60px;border-left:1px solid #30363d;padding-left:8px;">'
+            f'<div style="font-size:0.55rem;color:#8b949e;">PROB</div>'
+            f'<div style="font-size:0.8rem;color:{_c2};font-weight:700;">{_next_prob:.0%}</div></div></div>',
+            unsafe_allow_html=True)
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
