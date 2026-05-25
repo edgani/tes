@@ -1,4 +1,4 @@
-"""app.py - MacroRegime Pro v44 ALPHA
+"""app.py - MacroRegime Pro v46
 Full reconstruction from v32.7 AUDITED base.
 Fixes:
 - Line corruption eliminated (no mega-lines)
@@ -54,7 +54,7 @@ try:
 except Exception:
     _cme_scraper = None
 
-st.set_page_config(page_title="MacroRegime Pro v44", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="MacroRegime Pro v46", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
 # CSS
@@ -4270,9 +4270,9 @@ def page_dashboard():
             ("Smart Money", snap.get("smart_money") is not None), ("Discovery", snap.get("discovery_brain") is not None),
             ("Supply Chain", snap.get("supply_chain_chains") is not None), ("Front-Run", len(snap.get("front_run_candidates",[]))>0),
             ("Crypto Whale", len(snap.get("crypto_tokens",{}))>0), ("IHSG Broker", len(snap.get("ihsg_broker_proxy",{}))>0),
-            ("Barchart", _V41_SCRAPERS.get("barchart", False)), ("DeFiLlama", _V41_SCRAPERS.get("defillama", False)),
-            ("CFTC COT", _V41_SCRAPERS.get("cftc_cot", False)), ("Laevitas", _V41_SCRAPERS.get("laevitas", False)),
-            ("CME", _V41_SCRAPERS.get("cme", False)), ("IHSG v39", _V44_ENGINES.get("ihsg_v39", False)),
+            ("Barchart", _V41_AVAILABLE), ("DeFiLlama", _V41_AVAILABLE),
+            ("CFTC COT", _V41_AVAILABLE), ("Laevitas", _V41_AVAILABLE),
+            ("CME", _V41_AVAILABLE), ("IHSG v39", locals().get("_V44_AVAILABLE", False)),
         ]
         cols = st.columns(4)
         for i, (name, ok) in enumerate(engines):
@@ -4990,7 +4990,7 @@ def page_forex():
                 signals.append(f'<span style="display:inline-block;background:#161B22;border:1px solid #30363D;padding:3px 10px;border-radius:10px;font-size:0.75rem;color:#E6EDF3;margin:2px;">{f1}{f2} {pair} {arrow}{net_str}</span>')
         if signals:
             st.markdown(" ".join(signals), unsafe_allow_html=True)
-    fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
+    fx_tickers = list(FOREX_PAIRS.keys()) if len(FOREX_PAIRS) > 0 else FALLBACK_FX
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
     actionable = filter_actionable(rows, snap=snap)
@@ -5055,7 +5055,7 @@ def page_commodities():
         if badges:
             st.markdown(" ".join(badges), unsafe_allow_html=True)
     st.divider()
-    comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
+    comm_tickers = list(COMMODITIES.keys()) if len(COMMODITIES) > 0 else FALLBACK_COMM
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
     rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
     actionable = filter_actionable(rows, snap=snap)
@@ -5158,7 +5158,7 @@ def page_crypto():
             unsafe_allow_html=True
         )
     st.divider()
-    crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
+    crypto_tickers = list(CRYPTO.keys()) if len(CRYPTO) > 0 else FALLBACK_CRYPTO
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
     rows = build_ticker_rows(crypto_tickers, "crypto", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
     actionable = filter_actionable(rows, snap=snap)
@@ -5292,6 +5292,7 @@ def page_global():
 # ═══════════════════════════════════════════════════════════════════
 def page_themes():
     st.markdown("## 📖 Themes & Playbook")
+    sq = snap.get("quad", "Q3") if snap else "Q3"
     allocation = {
         "Q1": {"long": 75, "short": 5, "cash": 20, "style": "Tech 30% | Growth 20% | Crypto 15% | EM 5% | Defensives 5%"},
         "Q2": {"long": 70, "short": 10, "cash": 20, "style": "Cyclicals 25% | Financials 15% | Energy 15% | Materials 10% | Small Caps 5%"},
@@ -6215,4 +6216,4 @@ elif page == "📊 Portfolio Stress":
 # ═══════════════════════════════════════════════════════════════════
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v44 · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators · AFS {snap.get('summary',{}).get('v32_afs',0):.1f}{flip_note}")
+st.caption(f"MacroRegime Pro v46 · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators · AFS {snap.get('summary',{}).get('v32_afs',0):.1f}{flip_note}")
