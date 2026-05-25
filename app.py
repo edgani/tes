@@ -813,11 +813,12 @@ def _plotly_quad_probabilities(snap):
     return fig
 
 
-def _plotly_regime_radar(snap):
-    """RADAR CHART: Visualisasi 4 Kuadran Makro sebagai radar/spider chart.
-    Jauh lebih premium dan intuitif dari bar chart biasa.
+def _plotly_regime_merged(snap):
+    """MERGED REGIME GRAPH: Horizontal bar chart yang merge semua info jadi 1 visual.
+    Lebih clean dan readable dari radar yang tumpang tindih.
+    Layout: [Current Regime Card kiri] [Grouped Bar Q1-Q4 kanan]
     """
-    # ── Data extraction (defensive) ──
+    # ── Data extraction ──
     gip_data = snap.get("gip")
     if not isinstance(gip_data, dict):
         gip_data = {}
@@ -877,61 +878,87 @@ def _plotly_regime_radar(snap):
 
     sq_color = quad_colors.get(sq, "#8b949e")
     mq_color = quad_colors.get(mq, "#8b949e")
-    theta_labels = [f"{q}<br>{quad_names[q]}" for q in quads] + [f"{quads[0]}<br>{quad_names[quads[0]]}"]
-
-    fig = go.Figure()
-
-    # 3 filled radar layers
-    fig.add_trace(go.Scatterpolar(
-        r=s_vals + [s_vals[0]], theta=theta_labels,
-        mode="lines+markers", fill="toself", fillcolor="rgba(88,166,255,0.15)",
-        line={"color": "#58A6FF", "width": 2},
-        marker={"size": 8, "color": "#58A6FF", "symbol": "diamond"},
-        name="📊 Structural (sekarang)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatterpolar(
-        r=mo_vals + [mo_vals[0]], theta=theta_labels,
-        mode="lines+markers", fill="toself", fillcolor="rgba(210,153,34,0.10)",
-        line={"color": "#D29922", "width": 1.5, "dash": "dash"},
-        marker={"size": 6, "color": "#D29922"},
-        name="📅 Monthly (tren)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
-    ))
-    fig.add_trace(go.Scatterpolar(
-        r=f1m_vals + [f1m_vals[0]], theta=theta_labels,
-        mode="lines", fill="toself", fillcolor="rgba(163,113,247,0.07)",
-        line={"color": "#A371F7", "width": 1, "dash": "dot"},
-        name="🔮 Forward 1M (prediksi)", hovertemplate="%{theta}: %{r:.1%}<extra></extra>",
-    ))
-
-    # Central annotation: current regime
     conf_pct = max(sq_conf, mk_conf)
-    fig.add_annotation(
-        x=0.5, y=0.5, xref="paper", yref="paper",
-        text=f"<b style='color:{sq_color};font-size:16px;'>{sq}</b><br><span style='font-size:10px;color:#8b949e;'>{quad_names.get(sq)}</span><br><span style='font-size:9px;color:#484f58;'>Conf {conf_pct:.0%}</span>",
-        showarrow=False, align="center",
+
+    fig = make_subplots(
+        rows=1, cols=2,
+        column_widths=[0.28, 0.72],
+        specs=[[{"type": "domain"}, {"type": "xy"}]],
+        subplot_titles=("", ""),
     )
+
+    # KIRI: Current Regime sebagai donut/card
+    regime_labels = [f"<b>{q}</b>" for q in quads]
+    fig.add_trace(go.Pie(
+        labels=regime_labels, values=[0.25]*4,
+        hole=0.65,
+        marker_colors=[quad_colors[q] for q in quads],
+        textinfo="none",
+        hoverinfo="skip",
+        showlegend=False,
+    ), row=1, col=1)
+
+    # Overlay text di tengah donut
+    sq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(sq, "⚪")
+    regime_text = f"<b style='font-size:18px;color:{sq_color};'>{sq}</b><br><span style='font-size:10px;color:#8b949e;'>{quad_names.get(sq)}</span><br><span style='font-size:9px;color:#484f58;'>Conf {conf_pct:.0%}</span>"
+
+    # KANAN: Grouped horizontal bar
+    y_labels = [f"{q} · {quad_names[q]}" for q in quads]
+    y_pos = list(range(len(quads)))
+
+    fig.add_trace(go.Bar(
+        y=y_pos, x=s_vals, orientation="h",
+        marker_color=[quad_colors[q] for q in quads], opacity=1.0,
+        text=[f"{v:.0%}" for v in s_vals],
+        textposition="outside", textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
+        name="📊 Structural", showlegend=True,
+        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
+        width=0.22,
+    ), row=1, col=2)
+    fig.add_trace(go.Bar(
+        y=[y + 0.25 for y in y_pos], x=mo_vals, orientation="h",
+        marker_color=[quad_colors[q] for q in quads], opacity=0.5,
+        text=[f"{v:.0%}" for v in mo_vals],
+        textposition="outside", textfont={"size": 9, "color": "#8b949e"},
+        name="📅 Monthly", showlegend=True,
+        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
+        width=0.22,
+    ))
+    fig.add_trace(go.Bar(
+        y=[y + 0.5 for y in y_pos], x=f1m_vals, orientation="h",
+        marker_color=[quad_colors[q] for q in quads], opacity=0.2,
+        text=[f"{v:.0%}" for v in f1m_vals],
+        textposition="outside", textfont={"size": 8, "color": "#484f58"},
+        name="🔮 Forward 1M", showlegend=True,
+        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
+        width=0.22,
+    ))
+
+    # Forecast annotation
+    forecast_text = ""
+    if next_q:
+        forecast_text = f"🔮 Next: <b>{next_q}</b> {quad_names.get(next_q)} · {next_prob:.0%} · {next_est}"
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 50, "b": 30, "l": 60, "r": 60},
-        height=300, showlegend=True,
-        legend={"orientation": "h", "yanchor": "bottom", "y": -0.05, "xanchor": "center", "x": 0.5,
+        margin={"t": 45, "b": 35, "l": 80, "r": 60},
+        height=200, barmode="group", bargap=0.15,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.65,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        polar={
-            "radialaxis": {"visible": True, "range": [0, 1], "tickformat": ".0%", "tickfont": {"size": 8, "color": "#484f58"},
-                          "gridcolor": "#21262d", "linecolor": "#30363d"},
-            "angularaxis": {"tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700}, "linecolor": "#30363d", "gridcolor": "#30363d"},
-            "bgcolor": "rgba(0,0,0,0)",
-        },
-    )
-
-    # Title + subtitle
-    sq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(sq, "⚪")
-    forecast_text = f" | 🔮 Next: <b>{next_q}</b> {quad_names.get(next_q)} {next_prob:.0%} ({next_est})" if next_q else ""
-    fig.update_layout(
+        yaxis2={"tickmode": "array", "tickvals": [y + 0.25 for y in y_pos],
+                "ticktext": y_labels, "tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700},
+                "gridcolor": "#21262d", "autorange": "reversed"},
+        xaxis2={"tickformat": ".0%", "range": [0, 1.1], "gridcolor": "#21262d",
+                "tickfont": {"size": 9, "color": "#8b949e"}},
+        annotations=[
+            {"text": regime_text, "x": 0.14, "y": 0.5, "xref": "paper", "yref": "paper",
+             "showarrow": False, "font": {"size": 10, "color": "#c9d1d9"}, "align": "center"},
+            {"text": forecast_text, "x": 0.99, "y": -0.12, "xref": "paper", "yref": "paper",
+             "showarrow": False, "font": {"size": 9, "color": "#8b949e"}, "align": "right"},
+        ],
         title={
-            "text": f"{sq_emoji} REGIME: <b>{sq} {quad_names.get(sq)}</b> · {quad_desc.get(sq)} · Kelly {mk_kelly:.0%}{forecast_text}",
+            "text": f"{sq_emoji} REGIME: <b>{sq} {quad_names.get(sq)}</b> · {quad_desc.get(sq)} · Kelly {mk_kelly:.0%}",
             "font": {"size": 11, "color": "#c9d1d9"}, "x": 0.5, "xanchor": "center",
         },
     )
@@ -4405,12 +4432,12 @@ def page_dashboard():
     # ═══════════════════════════════════════════════════════════
     # ROW 1: RADAR CHART REGIME (visual premium + informatif)
     # ═══════════════════════════════════════════════════════════
-    fig_regime = _plotly_regime_radar(snap)
-    st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_radar")
-    st.caption("📖 **Radar Regime Makro:** 3 area — Biru solid=Structural(kuadran saat ini), Kuning dash=Monthly(tren), Ungu dot=Forward 1M(prediksi Markov). "
-              "**Q1** Goldilocks=growth↑inflasi↓(saham naik) · **Q2** Reflation=growth↑inflasi↑(commodity naik) · "
-              "**Q3** Stagflation=growth↓inflasi↑(gold+bonds) · **Q4** Deflation=growth↓inflasi↓(crash mode). "
-              "Tengah=regime aktif. 🔮 Next Quad=prediksi transisi + estimasi hari.")
+    fig_regime = _plotly_regime_merged(snap)
+    st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_merged")
+    st.caption("📖 **Regime Makro:** Donut kiri=kuadran aktif saat ini (besar+bold). Bar kanan=probabilitas 4 kuadran. "
+              "**📊 Structural**=kuadran sekarang · **📅 Monthly**=tren terbaru · **🔮 Forward 1M**=prediksi Markov. "
+              "Q1=Goldilocks(saham↑) · Q2=Reflation(commodity↑) · Q3=Stagflation(gold/bonds↑) · Q4=Deflation(crash). "
+              "🔮 Next Quad=prediksi transisi + estimasi waktu.")
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
@@ -4485,28 +4512,26 @@ def page_dashboard():
     left, right = st.columns([1, 1])
 
     with left:
+        # Crash Meter
         st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin-bottom:4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="crash_meter")
         st.caption("📖 5 indikator: Yield Curve, Credit Spread, CAPE, VIX %ile, Margin Debt. "
-                  "Skor 1-2 hijau=AMAN · 3 kuning=WASPADA · 4-5 merah=KRITIS. "
-                  "Crash mungkin terjadi kalau ≥3 indikator merah bersamaan.")
+                  "1-2 hijau=AMAN · 3 kuning=WASPADA · 4-5 merah=KRITIS.")
 
-    with right:
-        # Boom-Bust Timeline (bukan gauge!)
-        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
-        st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-        st.caption("📖 SURVIVAL = seberapa kuat pasar bertahan sebelum crash. Timeline: INCEPTION→ACCELERATION→EUPHORIA→CRISIS→AUCTION. "
-                  "0-2=akumulasi aman · 3-4=acceleration · 5-7=euphoria/waspada · 8-10=crisis/risiko koreksi tinggi")
-
-        # Asset Pulse
+        # Asset Pulse (pindah ke kiri — space optimal)
         st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:8px 0 4px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="asset_pulse")
-        st.caption("📖 Return 21 hari terakhir. Hijau=uang masuk, Merah=uang keluar. "
-                  "QQQ leading+Dollar weak=Growth-on Reflation. ETH merah+BTC hijau=hindari altcoin.")
+        st.caption("📖 Return 21 hari. Hijau=masuk Merah=keluar. QQQ+DXY weak=Growth-on Reflation.")
 
-        # Behavioral Sentiment — handle empty state
+    with right:
+        # Boom-Bust Timeline
+        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
+        st.caption("📖 SURVIVAL=kuat pasar bertahan sebelum crash. 0-2=aman · 3-4=accel · 5-7=euphoria · 8-10=crisis")
+
+        # Sentiment — SELALU tampil visual, placeholder kalau kosong
         st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
         bullish = behavioral.get("bullish", 0) or 0
         bearish = behavioral.get("bearish", 0) or 0
@@ -4515,14 +4540,51 @@ def page_dashboard():
             fig_bh = _plotly_behavioral_bar(snap)
             st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
         else:
-            # Placeholder kalau data kosong
-            st.markdown(
-                '<div style="padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:6px;text-align:center;">'
-                '<div style="font-size:0.7rem;color:#484f58;">Data sentiment AAII belum tersedia</div>'
-                '<div style="font-size:0.6rem;color:#8b949e;margin-top:2px;">Bullish &gt;45%=FOMO/waspada · Bearish &gt;35%=fear extreme/beli · Casino &gt;40=raise cash</div></div>',
-                unsafe_allow_html=True)
-        st.caption("📖 AAII Sentiment dari survei investor retail AS. Bullish&gt;45%=crowd FOMO/hati-hati. "
-                  "Bearish&gt;35%=fear extreme/beli kontrarian. Casino Score&gt;40=pertimbangkan raise cash 20-50%.")
+            # Placeholder bar dengan default values + label
+            ph_total = 100
+            ph_bull, ph_neut, ph_bear = 30, 40, 30
+            fig_ph = go.Figure()
+            fig_ph.add_trace(go.Bar(
+                y=["Sentimen"], x=[ph_bull], orientation="h",
+                marker={"color": "#3FB950", "opacity": 0.25},
+                text=[f"🐂 {ph_bull}%"], textposition="inside",
+                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
+                name="Bullish", showlegend=True,
+                hovertemplate="Bullish: %{x}%<extra></extra>",
+            ))
+            fig_ph.add_trace(go.Bar(
+                y=["Sentimen"], x=[ph_neut], orientation="h",
+                marker={"color": "#8b949e", "opacity": 0.25},
+                text=[f"⚖ {ph_neut}%"], textposition="inside",
+                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
+                name="Neutral", showlegend=True,
+                hovertemplate="Neutral: %{x}%<extra></extra>",
+            ))
+            fig_ph.add_trace(go.Bar(
+                y=["Sentimen"], x=[ph_bear], orientation="h",
+                marker={"color": "#F85149", "opacity": 0.25},
+                text=[f"🐻 {ph_bear}%"], textposition="inside",
+                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
+                name="Bearish", showlegend=True,
+                hovertemplate="Bearish: %{x}%<extra></extra>",
+            ))
+            fig_ph.add_annotation(
+                x=0.5, y=0, xref="paper", yref="y",
+                text="<b>Data belum tersedia</b><br><span style='font-size:9px;color:#484f58;'>Menunjukkan format visual</span>",
+                showarrow=False, font={"size": 10, "color": "#484f58"},
+            )
+            fig_ph.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 9},
+                margin={"t": 20, "b": 5, "l": 30, "r": 20},
+                xaxis={"range": [0, 100], "visible": False},
+                yaxis={"visible": False},
+                barmode="stack", height=60,
+                legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
+                        "font": {"size": 8, "color": "#484f58"}},
+            )
+            st.plotly_chart(fig_ph, use_container_width=True, config={"displayModeBar": False}, key="behavioral_ph")
+        st.caption("📖 AAII Sentiment investor retail AS. Bullish&gt;45%=FOMO/waspada. Bearish&gt;35%=beli kontrarian. Casino&gt;40=raise cash.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
