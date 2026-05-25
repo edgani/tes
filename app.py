@@ -812,218 +812,6 @@ def _plotly_quad_probabilities(snap):
     )
     return fig
 
-def _plotly_regime_overview(snap):
-    """Regime Overview — Merge compass + quad probability + next quad forecast.
-    Prediksi 'next quad dalam berapa lama' pakai Markov transition + confidence decay.
-    """
-    # ── Data extraction ──
-    gip_local = snap.get("gip")
-    if gip_local is not None and not isinstance(gip_local, dict):
-        from types import SimpleNamespace
-        gip_local = SimpleNamespace(**gip_local.__dict__) if hasattr(gip_local, '__dict__') else {}
-    if not isinstance(gip_local, dict):
-        gip_local = {}
-
-    q_probs = gip_local.get("structural_probs", {}) or {}
-    m_probs = gip_local.get("monthly_probs", {}) or {}
-    sq = gip_local.get("structural_quad", "Q3") or "Q3"
-    mq = gip_local.get("monthly_quad", "Q2") or "Q2"
-
-    markov = snap.get("markov_v3", {}) or {}
-    if not isinstance(markov, dict):
-        markov = {}
-    mk_conf = markov.get("confidence", 0) or 0
-    mk_kelly = markov.get("kelly_fraction", 0.25) or 0.25
-    mk_regime = markov.get("current_regime", "UNKNOWN") or "UNKNOWN"
-    cp_alert = markov.get("change_point_alert", False) or False
-
-    # Markov forecasts
-    f1m = markov.get("forecast_1m", {}) or {}
-    f3m = markov.get("forecast_3m", {}) or {}
-    if not isinstance(f1m, dict):
-        f1m = {}
-    if not isinstance(f3m, dict):
-        f3m = {}
-
-    quads = ["Q1", "Q2", "Q3", "Q4"]
-    quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
-    quad_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
-
-    # ── Hitung Next Quad Forecast ──
-    # Cari quad dengan prob tertinggi yang BUKAN current quad
-    current_q = str(sq).upper()
-    next_candidates = []
-    for q in quads:
-        if q == current_q:
-            continue
-        p1m = f1m.get(q, 0) or 0
-        p3m = f3m.get(q, 0) or 0
-        # Weighted: 1m lebih dekat tapi 3m lebih stabil
-        p_combined = p1m * 0.6 + p3m * 0.4
-        if p_combined > 0.05:  # Minimum threshold
-            next_candidates.append((q, p_combined, p1m, p3m))
-
-    # Sort by combined probability
-    next_candidates.sort(key=lambda x: x[1], reverse=True)
-
-    # Estimasi waktu: kalau prob di 1m > 0.25 → ~30 hari, else if di 3m > 0.3 → ~60-90 hari
-    forecast_html = ""
-    if next_candidates:
-        best_q, best_p, best_1m, best_3m = next_candidates[0]
-        if best_1m > 0.25:
-            est_days = max(7, int(30 * (1 - best_1m) + 7))
-            est_label = f"~{est_days} hari"
-        elif best_1m > 0.15:
-            est_days = max(14, int(45 * (1 - best_1m)))
-            est_label = f"~{est_days} hari"
-        elif best_3m > 0.20:
-            est_days = max(30, int(90 * (1 - best_3m)))
-            est_label = f"~{est_days} hari"
-        else:
-            est_label = "tidak pasti (>90 hari)"
-
-        qcolor = quad_colors.get(best_q, "#8b949e")
-        qname = quad_names.get(best_q, best_q)
-        forecast_html = (
-            f'<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;'
-            f'background:#0d1117;border:1px solid {qcolor}40;border-radius:6px;margin-top:6px;">'
-            f'<div style="font-size:1.1rem;">🔮</div>'
-            f'<div style="flex:1;">'
-            f'<div style="font-size:0.68rem;color:#8b949e;font-weight:600;">NEXT QUAD FORECAST</div>'
-            f'<div style="font-size:0.8rem;color:{qcolor};font-weight:700;">'
-            f'{best_q} {qname}</span> <span style="color:#8b949e;font-weight:400;">· {best_p:.0%} prob · {est_label}</span></div>'
-            f'</div></div>'
-        )
-
-    # ── Build unified figure: subplot [compass_card | quad_bars | forecast] ──
-    from plotly.subplots import make_subplots
-
-    # Structural probs untuk bar
-    s_vals = [q_probs.get(q, 0) if isinstance(q_probs, dict) else 0 for q in quads]
-    mo_vals = [m_probs.get(q, 0) if isinstance(m_probs, dict) else 0 for q in quads]
-    f1m_vals = [f1m.get(q, 0) or 0 for q in quads]
-
-    # Normalize kalau sum=0
-    for arr in [s_vals, mo_vals, f1m_vals]:
-        total = sum(arr)
-        if total == 0:
-            arr[:] = [0.25, 0.25, 0.25, 0.25]
-        elif abs(total - 1.0) > 0.01:
-            arr[:] = [v / total for v in arr]
-
-    fig = make_subplots(
-        rows=1, cols=2,
-        column_widths=[0.45, 0.55],
-        specs=[[{"type": "domain"}, {"type": "xy"}]],
-        subplot_titles=("", ""),
-    )
-
-    # KIRI: Quad probability horizontal bar (merge dari yang sebelumnya terpisah)
-    for i, (q, s_val, mo_val) in enumerate(zip(quads, s_vals, mo_vals)):
-        color = quad_colors.get(q, "#8b949e")
-        name = quad_names.get(q, q)
-        # Stacked: structural + monthly
-        fig.add_trace(go.Bar(
-            x=[s_val], y=[f"{q} · {name}"],
-            orientation="h",
-            marker={"color": color, "opacity": 0.95, "line": {"width": 0}},
-            text=[f"{s_val:.0%}"],
-            textposition="inside" if s_val > 0.15 else "outside",
-            textfont={"color": "#fff" if s_val > 0.15 else color, "size": 10, "weight": 700},
-            name=f"{q} Structural",
-            showlegend=False,
-            hovertemplate=f"<b>{q} {name}</b><br>Structural: %{{x:.1%}}<extra></extra>",
-        ), row=1, col=1)
-
-    # KANAN: Grouped bar Structural vs Monthly vs Forward 1M
-    for q, color in zip(quads, [quad_colors[q] for q in quads]):
-        # Trace kosong untuk legend
-        pass
-
-    fig.add_trace(go.Bar(
-        x=quads, y=s_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=1.0,
-        text=[f"{v:.0%}" for v in s_vals],
-        textposition="outside", textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
-        name="📊 Structural (sekarang)", showlegend=True,
-        hovertemplate="%{x}<br>Structural: %{y:.1%}<extra></extra>",
-    ), row=1, col=2)
-
-    fig.add_trace(go.Bar(
-        x=quads, y=mo_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=0.5,
-        text=[f"{v:.0%}" for v in mo_vals],
-        textposition="outside", textfont={"size": 9, "color": "#8b949e"},
-        name="📅 Monthly (tren)", showlegend=True,
-        hovertemplate="%{x}<br>Monthly: %{y:.1%}<extra></extra>",
-    ), row=1, col=2)
-
-    fig.add_trace(go.Bar(
-        x=quads, y=f1m_vals,
-        marker_color=[quad_colors[q] for q in quads], opacity=0.25,
-        text=[f"{v:.0%}" for v in f1m_vals],
-        textposition="outside", textfont={"size": 8, "color": "#484f58"},
-        name="🔮 Forward 1M (prediksi)", showlegend=True,
-        hovertemplate="%{x}<br>Forward 1M: %{y:.1%}<extra></extra>",
-    ), row=1, col=2)
-
-    # ── Judul dengan info regime ──
-    sq_color = quad_colors.get(sq, "#8b949e")
-    mq_color = quad_colors.get(mq, "#8b949e")
-    markov_display = str(mk_regime).replace("_", " ")
-    cp_icon = " ⚠️" if cp_alert else ""
-
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 55, "b": 10, "l": 100, "r": 20},
-        height=185,
-        barmode="group", bargap=0.25, bargroupgap=0.1,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.65,
-                "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        title={
-            "text": f"🎯 REGIME: <b style='color:{sq_color};'>{sq}</b> + <b style='color:{mq_color};'>{mq}</b> · {markov_display}{cp_icon} · Conf {mk_conf:.0%}",
-            "font": {"size": 12, "color": "#c9d1d9"},
-            "x": 0, "xanchor": "left",
-        },
-        xaxis2={"range": [0, 1.15], "tickformat": ".0%", "gridcolor": "#21262d",
-                "tickfont": {"size": 9, "color": "#8b949e"}, "dtick": 0.25},
-        yaxis2={"tickfont": {"size": 10, "color": "#c9d1d9"}, "gridcolor": "#21262d"},
-        yaxis={"tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700}, "gridcolor": "#21262d",
-               "autorange": "reversed"},
-        xaxis={"range": [0, 0.7], "tickformat": ".0%", "gridcolor": "#21262d",
-               "tickfont": {"size": 9, "color": "#8b949e"}},
-    )
-
-    # Add forecast as annotation
-    if next_candidates:
-        best_q, best_p, best_1m, best_3m = next_candidates[0]
-        qcolor = quad_colors.get(best_q, "#8b949e")
-        qname = quad_names.get(best_q, best_q)
-        if best_1m > 0.25:
-            est_days = max(7, int(30 * (1 - best_1m) + 7))
-        elif best_1m > 0.15:
-            est_days = max(14, int(45 * (1 - best_1m)))
-        elif best_3m > 0.20:
-            est_days = max(30, int(90 * (1 - best_3m)))
-        else:
-            est_days = 90
-
-        fig.add_annotation(
-            x=0.98, y=-0.18,
-            xref="paper", yref="paper",
-            text=f"🔮 Next: <b>{best_q}</b> dalam ~{est_days}h",
-            showarrow=False,
-            font={"size": 10, "color": qcolor, "weight": 700},
-            bgcolor="rgba(13,17,23,0.8)",
-            bordercolor=qcolor,
-            borderwidth=1,
-            borderpad=4,
-            align="right",
-        )
-
-    return fig
-
 def _plotly_crash_meter(snap):
     """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 150px."""
     cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
@@ -4469,12 +4257,55 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: UNIFIED REGIME OVERVIEW (merged compass + quad prob + forecast)
+    # ROW 1: REGIME COMPASS (original + Next Quad Forecast)
     # ═══════════════════════════════════════════════════════════
-    fig_ro = _plotly_regime_overview(snap)
-    st.plotly_chart(fig_ro, use_container_width=True, config={"displayModeBar": False})
+    render_regime_compass(snap)
 
-    # ── Narrative (compact, 1 baris) ──
+    # ── Next Quad Forecast ──
+    markov = snap.get("markov_v3", {}) or {}
+    if isinstance(markov, dict):
+        f1m = markov.get("forecast_1m", {}) or {}
+        f3m = markov.get("forecast_3m", {}) or {}
+        sq = snap.get("gip", {}).get("structural_quad", "Q3") if isinstance(snap.get("gip"), dict) else "Q3"
+        quads = ["Q1", "Q2", "Q3", "Q4"]
+        quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+        quad_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+        next_candidates = []
+        for q in quads:
+            if q == sq:
+                continue
+            p1m = f1m.get(q, 0) or 0
+            p3m = f3m.get(q, 0) or 0
+            p_combined = p1m * 0.6 + p3m * 0.4
+            if p_combined > 0.05:
+                next_candidates.append((q, p_combined, p1m))
+        next_candidates.sort(key=lambda x: x[1], reverse=True)
+        if next_candidates:
+            best_q, best_p, best_1m = next_candidates[0]
+            qcolor = quad_colors.get(best_q, "#8b949e")
+            qname = quad_names.get(best_q, best_q)
+            if best_1m > 0.25:
+                est_days = max(7, int(30 * (1 - best_1m) + 7))
+            elif best_1m > 0.15:
+                est_days = max(14, int(45 * (1 - best_1m)))
+            elif f3m.get(best_q, 0) > 0.20:
+                est_days = max(30, int(90 * (1 - f3m.get(best_q, 0))))
+            else:
+                est_days = 90
+            est_label = f"~{est_days} hari" if est_days <= 90 else "tidak pasti (>90 hari)"
+            st.markdown(
+                f'<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;'
+                f'background:#0d1117;border-left:3px solid {qcolor};border-radius:0 6px 6px 0;margin:6px 0;">'
+                f'<div style="font-size:1.2rem;">🔮</div>'
+                f'<div><div style="font-size:0.7rem;color:#8b949e;font-weight:600;">NEXT QUAD FORECAST</div>'
+                f'<div style="font-size:0.82rem;color:{qcolor};font-weight:700;">{best_q} {qname}</span> '
+                f'<span style="color:#8b949e;font-weight:400;">· {best_p:.0%} kemungkinan · estimasi {est_label}</span></div></div>',
+                unsafe_allow_html=True)
+            st.caption("📖 **Penjelasan:** Prediksi kuadran makro berikutnya berdasarkan model Markov. "
+                      "Jika probabilitas tinggi dalam 1M (~30 hari), transisi bisa terjadi segera. "
+                      "Jika rendah dalam 1M tapi naik di 3M, transisi mungkin terjadi dalam 1-3 bulan.")
+
+    # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
     if macro_nar.get("headline") or macro_nar.get("narrative"):
@@ -4485,130 +4316,117 @@ def page_dashboard():
         st.markdown(nar_html, unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: 4 KEY GAUGES — Volatility | Health | Kelly | Alerts
+    # ROW 2: 4 KEY GAUGES — masing-masing ada penjelasan
     # ═══════════════════════════════════════════════════════════
-    summary = snap.get("summary", {}) or {}
     health = snap.get("health", {}) or {}
-    markov = snap.get("markov_v3", {}) or {}
     behavioral = snap.get("behavioral_macro", {}) or {}
     health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
     kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
     yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
     alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
     n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
-    vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
-    vix_b_label = (snap.get("vix_bucket") or {}).get("label", "—")
 
-    # ── 4 Gauge dengan LABEL JELAS di bawah ──
-    # Label fix: gak "Composite/Bet size/NONE" tapi nama yang orang ngerti
     g1, g2, g3, g4 = st.columns(4)
     with g1:
         vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
-        vix_cond = "Rendah/Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Tinggi/Panik"
+        vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
         st.plotly_chart(_plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix=""),
                        use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>📊 Volatilitas</div>"
-                   f"<div style='text-align:center;font-size:0.55rem;color:{vc};font-weight:600;'>{vix_cond}</div>",
-                   unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>📊 Volatilitas: <b style='color:{vc};'>{vix_cond}</b></div>", unsafe_allow_html=True)
     with g2:
         hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
         h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
         st.plotly_chart(_plotly_gauge(health_score, "HEALTH", max_val=100, color=hc),
                        use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>❤️ Kesehatan Pasar</div>"
-                   f"<div style='text-align:center;font-size:0.55rem;color:{hc};font-weight:600;'>{h_cond}</div>",
-                   unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>❤️ Kesehatan Pasar: <b style='color:{hc};'>{h_cond}</b></div>", unsafe_allow_html=True)
     with g3:
         kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
         k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
         st.plotly_chart(_plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%"),
                        use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>🎯 Ukuran Taruhan</div>"
-                   f"<div style='text-align:center;font-size:0.55rem;color:{kc};font-weight:600;'>{k_cond}</div>",
-                   unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>🎯 Taruhan Optimal: <b style='color:{kc};'>{k_cond}</b></div>", unsafe_allow_html=True)
     with g4:
         ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
         a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
-        # Alerts tanpa suffix % (ini count, bukan persen!)
         fig_a = go.Figure(go.Indicator(
             mode="gauge+number", value=n_alerts,
             title={"text": "ALERTS", "font": {"size": 10, "color": "#8b949e"}},
             number={"font": {"size": 20, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
-            gauge={
-                "axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
-                "bar": {"color": ac, "thickness": 0.75},
-                "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
-                "steps": [
-                    {"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
-                    {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
-                    {"range": [4, 10], "color": "rgba(248,81,73,0.06)"},
-                ],
-            },
+            gauge={"axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
+                   "bar": {"color": ac, "thickness": 0.75}, "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
+                   "steps": [{"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
+                             {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
+                             {"range": [4, 10], "color": "rgba(248,81,73,0.06)"}]},
         ))
         fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                            font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
                            height=90, margin={"t": 5, "b": 5, "l": 5, "r": 5})
         st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;margin-top:-4px;'>🧠 Sinyal Behavioral</div>"
-                   f"<div style='text-align:center;font-size:0.55rem;color:{ac};font-weight:600;'>{a_cond}</div>",
-                   unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>🧠 Behavioral: <b style='color:{ac};'>{a_cond}</b></div>", unsafe_allow_html=True)
+
+    # Penjelasan Row 2
+    st.markdown(_penjelasan(
+        "<b>VIX</b> = Volatilitas pasar. &lt;20 hijau=tenang, 20-25 kuning=waspada, &gt;25 merah=panik. "
+        "<b>Health</b> = Skor komposit kesehatan pasar 0-100. <b>Kelly</b> = Ukuran taruhan optimal. "
+        "36%=normal, &gt;50%=aggresif. <b>Alerts</b> = Sinyal behavioral dari Yves/AAII. 0=aman, &gt;2=bahaya."
+    ), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: QUAD + CRASH | BUBBLE + ASSET PULSE (merged, compact)
+    # ROW 3: QUAD PROB + CRASH (kiri) | BUBBLE + ASSET + SENTIMENT (kanan)
     # ═══════════════════════════════════════════════════════════
     left, right = st.columns([1, 1])
 
     with left:
-        # Quad probability bar
+        st.markdown("<div style='font-size:0.72rem;color:#58A6FF;font-weight:700;margin-bottom:4px;'>📊 PROBABILITAS 4 KUADRAN</div>", unsafe_allow_html=True)
         fig_q = _plotly_quad_probabilities(snap)
         st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False})
-        # Crash meter Plotly multi-gauge (versi yang disukai user)
+        st.caption("📖 Q1=Goldilocks(growth↑inflasi↓) · Q2=Reflation(growth↑inflasi↑) · Q3=Stagflation(growth↓inflasi↑) · Q4=Deflation(growth↓inflasi↓)")
+
+        st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin:8px 0 4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False})
 
     with right:
-        # Bubble gauge + stage label
+        # Bubble Score (dijelasin SURVIVAL = Bubble Score)
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
         reflex = snap.get("reflexivity", {}) or {}
         bubble_score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
+        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE/SURVIVAL SCORE</div>", unsafe_allow_html=True)
         fig_bb = _plotly_boombust_gauge(snap)
         st.plotly_chart(fig_bb, use_container_width=True, config={"displayModeBar": False})
         stage_color = GREEN if bubble_score <= 2 else AMBER if bubble_score <= 5 else RED
         st.markdown(
-            f'<div style="text-align:center;font-size:0.65rem;margin-top:-4px;padding-bottom:2px;">'
-            f'<span style="color:{stage_color};font-weight:800;">{stage}</span>'
-            f'<span style="color:#484f58;margin:0 4px;">·</span>'
-            f'<span style="color:#8b949e;">{bubble_score:.1f}/10</span></div>',
+            f'<div style="text-align:center;font-size:0.7rem;">'
+            f'Stage: <b style="color:{stage_color};">{stage}</b> · Score: <b>{bubble_score:.1f}</b>/10</div>',
             unsafe_allow_html=True)
-        # Asset pulse
+        st.caption("📖 SURVIVAL = seberapa kuat pasar bertahan sebelum crash. "
+                  "0-2=akumulasi aman · 3-4=acceleration · 5-7=euphoria/waspada · 8-10=crisis/risiko koreksi tinggi")
+
+        # Asset Pulse
+        st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:8px 0 4px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False})
-        # Behavioral sentiment (pindah ke kanan, merged)
+        st.caption("📖 Return 21 hari terakhir. Hijau=uang masuk, Merah=uang keluar. "
+                  "QQQ leading+Dollar weak=Growth-on Reflation. ETH merah+BTC hijau=hindari altcoin.")
+
+        # Behavioral
+        st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR</div>", unsafe_allow_html=True)
         fig_bh = _plotly_behavioral_bar(snap)
         st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
+        st.caption("📖 AAII Sentiment. Bullish&gt;45%=crowd FOMO/waspada. Bearish&gt;35%=fear extreme/beli kontrarian. "
+                  "Casino Score&gt;40=pertimbangkan raise cash 20-50%.")
 
     # ═══════════════════════════════════════════════════════════
-    # PENJELASAN RINGKAS GABUNGAN (1 card untuk semua)
-    # ═══════════════════════════════════════════════════════════
-    st.markdown(_penjelasan(
-        "• <b>VIX</b> &lt;20=tenang · 20-25=waspada · &gt;25=panik &nbsp;|&nbsp; <b>Health</b> kesehatan pasar 0-100 &nbsp;|&nbsp; <b>Kelly</b> ukuran taruhan optimal<br>"
-        "• <b>Regime:</b> Q1=Goldilocks(saham↑) · Q2=Reflation(commodity↑) · Q3=Stagflation(gold↑) · Q4=Deflation(crash↓)<br>"
-        "• <b>Crash Meter:</b> 5 mini bar (Yield→Margin), skor 1-2=aman · 3=waspada · 4-5=kritis<br>"
-        "• <b>Bubble</b> 0-2=akumulasi aman · 5-7=waspada · 8-10=euphoria risiko koreksi · Asset Pulse hijau=masuk merah=keluar<br>"
-        "• <b>Sentiment:</b> Bullish&gt;45% = crowd FOMO → pertimbangkan raise cash 20-50%"
-    ), unsafe_allow_html=True)
-
-    # ═══════════════════════════════════════════════════════════
-    # ROW 4: DEEP TECHNICAL (expander, collapsed by default)
+    # ROW 4: DEEP TECHNICAL (expander)
     # ═══════════════════════════════════════════════════════════
     with st.expander("🔬 Deep Technical", expanded=False):
         fig_dt = _plotly_deep_technical(snap)
         if fig_dt:
             st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False})
+            st.caption("📖 CRI=options velocity(EXTREME=market stress) · Squeeze&gt;70=short squeeze imminent · VRP tinggi=jual premium")
         else:
             st.caption("Deep Technical: CRI = options velocity, Squeeze = short squeeze prob, VRP = sell premium when high")
-        # Engine status dots (compact inline)
         engines = [
             ("GIP v10", snap.get("gip_v10") is not None), ("Markov V3", snap.get("markov_v3") is not None),
             ("Yves v2", snap.get("yves_v2") is not None), ("Cascade", snap.get("cascade_analysis") is not None),
