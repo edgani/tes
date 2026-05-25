@@ -11,7 +11,7 @@ Usage (authenticated -- user has CME account):
     from engines.cme_scraper import CMEScraper
     cme = CMEScraper()
     # Login once (user provides credentials)
-    cme.login("gani.edward1@gmail.com", "Orangila123@")
+    cme.login("username", "password")
 
     # Fetch OI profile for EUR/USD
     oi = cme.get_open_interest("425")  # EUR product code
