@@ -4334,35 +4334,27 @@ def page_dashboard():
         cm_color = GREEN if cm_total <= 5 else AMBER if cm_total <= 8 else RED
         cm_label = "AMAN" if cm_total <= 5 else "WASPADA" if cm_total <= 8 else "KRITIS"
         # Individual indicator dots
-        names_full = ["Yield", "Credit", "CAPE", "VIX", "Margin"]
-        bars_html = ""
-        for val, name in zip(cm_vals, names_full):
+        names = ["YC", "CS", "CAPE", "VIX", "MG"]
+        dots_html = ""
+        for val, name in zip(cm_vals, names):
             dc = GREEN if val <= 1 else AMBER if val <= 2 else RED
-            vp = min(100, (val / 5) * 100)
-            bars_html += (
-                f'<div style="flex:1;text-align:center;">'
-                f'<div style="font-size:0.5rem;color:#8b949e;margin-bottom:1px;">{name}</div>'
-                f'<div style="height:16px;background:#21262d;border-radius:3px;overflow:hidden;position:relative;">'
-                f'<div style="position:absolute;bottom:0;width:100%;height:{vp:.0f}%;background:{dc};opacity:0.85;border-radius:3px;"></div>'
-                f'<div style="position:relative;font-size:0.5rem;color:#fff;font-weight:700;line-height:16px;">{val}</div>'
-                f'</div></div>'
-            )
+            dots_html += f'<span style="font-size:0.6rem;color:{dc};">●{name}</span> '
         st.markdown(
-            f'<div style="display:flex;gap:3px;padding:4px 6px;background:#161b22;border:1px solid #30363d;border-radius:6px;">'
-            f'{bars_html}'
-            f'<div style="display:flex;align-items:center;padding-left:4px;border-left:1px solid #30363d;">'
-            f'<span style="font-size:0.6rem;color:{cm_color};font-weight:800;">{cm_label}</span></div></div>',
+            f'<div style="display:flex;align-items:center;gap:4px;padding:4px 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;">'
+            f'{dots_html}'
+            f'<div style="flex:1;height:8px;background:#21262d;border-radius:3px;overflow:hidden;margin:0 4px;">'
+            f'<div style="width:{cm_pct:.0f}%;height:100%;background:{cm_color};border-radius:3px;"></div></div>'
+            f'<span style="font-size:0.65rem;color:{cm_color};font-weight:800;min-width:50px;text-align:right;">{cm_total}/{cm_max} {cm_label}</span></div>',
             unsafe_allow_html=True)
 
     with right:
-        # Bubble gauge + asset pulse stack
+        # Bubble gauge + stage label
         bb = snap.get("boom_bust", {}) or {}
         stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
         reflex = snap.get("reflexivity", {}) or {}
         bubble_score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
         fig_bb = _plotly_boombust_gauge(snap)
         st.plotly_chart(fig_bb, use_container_width=True, config={"displayModeBar": False})
-        # Stage + score merged line
         stage_color = GREEN if bubble_score <= 2 else AMBER if bubble_score <= 5 else RED
         st.markdown(
             f'<div style="text-align:center;font-size:0.65rem;margin-top:-4px;padding-bottom:2px;">'
@@ -4373,12 +4365,9 @@ def page_dashboard():
         # Asset pulse
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False})
-
-    # ═══════════════════════════════════════════════════════════
-    # ROW 3: BEHAVIORAL SENTIMENT (full width, compact)
-    # ═══════════════════════════════════════════════════════════
-    fig_bh = _plotly_behavioral_bar(snap)
-    st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
+        # Behavioral sentiment (pindah ke kanan, merged)
+        fig_bh = _plotly_behavioral_bar(snap)
+        st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
 
     # ═══════════════════════════════════════════════════════════
     # PENJELASAN RINGKAS GABUNGAN (1 card untuk semua)
