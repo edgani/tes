@@ -54,6 +54,13 @@ try:
 except Exception:
     _cme_scraper = None
 
+# v46: Scrapers availability flag (used in Engine Status display)
+_V41_AVAILABLE = any([
+    _cot_scraper is not None,
+    _defillama is not None,
+    _cme_scraper is not None,
+])
+
 st.set_page_config(page_title="MacroRegime Pro v46", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
@@ -4284,6 +4291,7 @@ def page_dashboard():
 # ═══════════════════════════════════════════════════════════════════
 def page_alpha():
     st.markdown("## ⚡ Alpha Center")
+    sq = snap.get("quad", "Q3") if snap else "Q3"
     sim_results = snap.get("simulation_results", {}) or {}
 
     # ── v39: Keith Signal Dashboard (compact 1-liner) ──

@@ -1935,7 +1935,8 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         _safe_progress(progress_cb, f"Fetching {len(tickers)} tickers from Yahoo Finance...", 0.10)
 
         if load_prices is None:
-            raise RuntimeError("load_prices not available (data.loader import failed)")
+            logger.error("load_prices not available (data.loader import failed) - continuing with empty prices")
+            result["errors"].append("load_prices: data.loader import failed - using empty prices")
 
         prices = {}
         max_retries = 3
@@ -1957,15 +1958,16 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 time.sleep(backoff)
 
         if not prices:
-            logger.error("All price load attempts failed")
-            result["errors"].append("prices: all attempts failed")
+            logger.error("All price load attempts failed - using empty prices, engines will use fallbacks")
+            result["errors"].append("prices: all attempts failed - using empty")
 
         result["prices"] = prices
         result["prices_loaded"] = len(prices)
         result["price_meta"] = {"requested": len(tickers), "loaded": len(prices)}
 
+        # v48: Don't fail totally - continue with empty prices, engines use fallbacks
         if not prices:
-            raise RuntimeError("No price data loaded - cannot proceed")
+            logger.warning("No price data - continuing with minimal pipeline")
 
         # ---- NEWS & RUMOR ----
         _safe_progress(progress_cb, "Scanning news & rumors...", 0.18)
@@ -2048,15 +2050,17 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
 
         # ---- GIP Engine ----
         _safe_progress(progress_cb, "Running GIP regime model...", 0.55)
+        gip = None
         if GIPEngine is None or GIPResult is None:
-            raise RuntimeError("GIP engine not available")
-        try:
-            gip_engine = GIPEngine()
-            gip = gip_engine.run(fred, prices)
-        except Exception as e:
-            logger.error(f"GIP engine failed: {e}")
-            result["errors"].append(f"gip: {e}")
-            raise
+            logger.error("GIP engine not available - using fallback")
+            result["errors"].append("gip: engine not available - using Q3 fallback")
+        else:
+            try:
+                gip_engine = GIPEngine()
+                gip = gip_engine.run(fred, prices)
+            except Exception as e:
+                logger.error(f"GIP engine failed: {e}")
+                result["errors"].append(f"gip: {e} - using Q3 fallback")
         result["gip"] = gip
         quad = getattr(gip, "structural_quad", "Q3")
         monthly_quad = getattr(gip, "monthly_quad", "Q2")
