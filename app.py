@@ -943,42 +943,62 @@ def _plotly_behavioral_bar(snap):
     )
     return fig
 
-def _plotly_boombust_gauge(snap):
-    """Buat gauge untuk Boom-Bust Super Bubble Score."""
+def _boombust_timeline_html(snap):
+    """Boom-Bust Stage Timeline horizontal — INCEPTION → ACCELERATION → EUPHORIA → CRISIS → AUCTION.
+    Lebih deskriptif dari gauge. Return HTML string (bukan Plotly)."""
     bb = snap.get("boom_bust", {}) or {}
     stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
     reflex = snap.get("reflexivity", {}) or {}
     score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
 
-    stage_colors = {"INCEPTION": AMBER, "ACCELERATION": AMBER, "EUPHORIA": RED, "CRISIS": RED, "AUCTION": GREEN}
-    color = stage_colors.get(stage, AMBER)
+    stages = ["INCEPTION", "ACCELERATION", "EUPHORIA", "CRISIS", "AUCTION"]
+    idx = stages.index(stage) if stage in stages else 0
 
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=score,
-        title={"text": f"Boom-Bust Stage<br><span style='font-size:10px;color:{TEXT_SECONDARY}'>{stage}</span>",
-               "font": {"size": 12, "color": TEXT_SECONDARY}},
-        number={"font": {"size": 18, "color": "#c9d1d9"}},
-        delta={"reference": 5, "increasing": {"color": RED}, "decreasing": {"color": GREEN}},
-        gauge={
-            "axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
-            "bar": {"color": color, "thickness": 0.75},
-            "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
-            "steps": [
-                {"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
-                {"range": [2, 5], "color": "rgba(210,153,34,0.06)"},
-                {"range": [5, 8], "color": "rgba(248,81,73,0.1)"},
-                {"range": [8, 10], "color": "rgba(248,81,73,0.15)"},
-            ],
-        },
-    ))
-    fig.update_layout(
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 30, "b": 5, "l": 5, "r": 5},
-        height=90,
+    # Build timeline nodes
+    nodes_html = ""
+    labels_html = ""
+    for i, s in enumerate(stages):
+        if i < idx:
+            node_color, node_bg = "#3FB950", "#3FB950"  # past
+        elif i == idx:
+            node_color, node_bg = "#58A6FF", "#58A6FF"  # active
+        else:
+            node_color, node_bg = "#30363D", "#21262D"  # future
+
+        # Connector line
+        if i < len(stages) - 1:
+            line_color = "#58A6FF" if i < idx else "#30363D"
+            nodes_html += (
+                f'<div style="display:flex;align-items:center;">'
+                f'<div style="width:20px;height:20px;border-radius:50%;border:3px solid {node_color};'
+                f'background:{node_bg};display:flex;align-items:center;justify-content:center;">'
+                f'</div>'
+                f'<div style="width:30px;height:2px;background:{line_color};"></div>'
+                f'</div>'
+            )
+        else:
+            nodes_html += (
+                f'<div style="width:20px;height:20px;border-radius:50%;border:3px solid {node_color};'
+                f'background:{node_bg};display:flex;align-items:center;justify-content:center;">'
+                f'</div>'
+            )
+
+        labels_html += f'<div style="width:52px;text-align:center;font-size:0.55rem;color:#8b949e;font-weight:600;">{s}</div>'
+
+    stage_color = GREEN if score <= 2 else AMBER if score <= 5 else RED
+
+    return (
+        f'<div style="padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
+        f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
+        f'<span style="font-size:0.9rem;">🌀</span>'
+        f'<div><div style="font-size:0.68rem;color:#8b949e;font-weight:600;">BOOM-BUST STAGE</div>'
+        f'<div style="font-size:0.82rem;color:{stage_color};font-weight:800;">{stage}</span>'
+        f' <span style="color:#484f58;font-size:0.7rem;">·</span>'
+        f' <span style="font-size:0.7rem;color:#8b949e;">Score: <b style="color:#c9d1d9;">{score:.1f}</b>/10</span></div></div>'
+        f'<div style="display:flex;align-items:center;gap:0;padding:4px 0;">{nodes_html}</div>'
+        f'<div style="display:flex;gap:0;margin-top:2px;">{labels_html}</div>'
+        f'</div>'
     )
-    return fig
 
 def _plotly_deep_technical(snap):
     """Buat subplot grid untuk Deep Technical section."""
@@ -4253,13 +4273,22 @@ def _render_crash_meter(snap):
 # PAGE: DASHBOARD — Compact v40
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
-    """Macro Dashboard v40 — Compact Layout, Merged Correlated Charts."""
+    """Macro Dashboard v40 — Compact + Penjelasan per-graph."""
     st.markdown("## 🏠 Macro Dashboard")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: REGIME COMPASS (original + Next Quad Forecast)
+    # ROW 1: REGIME + QUAD PROBABILITY MERGED (samping-sampingan)
     # ═══════════════════════════════════════════════════════════
-    render_regime_compass(snap)
+    with st.container(border=True):
+        rc1, rc2 = st.columns([1, 1.6])
+        with rc1:
+            render_regime_compass(snap)
+        with rc2:
+            fig_q = _plotly_quad_probabilities(snap)
+            st.plotly_chart(fig_q, use_container_width=True, config={"displayModeBar": False})
+        st.caption("📖 **Regime Makro:** Q1=Goldilocks(growth↑inflasi↓/saham naik) · Q2=Reflation(growth↑inflasi↑/commodity naik) · "
+                  "Q3=Stagflation(growth↓inflasi↑/gold+bonds) · Q4=Deflation(growth↓inflasi↓/crash mode). "
+                  "Structural=kuadran saat ini. Monthly=tren terbaru. Forward 1M=prediksi model Markov.")
 
     # ── Next Quad Forecast ──
     markov = snap.get("markov_v3", {}) or {}
@@ -4301,9 +4330,6 @@ def page_dashboard():
                 f'<div style="font-size:0.82rem;color:{qcolor};font-weight:700;">{best_q} {qname}</span> '
                 f'<span style="color:#8b949e;font-weight:400;">· {best_p:.0%} kemungkinan · estimasi {est_label}</span></div></div>',
                 unsafe_allow_html=True)
-            st.caption("📖 **Penjelasan:** Prediksi kuadran makro berikutnya berdasarkan model Markov. "
-                      "Jika probabilitas tinggi dalam 1M (~30 hari), transisi bisa terjadi segera. "
-                      "Jika rendah dalam 1M tapi naik di 3M, transisi mungkin terjadi dalam 1-3 bulan.")
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
@@ -4316,14 +4342,13 @@ def page_dashboard():
         st.markdown(nar_html, unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: 4 KEY GAUGES — masing-masing ada penjelasan
+    # ROW 2: 4 KEY GAUGES
     # ═══════════════════════════════════════════════════════════
     health = snap.get("health", {}) or {}
     behavioral = snap.get("behavioral_macro", {}) or {}
     health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
     kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
     yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-    alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
     n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
 
     g1, g2, g3, g4 = st.columns(4)
@@ -4364,11 +4389,10 @@ def page_dashboard():
         st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False})
         st.markdown(f"<div style='text-align:center;font-size:0.6rem;color:#8b949e;'>🧠 Behavioral: <b style='color:{ac};'>{a_cond}</b></div>", unsafe_allow_html=True)
 
-    # Penjelasan Row 2
     st.markdown(_penjelasan(
         "<b>VIX</b> = Volatilitas pasar. &lt;20 hijau=tenang, 20-25 kuning=waspada, &gt;25 merah=panik. "
-        "<b>Health</b> = Skor komposit kesehatan pasar 0-100. <b>Kelly</b> = Ukuran taruhan optimal. "
-        "36%=normal, &gt;50%=aggresif. <b>Alerts</b> = Sinyal behavioral dari Yves/AAII. 0=aman, &gt;2=bahaya."
+        "<b>Health</b> = Skor komposit kesehatan pasar 0-100. <b>Kelly</b> = Ukuran taruhan optimal (36%=normal, &gt;50%=aggresif). "
+        "<b>Alerts</b> = Sinyal behavioral Yves/AAII. 0=aman, &gt;2=bahaya."
     ), unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
@@ -4387,20 +4411,10 @@ def page_dashboard():
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False})
 
     with right:
-        # Bubble Score (dijelasin SURVIVAL = Bubble Score)
-        bb = snap.get("boom_bust", {}) or {}
-        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
-        reflex = snap.get("reflexivity", {}) or {}
-        bubble_score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
-        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE/SURVIVAL SCORE</div>", unsafe_allow_html=True)
-        fig_bb = _plotly_boombust_gauge(snap)
-        st.plotly_chart(fig_bb, use_container_width=True, config={"displayModeBar": False})
-        stage_color = GREEN if bubble_score <= 2 else AMBER if bubble_score <= 5 else RED
-        st.markdown(
-            f'<div style="text-align:center;font-size:0.7rem;">'
-            f'Stage: <b style="color:{stage_color};">{stage}</b> · Score: <b>{bubble_score:.1f}</b>/10</div>',
-            unsafe_allow_html=True)
-        st.caption("📖 SURVIVAL = seberapa kuat pasar bertahan sebelum crash. "
+        # Boom-Bust Timeline (bukan gauge!)
+        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin-bottom:4px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
+        st.caption("📖 SURVIVAL = seberapa kuat pasar bertahan sebelum crash. Timeline: INCEPTION→ACCELERATION→EUPHORIA→CRISIS→AUCTION. "
                   "0-2=akumulasi aman · 3-4=acceleration · 5-7=euphoria/waspada · 8-10=crisis/risiko koreksi tinggi")
 
         # Asset Pulse
@@ -4410,12 +4424,23 @@ def page_dashboard():
         st.caption("📖 Return 21 hari terakhir. Hijau=uang masuk, Merah=uang keluar. "
                   "QQQ leading+Dollar weak=Growth-on Reflation. ETH merah+BTC hijau=hindari altcoin.")
 
-        # Behavioral
-        st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR</div>", unsafe_allow_html=True)
-        fig_bh = _plotly_behavioral_bar(snap)
-        st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
-        st.caption("📖 AAII Sentiment. Bullish&gt;45%=crowd FOMO/waspada. Bearish&gt;35%=fear extreme/beli kontrarian. "
-                  "Casino Score&gt;40=pertimbangkan raise cash 20-50%.")
+        # Behavioral Sentiment — handle empty state
+        st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
+        bullish = behavioral.get("bullish", 0) or 0
+        bearish = behavioral.get("bearish", 0) or 0
+        neutral = behavioral.get("neutral", 0) or 0
+        if bullish + bearish + neutral > 0:
+            fig_bh = _plotly_behavioral_bar(snap)
+            st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False})
+        else:
+            # Placeholder kalau data kosong
+            st.markdown(
+                '<div style="padding:8px 12px;background:#161b22;border:1px solid #30363d;border-radius:6px;text-align:center;">'
+                '<div style="font-size:0.7rem;color:#484f58;">Data sentiment AAII belum tersedia</div>'
+                '<div style="font-size:0.6rem;color:#8b949e;margin-top:2px;">Bullish &gt;45%=FOMO/waspada · Bearish &gt;35%=fear extreme/beli · Casino &gt;40=raise cash</div></div>',
+                unsafe_allow_html=True)
+        st.caption("📖 AAII Sentiment dari survei investor retail AS. Bullish&gt;45%=crowd FOMO/hati-hati. "
+                  "Bearish&gt;35%=fear extreme/beli kontrarian. Casino Score&gt;40=pertimbangkan raise cash 20-50%.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
