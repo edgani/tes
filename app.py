@@ -2921,7 +2921,7 @@ def _get_markov_confidence(ticker, snap):
     return m.get("confidence", 0)
 
 
-def render_ticker_card_v4(row, expanded=False):
+def render_ticker_card_v4(row, expanded=True):
     """Redesigned ticker card v41 — Multi-Target Trade Plan + Visual Entry Bar + Thesis + Checklist."""
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
@@ -3166,7 +3166,7 @@ def render_ticker_card_v4(row, expanded=False):
     # ═══════════════════════════════════════════════════════════
     # ⚙️ BACKGROUND DATA (collapsed by default)
     # ═══════════════════════════════════════════════════════════
-    with st.expander("⚙️ Background Data", expanded=False):
+    with st.expander("⚙️ Background Data", expanded=True):
         # Proxy warning
         if options.get("source") == "PROXY" and market_type != "ihsg":
             st.markdown(
@@ -3683,7 +3683,7 @@ def render_card_v5(row):
         mt = row.get("market_type", "us_equity")
         st.markdown(render_market_card(row, mt), unsafe_allow_html=True)
     else:
-        render_ticker_card_v4(row, expanded=False)
+        render_ticker_card_v4(row, expanded=True)
 
 # ═══════════════════════════════════════════════════════════════════
 # REGIME COMPASS
@@ -4196,12 +4196,12 @@ def page_dashboard():
                         f'<div style="font-size:0.6rem;color:#8B949E;">{months_left}bln window · CAPE daily</div></div></div>'
                         f'{bar_html}</div>', unsafe_allow_html=True)
         # Full detail in expander
-        with st.expander("📋 Detail", expanded=False):
+        with st.expander("📋 Detail", expanded=True):
             st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
 
     st.divider()
 
-    with st.expander("🔬 Deep Technical", expanded=False):
+    with st.expander("🔬 Deep Technical", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("**CRI_v2 (Options Velocity)**")
@@ -4319,7 +4319,7 @@ def page_alpha():
     gk_passed = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"}
     gk_marginal = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "MARGINAL"}
 
-    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=False):
+    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=True):
         c1, c2, c3 = st.columns(3)
         c1.metric("🟢 Gatekeeper PASS", len(gk_passed))
         c2.metric("🟡 Gatekeeper MARGINAL", len(gk_marginal))
@@ -4669,7 +4669,7 @@ def page_alpha():
                     render_card_v5(r)
 
         if invalid:
-            with st.expander(f"⚠️ Filtered ({len(invalid)} invalid / conflict / avoid)", expanded=False):
+            with st.expander(f"⚠️ Filtered ({len(invalid)} invalid / conflict / avoid)", expanded=True):
                 render_invalid_cards(invalid)
 
         if not unified_candidates:
@@ -4703,7 +4703,7 @@ def page_alpha():
                 st.markdown(f"<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin:8px 0 4px;'>🔴 Front-Run Short ({len(fr_shorts)})</div>", unsafe_allow_html=True)
                 render_ticker_cards_v4(fr_shorts, max_rows=15)
             if invalid_fr:
-                with st.expander(f"⚠️ Filtered Front-Run ({len(invalid_fr)} invalid)", expanded=False):
+                with st.expander(f"⚠️ Filtered Front-Run ({len(invalid_fr)} invalid)", expanded=True):
                     render_invalid_cards(invalid_fr)
         else:
             st.info("No front-run candidates this snapshot.")
@@ -4840,7 +4840,7 @@ def page_alpha():
 # ═══════════════════════════════════════════════════════════════════
 def page_us_stocks():
     # ── Quick Ticker Lookup ──
-    with st.expander("🔍 Quick Ticker Lookup", expanded=False):
+    with st.expander("🔍 Quick Ticker Lookup", expanded=True):
         q_ticker = st.text_input("Enter ticker", "", key="ql_us")
         if q_ticker:
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
@@ -4940,7 +4940,7 @@ def page_us_stocks():
     with tab_hc_s: render_ticker_cards_v4(hc_shorts)
     with tab_mon: render_ticker_cards_v4(monitor)
     if invalid:
-        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=False):
+        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=True):
             render_invalid_cards(invalid)
 
     # v38 Daily Plays REMOVED per v39.2 audit
@@ -4951,16 +4951,16 @@ def page_us_stocks():
 # ═══════════════════════════════════════════════════════════════════
 def page_forex():
     # ── Quick Ticker Lookup ──
-    with st.expander("🔍 Quick Ticker Lookup", expanded=False):
+    with st.expander("🔍 Quick Ticker Lookup", expanded=True):
         q_ticker = st.text_input("Enter ticker", "", key="ql_fx")
         if q_ticker:
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
 
     st.markdown("## 💱 Forex")
-    pb = _get_hedgeye_playbook(snap)
-    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in pb.get("beli", [])) if pb.get("beli") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    short_pills = " ".join(f'<span style="display:inline-block;background:rgba(248,81,73,0.12);color:#F85149;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🔴 {t}</span>' for t in pb.get("short", [])) if pb.get("short") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    st.markdown(f"{buy_pills} {short_pills}", unsafe_allow_html=True)
+    # v46: Show FX pairs pills (not US stocks playbook)
+    fx_display = FALLBACK_FX
+    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in fx_display[:6])
+    st.markdown(f"<div style='font-size:0.7rem;color:#8B949E;margin-bottom:4px;'>💱 Major Pairs</div>{buy_pills}", unsafe_allow_html=True)
 
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
@@ -5023,7 +5023,7 @@ def page_forex():
     with tab_hc_s: render_ticker_cards_v4(hc_shorts)
     with tab_mon: render_ticker_cards_v4(monitor)
     if invalid:
-        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=False):
+        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=True):
             render_invalid_cards(invalid)
 
     # v38 Daily Plays REMOVED per v39.2 audit
@@ -5034,16 +5034,16 @@ def page_forex():
 # ═══════════════════════════════════════════════════════════════════
 def page_commodities():
     # ── Quick Ticker Lookup ──
-    with st.expander("🔍 Quick Ticker Lookup", expanded=False):
+    with st.expander("🔍 Quick Ticker Lookup", expanded=True):
         q_ticker = st.text_input("Enter ticker", "", key="ql_comm")
         if q_ticker:
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
 
     st.markdown("## 🛢️ Commodities")
-    pb = _get_hedgeye_playbook(snap)
-    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in pb.get("beli", [])) if pb.get("beli") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    short_pills = " ".join(f'<span style="display:inline-block;background:rgba(248,81,73,0.12);color:#F85149;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🔴 {t}</span>' for t in pb.get("short", [])) if pb.get("short") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    st.markdown(f"{buy_pills} {short_pills}", unsafe_allow_html=True)
+    # v46: Show Commodity tickers pills (not US stocks playbook)
+    comm_display = FALLBACK_COMM
+    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in comm_display[:8])
+    st.markdown(f"<div style='font-size:0.7rem;color:#8B949E;margin-bottom:4px;'>🛢️ Futures</div>{buy_pills}", unsafe_allow_html=True)
 
     comm_meta = snap.get("commodities_meta", {}) or {}
     if isinstance(comm_meta, dict):
@@ -5088,7 +5088,7 @@ def page_commodities():
     with tab_hc_s: render_ticker_cards_v4(hc_shorts)
     with tab_mon: render_ticker_cards_v4(monitor)
     if invalid:
-        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=False):
+        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=True):
             render_invalid_cards(invalid)
 
     # v38 Daily Plays REMOVED per v39.2 audit
@@ -5099,7 +5099,7 @@ def page_commodities():
 # ═══════════════════════════════════════════════════════════════════
 def page_crypto():
     # ── Quick Ticker Lookup ──
-    with st.expander("🔍 Quick Ticker Lookup", expanded=False):
+    with st.expander("🔍 Quick Ticker Lookup", expanded=True):
         q_ticker = st.text_input("Enter ticker", "", key="ql_crypto")
         if q_ticker:
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
@@ -5123,10 +5123,10 @@ def page_crypto():
 
     st.divider()
 
-    pb = _get_hedgeye_playbook(snap)
-    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in pb.get("beli", [])) if pb.get("beli") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    short_pills = " ".join(f'<span style="display:inline-block;background:rgba(248,81,73,0.12);color:#F85149;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🔴 {t}</span>' for t in pb.get("short", [])) if pb.get("short") else "<span style='color:#8B949E;font-size:0.78rem;'>—</span>"
-    st.markdown(f"{buy_pills} {short_pills}", unsafe_allow_html=True)
+    # v46: Show Crypto tickers pills (not US stocks playbook)
+    crypto_display = FALLBACK_CRYPTO
+    buy_pills = " ".join(f'<span style="display:inline-block;background:rgba(63,185,80,0.12);color:#3FB950;padding:3px 10px;border-radius:12px;font-size:0.78rem;font-weight:600;margin:2px;">🟢 {t}</span>' for t in crypto_display[:8])
+    st.markdown(f"<div style='font-size:0.7rem;color:#8B949E;margin-bottom:4px;'>₿ Top Crypto</div>{buy_pills}", unsafe_allow_html=True)
 
     if isinstance(cc, dict) and (cc.get("capital_flows") or cc.get("market_structure")):
         st.divider()
@@ -5191,7 +5191,7 @@ def page_crypto():
     with tab_hc_s: render_ticker_cards_v4(hc_shorts)
     with tab_mon: render_ticker_cards_v4(monitor)
     if invalid:
-        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=False):
+        with st.expander(f"⚠️ Filtered Out ({len(invalid)} invalid / conflict / avoid)", expanded=True):
             render_invalid_cards(invalid)
 
     # v38 Daily Plays REMOVED per v39.2 audit
@@ -5213,7 +5213,7 @@ def page_crypto():
 # ═══════════════════════════════════════════════════════════════════
 def page_global():
     # ── Quick Ticker Lookup ──
-    with st.expander("🔍 Quick Ticker Lookup", expanded=False):
+    with st.expander("🔍 Quick Ticker Lookup", expanded=True):
         q_ticker = st.text_input("Enter ticker", "", key="ql_global")
         if q_ticker:
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
@@ -5283,13 +5283,13 @@ def page_global():
         f"🟡 {len(monitor_ihsg)} monitor · ⚠️ {len(invalid_ihsg)} filtered"
     )
     for sector, items in by_sector.items():
-        with st.expander(f"**{sector}** ({len(items)} stocks)", expanded=False):
+        with st.expander(f"**{sector}** ({len(items)} stocks)", expanded=True):
             render_ticker_cards_v4(items, max_rows=10)
     if monitor_ihsg:
-        with st.expander(f"🟡 Monitor IHSG ({len(monitor_ihsg)} valid tapi belum high conviction)", expanded=False):
+        with st.expander(f"🟡 Monitor IHSG ({len(monitor_ihsg)} valid tapi belum high conviction)", expanded=True):
             render_ticker_cards_v4(monitor_ihsg, max_rows=10)
     if invalid_ihsg:
-        with st.expander(f"⚠️ Filtered IHSG ({len(invalid_ihsg)} invalid / conflict)", expanded=False):
+        with st.expander(f"⚠️ Filtered IHSG ({len(invalid_ihsg)} invalid / conflict)", expanded=True):
             render_invalid_cards(invalid_ihsg)
 
     # v38 Daily Plays REMOVED per v39.2 audit
@@ -6119,6 +6119,12 @@ with st.sidebar:
         inc_comm = st.checkbox("Commodities", True)
         inc_cryp = st.checkbox("Crypto", True)
         inc_ihsg = st.checkbox("Indonesia", True)
+    # v46: Show pipeline errors in sidebar
+    _snap_errs = st.session_state.snap.get("errors", []) if st.session_state.snap else []
+    if _snap_errs:
+        with st.expander("⚠️ Pipeline Errors"):
+            for e in _snap_errs[:5]:
+                st.markdown(f'<span style="font-size:0.65rem;color:#F85149;">• {str(e)[:80]}</span>', unsafe_allow_html=True)
     with st.expander("💰 Portfolio"):
         pv = st.number_input("Value", min_value=1000, max_value=1_000_000_000,
                             value=int(st.session_state.get("portfolio_value", 100_000)), step=10_000)
