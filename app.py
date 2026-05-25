@@ -344,6 +344,62 @@ def _derive_tickers_from_config(quad, bias):
         pass
     return list(dict.fromkeys(tickers))[:20]
 
+# ═══════════════════════════════════════════════════════════════════
+# SCRAPER ENGINE IMPORTS (v46 — wired to market pages)
+# ═══════════════════════════════════════════════════════════════════
+_SCRAPERS = {}
+
+# Barchart — US Stocks options data (GEX, IV Rank, Max Pain)
+try:
+    from engines.barchart_scraper import BarchartScraper
+    _barchart = BarchartScraper()
+    _SCRAPERS["barchart"] = True
+except Exception as e:
+    logger.warning(f"Barchart scraper not available: {e}")
+    _barchart = None
+    _SCRAPERS["barchart"] = False
+
+# DeFiLlama — Crypto on-chain data (TVL, DEX volume)
+try:
+    from engines.defillama_scraper import DeFiLlamaFetcher
+    _defillama = DeFiLlamaFetcher()
+    _SCRAPERS["defillama"] = True
+except Exception as e:
+    logger.warning(f"DeFiLlama scraper not available: {e}")
+    _defillama = None
+    _SCRAPERS["defillama"] = False
+
+# CFTC COT — Forex/Commodities positioning
+try:
+    from engines.cftc_cot_scraper import CFTCCOTScraper
+    _cot_scraper = CFTCCOTScraper()
+    _SCRAPERS["cot"] = True
+except Exception as e:
+    logger.warning(f"CFTC COT scraper not available: {e}")
+    _cot_scraper = None
+    _SCRAPERS["cot"] = False
+
+# Laevitas — Crypto options GEX (BTC/ETH)
+try:
+    from engines.laevitas_scraper import LaevitasScraper
+    _laevitas = LaevitasScraper()
+    _SCRAPERS["laevitas"] = True
+except Exception as e:
+    logger.warning(f"Laevitas scraper not available: {e}")
+    _laevitas = None
+    _SCRAPERS["laevitas"] = False
+
+# CME — Commodities futures data
+try:
+    from engines.cme_scraper import CMEScraper
+    _cme = CMEScraper()
+    _SCRAPERS["cme"] = True
+except Exception as e:
+    logger.warning(f"CME scraper not available: {e}")
+    _cme = None
+    _SCRAPERS["cme"] = False
+
+
 def _get_bottleneck_quad_map(snap):
     """Dynamic bottleneck-to-quad mapping from orchestrator supply_chain_chains."""
     chains = snap.get("supply_chain_chains", [])
@@ -4744,6 +4800,26 @@ def page_us_stocks():
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
 
+    # ── BARCHART OPTIONS INTELLIGENCE ──
+    st.markdown("### 📊 Options Intelligence (Barchart)")
+    if _barchart:
+        bcol1, bcol2, bcol3 = st.columns(3)
+        # Sample tickers for options data
+        for i, t in enumerate(["AAPL", "NVDA", "MSFT", "TSLA", "AMZN"]):
+            try:
+                bd = _barchart.scrape_ticker(t)
+                if bd.iv_rank:
+                    with [bcol1, bcol2, bcol3][i % 3]:
+                        iv_zone = "🟢 Cheap" if bd.iv_rank < 30 else "🟡 Fair" if bd.iv_rank < 70 else "🔴 Expensive"
+                        st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:8px;margin:3px 0;">'
+                                    f'<span style="font-weight:700;font-size:0.85rem;">{t}</span> '
+                                    f'<span style="font-size:0.65rem;color:#8B949E;">IV Rank {bd.iv_rank:.0f}% {iv_zone}</span>'
+                                    f'</div>', unsafe_allow_html=True)
+            except Exception:
+                pass
+    else:
+        st.caption("Barchart scraper not available")
+
     st.divider()
     st.markdown("### 📊 Index / ETF Setups (SPY · QQQ · IWM · GLD · TLT)")
     key_etfs = ["SPY", "QQQ", "IWM", "GLD", "TLT"]
@@ -4827,6 +4903,32 @@ def page_forex():
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
         st.divider()
+
+    # ── CFTC COT POSITIONING (Real Data) ──
+    st.markdown("### 🏛️ CFTC Commitment of Traders")
+    if _cot_scraper:
+        try:
+            cot_eur = _cot_scraper.get_cot("EUR/USD")
+            cot_gbp = _cot_scraper.get_cot("GBP/USD")
+            cot_jpy = _cot_scraper.get_cot("JPY/USD")
+
+            for cot in [cot_eur, cot_gbp, cot_jpy]:
+                if cot and "non_commercial" in cot:
+                    nc = cot["non_commercial"]
+                    nc_net = nc.get("long", 0) - nc.get("short", 0)
+                    signal = cot.get("signal", "NEUTRAL")
+                    sig_color = "#3FB950" if "BULLISH" in signal else "#F85149" if "BEARISH" in signal else "#8B949E"
+                    st.markdown(f'<div style="display:flex;align-items:center;gap:8px;padding:5px 0;">'
+                                f'<span style="font-weight:700;min-width:80px;">{cot.get("product", "?")}</span>'
+                                f'<span style="font-size:0.75rem;">Spec Net: <b style="color:{"#3FB950" if nc_net > 0 else "#F85149"};">{nc_net:+,.0f}</b></span>'
+                                f'<span style="font-size:0.65rem;color:{sig_color};margin-left:auto;">{signal}</span>'
+                                f'</div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.caption(f"COT error: {e}")
+    else:
+        st.caption("CFTC COT scraper not available")
+
+    st.divider()
     fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
     rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
@@ -4877,6 +4979,43 @@ def page_commodities():
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
         st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
+
+    # ── CFTC COT + CME DATA ──
+    ccol1, ccol2 = st.columns(2)
+    with ccol1:
+        st.markdown("**COT Positioning**")
+        if _cot_scraper:
+            try:
+                cot_gold = _cot_scraper.get_cot("GOLD")
+                cot_oil = _cot_scraper.get_cot("CRUDE_OIL")
+                for cot in [cot_gold, cot_oil]:
+                    if cot and "non_commercial" in cot:
+                        nc = cot["non_commercial"]
+                        nc_net = nc.get("long", 0) - nc.get("short", 0)
+                        st.markdown(f'<div style="font-size:0.75rem;padding:2px 0;">'
+                                    f'<b>{cot.get("product", "?")}</b> Spec Net: '
+                                    f'<span style="color:{"#3FB950" if nc_net > 0 else "#F85149"};">{nc_net:+,.0f}</span>'
+                                    f'</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.caption(f"COT error: {e}")
+        else:
+            st.caption("COT scraper not available")
+
+    with ccol2:
+        st.markdown("**CME Settlements**")
+        if _cme:
+            try:
+                gold_settle = _cme.get_settlements("133")  # Gold
+                if gold_settle:
+                    latest = gold_settle[0]
+                    st.markdown(f'<div style="font-size:0.75rem;">'
+                                f'<b>Gold</b> Settle: <span style="color:#E6EDF3;font-weight:600;">${latest.get("settle", "N/A")}</span>'
+                                f'</div>', unsafe_allow_html=True)
+            except Exception as e:
+                st.caption(f"CME error: {e}")
+        else:
+            st.caption("CME scraper not available")
+
     st.divider()
     comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
@@ -4951,6 +5090,50 @@ def page_crypto():
         if isinstance(narrative_crypto, dict) and narrative_crypto.get("fear_greed"):
             fg = narrative_crypto.get("fear_greed", {})
             st.markdown(f'<div style="margin-top:6px;font-size:0.78rem;color:#8B949E;">Fear & Greed: <span style="color:#E6EDF3;font-weight:700;">{fg.get("value",50)}</span> ({fg.get("label","Neutral")})</div>', unsafe_allow_html=True)
+
+    # ── DEFILLAMA ON-CHAIN DATA ──
+    st.markdown("### 🔗 DeFiLlama On-Chain Metrics")
+    if _defillama:
+        try:
+            regime = _defillama.get_crypto_liquidity_regime()
+            dcol1, dcol2, dcol3 = st.columns(3)
+            with dcol1:
+                st.metric("Liquidity Regime", regime.get("regime", "N/A"))
+            with dcol2:
+                st.metric("DEX Trend", regime.get("dex_volume_trend", "N/A"))
+            with dcol3:
+                st.metric("Confidence", f"{regime.get('confidence', 0):.0f}%")
+        except Exception as e:
+            st.caption(f"DeFiLlama error: {e}")
+    else:
+        st.caption("DeFiLlama scraper not available")
+
+    # ── LAEVITAS GEX ──
+    st.markdown("### ⚡ Laevitas GEX (BTC/ETH)")
+    if _laevitas:
+        try:
+            gex_btc = _laevitas.get_gex("BTC", "DERIBIT")
+            gex_eth = _laevitas.get_gex("ETH", "DERIBIT")
+            lcol1, lcol2 = st.columns(2)
+            with lcol1:
+                gamma = gex_btc.get("gamma_exposure_index", 0)
+                zone = "NEGATIVE 🟢" if gamma < 0 else "POSITIVE 🔴"
+                st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;">'
+                            f'<div style="font-weight:700;">BTC GEX</div>'
+                            f'<div style="font-size:0.8rem;color:#8B949E;">Gamma: {gamma:.2f} ({zone})</div>'
+                            f'</div>', unsafe_allow_html=True)
+            with lcol2:
+                gamma = gex_eth.get("gamma_exposure_index", 0)
+                zone = "NEGATIVE 🟢" if gamma < 0 else "POSITIVE 🔴"
+                st.markdown(f'<div style="background:#161B22;border:1px solid #30363D;border-radius:8px;padding:10px;">'
+                            f'<div style="font-weight:700;">ETH GEX</div>'
+                            f'<div style="font-size:0.8rem;color:#8B949E;">Gamma: {gamma:.2f} ({zone})</div>'
+                            f'</div>', unsafe_allow_html=True)
+        except Exception as e:
+            st.caption(f"Laevitas error: {e}")
+    else:
+        st.caption("Laevitas scraper not available")
+
     st.divider()
     crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
     sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
@@ -5898,6 +6081,14 @@ with st.sidebar:
                     f'<div style="font-size:0.6rem;color:#8B949E;text-transform:uppercase;letter-spacing:0.5px;">REGIME</div>'
                     f'<div style="font-size:1rem;font-weight:700;color:{color};margin:4px 0;">{_sq} / {_mq}</div>'
                     f'<div style="font-size:0.65rem;color:#8B949E;">{_quad_name(_sq)}</div></div>', unsafe_allow_html=True)
+
+    # Scraper status
+    if any(_SCRAPERS.values()):
+        scraper_badges = ""
+        for name, ok in _SCRAPERS.items():
+            color = "#3FB950" if ok else "#484F58"
+            scraper_badges += f'<span style="color:{color};font-size:0.65rem;margin-right:8px;">● {name.title()}</span>'
+        st.markdown(f'<div style="margin:4px 0;">{scraper_badges}</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
 # DATA LOADING
