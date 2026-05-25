@@ -880,87 +880,70 @@ def _plotly_regime_merged(snap):
     mq_color = quad_colors.get(mq, "#8b949e")
     conf_pct = max(sq_conf, mk_conf)
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        column_widths=[0.28, 0.72],
-        specs=[[{"type": "domain"}, {"type": "xy"}]],
-        subplot_titles=("", ""),
-    )
-
-    # KIRI: Current Regime sebagai donut/card
-    regime_labels = [f"<b>{q}</b>" for q in quads]
-    fig.add_trace(go.Pie(
-        labels=regime_labels, values=[0.25]*4,
-        hole=0.65,
-        marker_colors=[quad_colors[q] for q in quads],
-        textinfo="none",
-        hoverinfo="skip",
-        showlegend=False,
-    ), row=1, col=1)
-
-    # Overlay text di tengah donut
+    # ── Build figure: [Regime Card kiri] + [Vertical Bar kanan] ──
     sq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(sq, "⚪")
-    regime_text = f"<b style='font-size:18px;color:{sq_color};'>{sq}</b><br><span style='font-size:10px;color:#8b949e;'>{quad_names.get(sq)}</span><br><span style='font-size:9px;color:#484f58;'>Conf {conf_pct:.0%}</span>"
-
-    # KANAN: Grouped horizontal bar
-    y_labels = [f"{q} · {quad_names[q]}" for q in quads]
-    y_pos = list(range(len(quads)))
-
-    fig.add_trace(go.Bar(
-        y=y_pos, x=s_vals, orientation="h",
-        marker_color=[quad_colors[q] for q in quads], opacity=1.0,
-        text=[f"{v:.0%}" for v in s_vals],
-        textposition="outside", textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
-        name="📊 Structural", showlegend=True,
-        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
-        width=0.22,
-    ), row=1, col=2)
-    fig.add_trace(go.Bar(
-        y=[y + 0.25 for y in y_pos], x=mo_vals, orientation="h",
-        marker_color=[quad_colors[q] for q in quads], opacity=0.5,
-        text=[f"{v:.0%}" for v in mo_vals],
-        textposition="outside", textfont={"size": 9, "color": "#8b949e"},
-        name="📅 Monthly", showlegend=True,
-        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
-        width=0.22,
-    ))
-    fig.add_trace(go.Bar(
-        y=[y + 0.5 for y in y_pos], x=f1m_vals, orientation="h",
-        marker_color=[quad_colors[q] for q in quads], opacity=0.2,
-        text=[f"{v:.0%}" for v in f1m_vals],
-        textposition="outside", textfont={"size": 8, "color": "#484f58"},
-        name="🔮 Forward 1M", showlegend=True,
-        hovertemplate="%{y}: %{x:.1%}<extra></extra>",
-        width=0.22,
-    ))
-
-    # Forecast annotation
     forecast_text = ""
     if next_q:
         forecast_text = f"🔮 Next: <b>{next_q}</b> {quad_names.get(next_q)} · {next_prob:.0%} · {next_est}"
 
+    fig = go.Figure()
+
+    # Vertical bars: Q1-Q4 dengan 3 layer (structural/monthly/forward)
+    for i, q in enumerate(quads):
+        color = quad_colors[q]
+        offset = i * 3  # 3 bar per quad
+        # Structural (solid, front)
+        fig.add_trace(go.Bar(
+            x=[q], y=[s_vals[i]],
+            marker_color=color, opacity=1.0,
+            text=f"{s_vals[i]:.0%}", textposition="outside",
+            textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
+            name=f"📊 Structural" if i == 0 else "", showlegend=(i == 0),
+            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Structural: %{{y:.1%}}<extra></extra>",
+            width=0.25, offsetgroup=0,
+        ))
+        # Monthly (medium)
+        fig.add_trace(go.Bar(
+            x=[q], y=[mo_vals[i]],
+            marker_color=color, opacity=0.5,
+            text=f"{mo_vals[i]:.0%}", textposition="outside",
+            textfont={"size": 9, "color": "#8b949e"},
+            name=f"📅 Monthly" if i == 0 else "", showlegend=(i == 0),
+            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Monthly: %{{y:.1%}}<extra></extra>",
+            width=0.25, offsetgroup=1,
+        ))
+        # Forward 1M (ghost)
+        fig.add_trace(go.Bar(
+            x=[q], y=[f1m_vals[i]],
+            marker_color=color, opacity=0.2,
+            text=f"{f1m_vals[i]:.0%}", textposition="outside",
+            textfont={"size": 8, "color": "#484f58"},
+            name=f"🔮 Forward 1M" if i == 0 else "", showlegend=(i == 0),
+            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Forward 1M: %{{y:.1%}}<extra></extra>",
+            width=0.25, offsetgroup=2,
+        ))
+
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 45, "b": 35, "l": 80, "r": 60},
-        height=200, barmode="group", bargap=0.15,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.65,
+        margin={"t": 50, "b": 35, "l": 50, "r": 50},
+        height=200, barmode="group", bargap=0.15, bargroupgap=0.1,
+        showlegend=True,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        yaxis2={"tickmode": "array", "tickvals": [y + 0.25 for y in y_pos],
-                "ticktext": y_labels, "tickfont": {"size": 10, "color": "#c9d1d9", "weight": 700},
-                "gridcolor": "#21262d", "autorange": "reversed"},
-        xaxis2={"tickformat": ".0%", "range": [0, 1.1], "gridcolor": "#21262d",
-                "tickfont": {"size": 9, "color": "#8b949e"}},
-        annotations=[
-            {"text": regime_text, "x": 0.14, "y": 0.5, "xref": "paper", "yref": "paper",
-             "showarrow": False, "font": {"size": 10, "color": "#c9d1d9"}, "align": "center"},
-            {"text": forecast_text, "x": 0.99, "y": -0.12, "xref": "paper", "yref": "paper",
-             "showarrow": False, "font": {"size": 9, "color": "#8b949e"}, "align": "right"},
-        ],
+        xaxis={"tickfont": {"size": 12, "color": "#c9d1d9", "weight": 700},
+               "gridcolor": "#21262d"},
+        yaxis={"tickformat": ".0%", "range": [0, 1.15], "gridcolor": "#21262d",
+               "tickfont": {"size": 9, "color": "#8b949e"}},
         title={
-            "text": f"{sq_emoji} REGIME: <b>{sq} {quad_names.get(sq)}</b> · {quad_desc.get(sq)} · Kelly {mk_kelly:.0%}",
-            "font": {"size": 11, "color": "#c9d1d9"}, "x": 0.5, "xanchor": "center",
+            "text": f"{sq_emoji} REGIME: <b style='color:{sq_color};'>{sq} {quad_names.get(sq)}</b> · {quad_desc.get(sq)} · Conf {conf_pct:.0%} · Kelly {mk_kelly:.0%}",
+            "font": {"size": 12, "color": "#c9d1d9"}, "x": 0.5, "xanchor": "center",
         },
+        annotations=[{
+            "text": forecast_text, "x": 0.99, "y": -0.15, "xref": "paper", "yref": "paper",
+            "showarrow": False, "font": {"size": 10, "color": "#8b949e"}, "align": "right",
+            "bgcolor": "rgba(13,17,23,0.8)", "bordercolor": "#30363d", "borderwidth": 1, "borderpad": 4,
+        }] if forecast_text else [],
     )
     return fig
 
@@ -4434,10 +4417,8 @@ def page_dashboard():
     # ═══════════════════════════════════════════════════════════
     fig_regime = _plotly_regime_merged(snap)
     st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_merged")
-    st.caption("📖 **Regime Makro:** Donut kiri=kuadran aktif saat ini (besar+bold). Bar kanan=probabilitas 4 kuadran. "
-              "**📊 Structural**=kuadran sekarang · **📅 Monthly**=tren terbaru · **🔮 Forward 1M**=prediksi Markov. "
-              "Q1=Goldilocks(saham↑) · Q2=Reflation(commodity↑) · Q3=Stagflation(gold/bonds↑) · Q4=Deflation(crash). "
-              "🔮 Next Quad=prediksi transisi + estimasi waktu.")
+    st.caption("📖 **📊 Structural**=kuadran aktif saat ini · **📅 Monthly**=tren saat ini · **🔮 Forward 1M**=prediksi model Markov · "
+              "🔮 Next Quad=kuadran berikutnya yang diprediksi + estimasi waktu transisi dalam hari")
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
@@ -4531,60 +4512,11 @@ def page_dashboard():
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
         st.caption("📖 SURVIVAL=kuat pasar bertahan sebelum crash. 0-2=aman · 3-4=accel · 5-7=euphoria · 8-10=crisis")
 
-        # Sentiment — SELALU tampil visual, placeholder kalau kosong
+        # Sentiment — LANGSUNG panggil fungsi, gak perlu pre-check
         st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
-        bullish = behavioral.get("bullish", 0) or 0
-        bearish = behavioral.get("bearish", 0) or 0
-        neutral = behavioral.get("neutral", 0) or 0
-        if bullish + bearish + neutral > 0:
-            fig_bh = _plotly_behavioral_bar(snap)
-            st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
-        else:
-            # Placeholder bar dengan default values + label
-            ph_total = 100
-            ph_bull, ph_neut, ph_bear = 30, 40, 30
-            fig_ph = go.Figure()
-            fig_ph.add_trace(go.Bar(
-                y=["Sentimen"], x=[ph_bull], orientation="h",
-                marker={"color": "#3FB950", "opacity": 0.25},
-                text=[f"🐂 {ph_bull}%"], textposition="inside",
-                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
-                name="Bullish", showlegend=True,
-                hovertemplate="Bullish: %{x}%<extra></extra>",
-            ))
-            fig_ph.add_trace(go.Bar(
-                y=["Sentimen"], x=[ph_neut], orientation="h",
-                marker={"color": "#8b949e", "opacity": 0.25},
-                text=[f"⚖ {ph_neut}%"], textposition="inside",
-                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
-                name="Neutral", showlegend=True,
-                hovertemplate="Neutral: %{x}%<extra></extra>",
-            ))
-            fig_ph.add_trace(go.Bar(
-                y=["Sentimen"], x=[ph_bear], orientation="h",
-                marker={"color": "#F85149", "opacity": 0.25},
-                text=[f"🐻 {ph_bear}%"], textposition="inside",
-                textfont={"color": "rgba(255,255,255,0.4)", "size": 11},
-                name="Bearish", showlegend=True,
-                hovertemplate="Bearish: %{x}%<extra></extra>",
-            ))
-            fig_ph.add_annotation(
-                x=0.5, y=0, xref="paper", yref="y",
-                text="<b>Data belum tersedia</b><br><span style='font-size:9px;color:#484f58;'>Menunjukkan format visual</span>",
-                showarrow=False, font={"size": 10, "color": "#484f58"},
-            )
-            fig_ph.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 9},
-                margin={"t": 20, "b": 5, "l": 30, "r": 20},
-                xaxis={"range": [0, 100], "visible": False},
-                yaxis={"visible": False},
-                barmode="stack", height=60,
-                legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
-                        "font": {"size": 8, "color": "#484f58"}},
-            )
-            st.plotly_chart(fig_ph, use_container_width=True, config={"displayModeBar": False}, key="behavioral_ph")
-        st.caption("📖 AAII Sentiment investor retail AS. Bullish&gt;45%=FOMO/waspada. Bearish&gt;35%=beli kontrarian. Casino&gt;40=raise cash.")
+        fig_bh = _plotly_behavioral_bar(snap)
+        st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
+        st.caption("📖 AAII: Bullish&gt;45%=FOMO/waspada · Bearish&gt;35%=beli kontrarian · Casino&gt;40=raise cash")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
