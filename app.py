@@ -196,11 +196,11 @@ PURPLE = "#A371F7"
 QUAD_COLORS = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
 
 # Default layout template untuk semua Plotly charts
+# NOTE: JANGAN tambahkan 'margin' di sini — setiap fungsi override sendiri
 PLOTLY_TEMPLATE = {
     "paper_bgcolor": "rgba(0,0,0,0)",
     "plot_bgcolor": "rgba(0,0,0,0)",
     "font": {"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
-    "margin": {"t": 30, "b": 40, "l": 40, "r": 20},
 }
 
 # ═══════════════════════════════════════════════════════════════════
@@ -768,11 +768,18 @@ def _plotly_gauge(value, title, max_val=100, color=None, subtitle="", suffix="%"
         domain={"x": [0, 1], "y": [0, 1]},
     ))
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
         height=height,
-        margin={"t": 10, "b": 0, "l": 10, "r": 10},
-        annotations=[{"text": subtitle, "x": 0.5, "y": -0.05, "showarrow": False, "font": {"size": 10, "color": TEXT_SECONDARY}}] if subtitle else [],
+        margin={"t": 10, "b": 10, "l": 10, "r": 10},
     )
+    if subtitle:
+        fig.add_annotation(
+            text=subtitle, x=0.5, y=-0.08,
+            showarrow=False,
+            font={"size": 10, "color": "#8b949e"},
+        )
     return fig
 
 def _plotly_quad_probabilities(snap):
@@ -801,13 +808,16 @@ def _plotly_quad_probabilities(snap):
             hovertemplate=f"<b>%{{y}}</b><br>Probabilitas: %{{x:.1f}}%<extra></extra>",
         ))
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        title={"text": "Probabilitas 4 Kuadran Makro", "font": {"size": 14, "color": TEXT_PRIMARY}},
-        xaxis={"title": "Probabilitas (%)", "range": [0, 60], "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY}},
-        yaxis={"gridcolor": "#21262d", "tickfont": {"color": TEXT_PRIMARY, "size": 11}},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 40, "b": 30, "l": 40, "r": 20},
+        title={"text": "Probabilitas 4 Kuadran Makro", "font": {"size": 14, "color": "#c9d1d9"}},
+        xaxis={"title": "Probabilitas (%)", "range": [0, 60], "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}},
+        yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#c9d1d9", "size": 11}},
         barmode="group",
         showlegend=False,
-        height=220,
+        height=250,
     )
     return fig
 
@@ -852,11 +862,17 @@ def _plotly_crash_meter(snap):
         ), row=1, col=i+1)
 
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        title={"text": "🚨 Crash Meter v3 — 5 Indikator Sistemik", "font": {"size": 13, "color": TEXT_PRIMARY}},
-        height=200,
-        annotations=[{"text": "<b>📖 Penjelasan:</b> Skor 1-2 (hijau) = AMAN. Skor 3-5 (merah) = WASPADA. Crash mungkin terjadi jika ≥3 indikator merah.",
-                      "x": 0.5, "y": -0.15, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 40, "b": 60, "l": 30, "r": 30},
+        title={"text": "🚨 Crash Meter v3 — 5 Indikator Sistemik", "font": {"size": 13, "color": "#c9d1d9"}},
+        height=260,
+    )
+    fig.add_annotation(
+        text="<b>📖 Penjelasan:</b> Skor 1-2 (hijau) = AMAN. Skor 3-5 (merah) = WASPADA. Crash mungkin terjadi jika ≥3 indikator merah.",
+        x=0.5, y=-0.20, showarrow=False,
+        font={"size": 10, "color": "#8b949e"},
     )
     return fig
 
@@ -884,15 +900,21 @@ def _plotly_asset_pulse(snap, prices):
         hovertemplate="<b>%{y}</b><br>Return 21D: %{x:.2f}%<extra></extra>",
     ))
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        title={"text": "⚡ Asset Pulse — Return 21 Hari Terakhir", "font": {"size": 14, "color": TEXT_PRIMARY}},
-        xaxis={"title": "Return (%)", "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY},
-               "zeroline": True, "zerolinecolor": BORDER, "zerolinewidth": 1},
-        yaxis={"gridcolor": "#21262d", "tickfont": {"color": TEXT_PRIMARY, "size": 11}},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 40, "b": 50, "l": 40, "r": 20},
+        title={"text": "⚡ Asset Pulse — Return 21 Hari Terakhir", "font": {"size": 14, "color": "#c9d1d9"}},
+        xaxis={"title": "Return (%)", "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"},
+               "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
+        yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#c9d1d9", "size": 11}},
         showlegend=False,
-        height=280,
-        annotations=[{"text": "<b>📖 Penjelasan:</b> Hijau = money IN (return positif). Merah = money OUT (return negatif). QQQ leading + Dollar weak = Growth-on Reflation trade.",
-                      "x": 0.5, "y": -0.18, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+        height=300,
+    )
+    fig.add_annotation(
+        text="<b>📖 Penjelasan:</b> Hijau = money IN (return positif). Merah = money OUT (return negatif). QQQ leading + Dollar weak = Growth-on Reflation trade.",
+        x=0.5, y=-0.22, showarrow=False,
+        font={"size": 10, "color": "#8b949e"},
     )
     return fig
 
@@ -935,16 +957,22 @@ def _plotly_behavioral_bar(snap):
     status_text = "✅ Sentimen seimbang — tidak ada casino behavior" if casino_score <= 40 else f"⚠️ Casino Behavior — pertimbangkan raise {cash_raise:.0f}% cash"
 
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        title={"text": "🧠 Behavioral Macro — AAII Sentimen", "font": {"size": 14, "color": TEXT_PRIMARY}},
-        xaxis={"title": "%", "range": [0, 100], "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY}},
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 50, "b": 50, "l": 40, "r": 20},
+        title={"text": "🧠 Behavioral Macro — AAII Sentimen", "font": {"size": 14, "color": "#c9d1d9"}},
+        xaxis={"title": "%", "range": [0, 100], "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}},
         yaxis={"visible": False},
         barmode="stack",
         showlegend=True,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5, "font": {"color": TEXT_SECONDARY}},
-        height=160,
-        annotations=[{"text": f"<b>📖 Penjelasan:</b> {status_text}. Score casino = {casino_score:.0f}. Bullish >45% = crowd behavior.",
-                      "x": 0.5, "y": -0.25, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5, "font": {"color": "#8b949e"}},
+        height=190,
+    )
+    fig.add_annotation(
+        text=f"<b>📖 Penjelasan:</b> {status_text}. Score casino = {casino_score:.0f}. Bullish >45% = crowd behavior.",
+        x=0.5, y=-0.28, showarrow=False,
+        font={"size": 10, "color": "#8b949e"},
     )
     return fig
 
@@ -979,10 +1007,16 @@ def _plotly_boombust_gauge(snap):
         },
     ))
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        height=200,
-        annotations=[{"text": "<b>📖 Penjelasan:</b> Skor 0-2 = akumulasi aman. 5-7 = waspada gelembung. 8-10 = euphoria/risiko koreksi tinggi.",
-                      "x": 0.5, "y": -0.1, "showarrow": False, "font": {"size": 10, "color": TEXT_SECONDARY}}],
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 40, "b": 40, "l": 10, "r": 10},
+        height=230,
+    )
+    fig.add_annotation(
+        text="<b>📖 Penjelasan:</b> Skor 0-2 = akumulasi aman. 5-7 = waspada gelembung. 8-10 = euphoria/risiko koreksi tinggi.",
+        x=0.5, y=-0.12, showarrow=False,
+        font={"size": 10, "color": "#8b949e"},
     )
     return fig
 
@@ -1041,12 +1075,18 @@ def _plotly_deep_technical(snap):
         ), row=1, col=3)
 
     fig.update_layout(
-        **PLOTLY_TEMPLATE,
-        height=240,
-        title={"text": "🔬 Deep Technical — Engine Output", "font": {"size": 14, "color": TEXT_PRIMARY}},
-        annotations=[{"text": "<b>📖 Penjelasan:</b> CRI = options velocity (tinggi = ekstrem). Squeeze = kemungkinan short squeeze. VRP tinggi = jual premium.",
-                      "x": 0.5, "y": -0.2, "xref": "paper", "yref": "paper",
-                      "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+        margin={"t": 40, "b": 50, "l": 40, "r": 20},
+        height=270,
+        title={"text": "🔬 Deep Technical — Engine Output", "font": {"size": 14, "color": "#c9d1d9"}},
+    )
+    fig.add_annotation(
+        text="<b>📖 Penjelasan:</b> CRI = options velocity (tinggi = ekstrem). Squeeze = kemungkinan short squeeze. VRP tinggi = jual premium.",
+        x=0.5, y=-0.22, xref="paper", yref="paper",
+        showarrow=False,
+        font={"size": 10, "color": "#8b949e"},
     )
     return fig
 
