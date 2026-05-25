@@ -815,14 +815,18 @@ def _plotly_quad_probabilities(snap):
 
 def _regime_left_cards(snap, s_vals):
     """HTML card kiri: Structural / Monthly / Markov + dominance bar.
-    v42: Fix dominance pakai s_vals yang sudah normalisasi.
+    v43: Fix GIP data access — pakai _GipProxy + getattr (gip adalah object, bukan dict).
     """
-    gip_data = snap.get("gip") or {}
-    if not isinstance(gip_data, dict):
-        gip_data = {}
-    sq = str(gip_data.get("structural_quad") or "Q3").upper()
-    mq = str(gip_data.get("monthly_quad") or "Q2").upper()
-    sq_conf = float(gip_data.get("structural_confidence", 0) or 0)
+    gip_raw = snap.get("gip")
+    if gip_raw is not None and not isinstance(gip_raw, dict):
+        gip_obj = _GipProxy(gip_raw)
+    elif isinstance(gip_raw, dict):
+        gip_obj = _GipProxy(gip_raw)
+    else:
+        gip_obj = _GipProxy({})
+    sq = str(getattr(gip_obj, "structural_quad", "Q3") or "Q3").upper()
+    mq = str(getattr(gip_obj, "monthly_quad", "Q2") or "Q2").upper()
+    sq_conf = float(getattr(gip_obj, "structural_confidence", 0) or 0)
 
     markov = snap.get("markov_v3") or {}
     if not isinstance(markov, dict):
@@ -951,16 +955,20 @@ def _catalyst_monitor_v2(snap):
 
 
 def _plotly_regime_dashboard(snap):
-    """v42: Split layout — kiri cards, kanan horizontal bar.
-    Fix: text format (v*100), dominance, Markov label strip.
+    """v43: Split layout — kiri cards, kanan horizontal bar.
+    Fix: GIP data access via _GipProxy + getattr (gip adalah object, bukan dict).
     """
-    gip_data = snap.get("gip") or {}
-    if not isinstance(gip_data, dict):
-        gip_data = {}
-    q_probs = gip_data.get("structural_probs") or {}
-    m_probs = gip_data.get("monthly_probs") or {}
-    sq = str(gip_data.get("structural_quad") or "Q3").upper()
-    mq = str(gip_data.get("monthly_quad") or "Q2").upper()
+    gip_raw = snap.get("gip")
+    if gip_raw is not None and not isinstance(gip_raw, dict):
+        gip_obj = _GipProxy(gip_raw)
+    elif isinstance(gip_raw, dict):
+        gip_obj = _GipProxy(gip_raw)
+    else:
+        gip_obj = _GipProxy({})
+    q_probs = getattr(gip_obj, "structural_probs", {}) or {}
+    m_probs = getattr(gip_obj, "monthly_probs", {}) or {}
+    sq = str(getattr(gip_obj, "structural_quad", "Q3") or "Q3").upper()
+    mq = str(getattr(gip_obj, "monthly_quad", "Q2") or "Q2").upper()
 
     markov = snap.get("markov_v3") or {}
     if not isinstance(markov, dict):
