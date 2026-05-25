@@ -77,28 +77,25 @@ except Exception as e:
     MarketHealthEngine = None
 
 try:
-    from engines.gamma_engine import GammaEngine
+    from engines.unified_greeks_engine import GammaAnalyzer as GammaEngine
 except Exception as e:
-    logger.error(f"Failed to import gamma_engine: {e}")
+    logger.error(f"Failed to import unified_greeks_engine GammaAnalyzer: {e}")
     GammaEngine = None
 
 try:
-    from engines.greeks_proxy import GreeksProxy
+    from engines.unified_greeks_engine import GreeksProxy
 except Exception as e:
-    logger.error(f"Failed to import greeks_proxy: {e}")
+    logger.error(f"Failed to import unified_greeks_engine GreeksProxy: {e}")
     GreeksProxy = None
 
 try:
-    from engines.vanna_charm_flows import get_vanna_charm_flows
+    from engines.unified_greeks_engine import get_vanna_charm_flows
 except Exception as e:
-    logger.error(f"Failed to import vanna_charm_flows: {e}")
+    logger.error(f"Failed to import unified_greeks_engine get_vanna_charm_flows: {e}")
     def get_vanna_charm_flows(*args, **kwargs): return {}
 
-try:
-    from engines.bottleneck_engine import BottleneckEngine
-except Exception as e:
-    logger.error(f"Failed to import bottleneck_engine: {e}")
-    BottleneckEngine = None
+# [v40] BottleneckEngine import removed — using run_bottleneck_discovery_v3()
+# BottleneckEngine = None
 
 try:
     from engines.risk_range_engine import RiskRangeEngine
@@ -108,6 +105,34 @@ except Exception as e:
         def __init__(self, **kwargs): pass
         def run(self, prices): return {}
 
+# [v40] MQA v17 VASP Risk Range (NEW)
+try:
+    from engines.mqa_v17_engine import VASPRiskRangeEngine, MQAConfig
+    MQA_V17_AVAILABLE = True
+except Exception as e:
+    MQA_V17_AVAILABLE = False
+    VASPRiskRangeEngine = None
+    MQAConfig = None
+
+# [v40] Alpha Discovery Engine (NEW)
+try:
+    from engines.alpha_discovery_engine import AlphaDiscoveryEngine
+    ALPHA_DISCOVERY_AVAILABLE = True
+except Exception as e:
+    ALPHA_DISCOVERY_AVAILABLE = False
+    AlphaDiscoveryEngine = None
+
+# [v40] Druckenmiller Liquidity Engine (NEW)
+try:
+    from engines.druckenmiller_liquidity_engine import DruckenmillerLiquidityEngine, run_druckenmiller_liquidity
+    DRUCKENMILLER_AVAILABLE = True
+except Exception as e:
+    DRUCKENMILLER_AVAILABLE = False
+
+# [v40] Remove 12 unused imports
+# BottleneckEngine class not used → using run_bottleneck_discovery_v3() instead
+
+# Original imports continue...
 try:
     from engines.aaii_scraper import get_behavioral_macro
 except Exception as e:
@@ -144,15 +169,15 @@ except Exception as e:
         return {"stage": "INCEPTION", "stage_confidence": 0.5}
 
 try:
-    from engines.conviction_sizing import run_sizing
+    from engines.unified_sizing_engine import run_sizing
 except Exception as e:
-    logger.error(f"Failed to import conviction_sizing: {e}")
+    logger.error(f"Failed to import unified_sizing_engine run_sizing: {e}")
     def run_sizing(*args, **kwargs): return {}
 
 try:
-    from engines.interconnect_engine import run_interconnect
+    from engines.unified_macro_engine import run_interconnect
 except Exception as e:
-    logger.error(f"Failed to import interconnect_engine: {e}")
+    logger.error(f"Failed to import unified_macro_engine run_interconnect: {e}")
     def run_interconnect(*args, **kwargs):
         return {"active_scenarios": [], "scenarios": [], "summary": "Interconnect unavailable"}
 
@@ -170,16 +195,16 @@ except Exception as e:
         return {"scenarios": [], "active_scenarios": [], "watch_scenarios": [], "summary": "Unavailable"}
 
 try:
-    from engines.transmission_engine import run_transmission
+    from engines.unified_macro_engine import run_transmission
 except Exception as e:
-    logger.error(f"Failed to import transmission_engine: {e}")
+    logger.error(f"Failed to import unified_macro_engine run_transmission: {e}")
     def run_transmission(*args, **kwargs):
         return {"scenarios": [], "active_scenarios": [], "watch_scenarios": [], "summary": "Unavailable"}
 
 try:
-    from engines.regime_transition_engine import run_regime_transition
+    from engines.unified_macro_engine import run_regime_transition
 except Exception as e:
-    logger.error(f"Failed to import regime_transition_engine: {e}")
+    logger.error(f"Failed to import unified_macro_engine run_regime_transition: {e}")
     def run_regime_transition(*args, **kwargs):
         return {"current_quad": "Q3", "transitions": {}, "summary": "Unavailable"}
 
@@ -191,34 +216,30 @@ except Exception as e:
         return {"ticker_specific": {}, "emergent_narratives": [], "rumor_watch": [], "analyzed_count": 0}
 
 try:
-    from engines.gex_engine import analyze_multi as gex_analyze_multi
+    from engines.unified_greeks_engine import gex_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import gex_engine: {e}")
+    logger.error(f"Failed to import unified_greeks_engine gex_analyze_multi: {e}")
     def gex_analyze_multi(*args, **kwargs): return {}
 
 try:
-    from engines.charm_proxy_engine import analyze_multi as charm_analyze_multi
+    from engines.unified_greeks_engine import charm_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import charm_proxy_engine: {e}")
+    logger.error(f"Failed to import unified_greeks_engine charm_analyze_multi: {e}")
     def charm_analyze_multi(*args, **kwargs): return {}
 
 try:
-    from engines.vanna_proxy_engine import analyze_multi as vanna_analyze_multi
+    from engines.unified_greeks_engine import vanna_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import vanna_proxy_engine: {e}")
+    logger.error(f"Failed to import unified_greeks_engine vanna_analyze_multi: {e}")
     def vanna_analyze_multi(*args, **kwargs): return {}
 
 try:
-    from engines.odte_enhanced import analyze_multi as odte_enhanced_multi
+    from engines.unified_greeks_engine import odte_enhanced_multi
 except Exception as e:
-    logger.error(f"Failed to import odte_enhanced: {e}")
+    logger.error(f"Failed to import unified_greeks_engine odte_enhanced_multi: {e}")
     def odte_enhanced_multi(*args, **kwargs): return {}
 
-try:
-    from engines.structure_quality import analyze_multi as structure_analyze_multi
-except Exception as e:
-    logger.error(f"Failed to import structure_quality: {e}")
-    def structure_analyze_multi(*args, **kwargs): return {}
+def structure_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.afternoon_signal import analyze_multi as afternoon_analyze_multi
@@ -227,9 +248,9 @@ except Exception as e:
     def afternoon_analyze_multi(*args, **kwargs): return {}
 
 try:
-    from engines.volga_proxy import analyze_volga
+    from engines.unified_greeks_engine import analyze_volga
 except Exception as e:
-    logger.error(f"Failed to import volga_proxy: {e}")
+    logger.error(f"Failed to import unified_greeks_engine analyze_volga: {e}")
     def analyze_volga(*args, **kwargs): return {}
 
 try:
@@ -239,9 +260,9 @@ except Exception as e:
     def inst_analyze_multi(*args, **kwargs): return {}
 
 try:
-    from engines.bottleneck_discovery_v3 import run_bottleneck_discovery_v3
+    from engines.unified_supply_chain_engine import run_bottleneck_discovery_v3
 except Exception as e:
-    logger.error(f"Failed to import bottleneck_discovery_v3: {e}")
+    logger.error(f"Failed to import unified_supply_chain_engine run_bottleneck_discovery_v3: {e}")
     def run_bottleneck_discovery_v3(*args, **kwargs):
         return {"active_bottlenecks": [], "watch_bottlenecks": [], "summary": "Unavailable"}
 
@@ -295,10 +316,10 @@ except Exception as e:
     def run_ticker_expander(*a, **k): return {"new_tickers": [], "candidates": [], "auto_add_recommended": []}
 
 try:
-    from engines.supply_chain_graph_real import run_supply_chain_analysis, reverse_lookup as supply_reverse
+    from engines.unified_supply_chain_engine import run_supply_chain_analysis, reverse_lookup as supply_reverse
     _V2_SUPPLY = True
 except Exception as e:
-    logger.error(f"Failed to import supply_chain_graph_real: {e}")
+    logger.error(f"Failed to import unified_supply_chain_engine: {e}")
     _V2_SUPPLY = False
     def run_supply_chain_analysis(*a, **k): return {"chokepoints": [], "propagation": {}, "summary": {}}
     def supply_reverse(*a, **k): return []
@@ -321,10 +342,10 @@ except Exception as e:
     v2_risk_setup = None
 
 try:
-    from engines.bonds_xau_regime import run_bonds_xau_regime
+    from engines.unified_macro_engine import run_bonds_xau_regime
     _V2_BONDS_XAU = True
 except Exception as e:
-    logger.error(f"Failed to import bonds_xau_regime: {e}")
+    logger.error(f"Failed to import unified_macro_engine run_bonds_xau_regime: {e}")
     _V2_BONDS_XAU = False
     def run_bonds_xau_regime(*a, **k): return {"ok": False, "regime": "UNKNOWN", "ticker_biases": {}}
 
@@ -499,6 +520,90 @@ except Exception as e:
     QUAD_ASSET_PERFORMANCE = {}; TICKER_SECTOR = {}; MARKET_CLASSIFICATION = {}; BOTTLENECK_PROFILES = {}
 
 # ═══════════════════════════════════════════════════════════════════════
+# V41: External Data Scraper Imports (Barchart, DeFiLlama, CFTC COT)
+# ═══════════════════════════════════════════════════════════════════════
+_V41_SCRAPERS = {}
+
+try:
+    from engines.barchart_scraper import BarchartScraper
+    _V41_SCRAPERS["barchart"] = True
+except Exception as e:
+    logger.error(f"Failed to import barchart_scraper: {e}")
+    _V41_SCRAPERS["barchart"] = False
+    BarchartScraper = None
+
+try:
+    from engines.defillama_scraper import DeFiLlamaFetcher
+    _V41_SCRAPERS["defillama"] = True
+except Exception as e:
+    logger.error(f"Failed to import defillama_scraper: {e}")
+    _V41_SCRAPERS["defillama"] = False
+    DeFiLlamaFetcher = None
+
+try:
+    from engines.cftc_cot_scraper import CFTCCOTScraper
+    _V41_SCRAPERS["cftc_cot"] = True
+except Exception as e:
+    logger.error(f"Failed to import cftc_cot_scraper: {e}")
+    _V41_SCRAPERS["cftc_cot"] = False
+    CFTCCOTScraper = None
+
+try:
+    from engines.laevitas_scraper import LaevitasScraper
+    _V41_SCRAPERS["laevitas"] = True
+except Exception as e:
+    logger.error(f"Failed to import laevitas_scraper: {e}")
+    _V41_SCRAPERS["laevitas"] = False
+    LaevitasScraper = None
+
+try:
+    from engines.cme_scraper import CMEScraper
+    _V41_SCRAPERS["cme"] = True
+except Exception as e:
+    logger.error(f"Failed to import cme_scraper: {e}")
+    _V41_SCRAPERS["cme"] = False
+    CMEScraper = None
+
+# ═══════════════════════════════════════════════════════════════════════
+# V44 ENGINE IMPORTS (Universe Expansion, Real-time, Performance, IHSG v39)
+# ═══════════════════════════════════════════════════════════════════════
+_V44_ENGINES = {}
+
+try:
+    from engines.universe_expansion import UniverseManager
+    _V44_ENGINES["universe"] = True
+except Exception as e:
+    logger.error(f"Failed to import universe_expansion: {e}")
+    _V44_ENGINES["universe"] = False
+    UniverseManager = None
+
+try:
+    from engines.realtime_feed import RealtimeFeed
+    _V44_ENGINES["realtime"] = True
+except Exception as e:
+    logger.error(f"Failed to import realtime_feed: {e}")
+    _V44_ENGINES["realtime"] = False
+    RealtimeFeed = None
+
+try:
+    from engines.performance_optimizer import LazyEngine, TieredCache, ParallelPipeline
+    _V44_ENGINES["performance"] = True
+except Exception as e:
+    logger.error(f"Failed to import performance_optimizer: {e}")
+    _V44_ENGINES["performance"] = False
+    LazyEngine = None
+    TieredCache = None
+    ParallelPipeline = None
+
+try:
+    from engines.ihsg_specialist_v39 import IHSGSpecialistEngine
+    _V44_ENGINES["ihsg_v39"] = True
+except Exception as e:
+    logger.error(f"Failed to import ihsg_specialist_v39: {e}")
+    _V44_ENGINES["ihsg_v39"] = False
+    IHSGSpecialistEngine = None
+
+# ═══════════════════════════════════════════════════════════════════════
 # TIER S ENGINE IMPORTS (v39 fix — previously uncalled, now wired)
 # ═══════════════════════════════════════════════════════════════════════
 _V39_TIER_S = {}
@@ -521,13 +626,13 @@ except Exception as e:
         def scan_all(self, *a, **k): return {"plays": [], "summary": "DailyPlayEngine unavailable"}
 
 try:
-    from engines.ihsg_specialist_v38 import IHSGSpecialistEngine
+    from engines.ihsg_specialist_v39 import IHSGSpecialistEngine
     _V39_TIER_S["ihsg_specialist"] = True
 except Exception as e:
-    logger.error(f"Failed to import ihsg_specialist_v38: {e}")
+    logger.error(f"Failed to import ihsg_specialist_v39: {e}")
     _V39_TIER_S["ihsg_specialist"] = False
     class IHSGSpecialistEngine:
-        def analyze(self, *a, **k): return {"goreng_phases": [], "conglomerate_flows": [], "hedgeye_check": {}}
+        def analyze(self, *a, **k): return {"goreng_phases": [], "conglomerate_flows": [], "hedgeye_check": {}, "broker_flow": {"flow_signal": "UNCLEAR", "confidence": 0}}
 
 try:
     from engines.entry_decision_engine import decide_entry
@@ -599,10 +704,10 @@ except Exception as e:
     def apply_vix_position_sizing(*a, **k): return k[1] if len(k) > 1 else 0
 
 try:
-    from engines.hedgeye_position_sizing import calculate_position_size
+    from engines.unified_sizing_engine import calculate_position_size
     _V39_TIER_S["hedgeye_sizing"] = True
 except Exception as e:
-    logger.error(f"Failed to import hedgeye_position_sizing: {e}")
+    logger.error(f"Failed to import unified_sizing_engine calculate_position_size: {e}")
     _V39_TIER_S["hedgeye_sizing"] = False
     def calculate_position_size(*a, **k): return {"size_pct": 0.02, "dollar_size": 2000, "mode": "DEFAULT"}
 
@@ -1678,7 +1783,7 @@ def _alpha_center_proxy(prices, risk_ranges, quad, vix, news_analysis=None,
 # ═══════════════════════════════════════════════════════════════════════
 # CORE ORCHESTRATOR (v39)
 # ═══════════════════════════════════════════════════════════════════════
-def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: float = 12.0, **kwargs) -> dict:
+def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: float = 72.0, **kwargs) -> dict:
     t0 = time.time()
     _safe_progress(progress_cb, "Checking snapshot cache...", 0.02)
     if use_cache:
@@ -1721,6 +1826,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         "skew_term": {},
         "reflexivity": {},
         "boom_bust": {},
+        "druckenmiller_liquidity": {},
         "conviction_sizing": {},
         "vanna_charm_flows": {},
         "interconnect": {},
@@ -1829,7 +1935,8 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         _safe_progress(progress_cb, f"Fetching {len(tickers)} tickers from Yahoo Finance...", 0.10)
 
         if load_prices is None:
-            raise RuntimeError("load_prices not available (data.loader import failed)")
+            logger.error("load_prices not available (data.loader import failed) - continuing with empty prices")
+            result["errors"].append("load_prices: data.loader import failed - using empty prices")
 
         prices = {}
         max_retries = 3
@@ -1851,15 +1958,16 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 time.sleep(backoff)
 
         if not prices:
-            logger.error("All price load attempts failed")
-            result["errors"].append("prices: all attempts failed")
+            logger.error("All price load attempts failed - using empty prices, engines will use fallbacks")
+            result["errors"].append("prices: all attempts failed - using empty")
 
         result["prices"] = prices
         result["prices_loaded"] = len(prices)
         result["price_meta"] = {"requested": len(tickers), "loaded": len(prices)}
 
+        # v48: Don't fail totally - continue with empty prices, engines use fallbacks
         if not prices:
-            raise RuntimeError("No price data loaded - cannot proceed")
+            logger.warning("No price data - continuing with minimal pipeline")
 
         # ---- NEWS & RUMOR ----
         _safe_progress(progress_cb, "Scanning news & rumors...", 0.18)
@@ -1942,15 +2050,17 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
 
         # ---- GIP Engine ----
         _safe_progress(progress_cb, "Running GIP regime model...", 0.55)
+        gip = None
         if GIPEngine is None or GIPResult is None:
-            raise RuntimeError("GIP engine not available")
-        try:
-            gip_engine = GIPEngine()
-            gip = gip_engine.run(fred, prices)
-        except Exception as e:
-            logger.error(f"GIP engine failed: {e}")
-            result["errors"].append(f"gip: {e}")
-            raise
+            logger.error("GIP engine not available - using fallback")
+            result["errors"].append("gip: engine not available - using Q3 fallback")
+        else:
+            try:
+                gip_engine = GIPEngine()
+                gip = gip_engine.run(fred, prices)
+            except Exception as e:
+                logger.error(f"GIP engine failed: {e}")
+                result["errors"].append(f"gip: {e} - using Q3 fallback")
         result["gip"] = gip
         quad = getattr(gip, "structural_quad", "Q3")
         monthly_quad = getattr(gip, "monthly_quad", "Q2")
@@ -1984,6 +2094,29 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             else:
                 ranges = rr_proxy
             result["risk_ranges"] = ranges
+
+            # [v40] MQA v17 VASP Risk Range — enhanced per ticker (NEW)
+            if MQA_V17_AVAILABLE and VASPRiskRangeEngine is not None and ranges and ranges.get("asset_ranges"):
+                try:
+                    import numpy as np
+                    import pandas as pd
+                    mqa_eng = VASPRiskRangeEngine(MQAConfig())
+                    for tk in list(ranges["asset_ranges"].keys()):
+                        if tk in prices and len(prices[tk]) > 60:
+                            try:
+                                vols = volumes.get(tk, [1e6] * len(prices[tk]))
+                                mqa_r = mqa_eng.calculate(tk, pd.DataFrame({"close": prices[tk], "volume": vols}))
+                                ranges["asset_ranges"][tk].update({
+                                    "mqa_trade_trr": mqa_r.get("trade_trr"), "mqa_trade_lrr": mqa_r.get("trade_lrr"),
+                                    "mqa_trend_trr": mqa_r.get("trend_trr"), "mqa_trend_lrr": mqa_r.get("trend_lrr"),
+                                    "mqa_tail_trr": mqa_r.get("tail_trr"), "mqa_tail_lrr": mqa_r.get("tail_lrr"),
+                                    "mqa_bull_form": mqa_r.get("bull_form"), "mqa_bear_form": mqa_r.get("bear_form"),
+                                    "mqa_trade_phase": mqa_r.get("trade_phase"), "mqa_coiled_spring": mqa_r.get("coiled_spring"),
+                                    "mqa_hurst": mqa_r.get("H_trade"),
+                                })
+                            except: pass
+                except Exception as e:
+                    logger.warning(f"MQA v17 inline failed: {e}")
         except Exception as e:
             logger.warning(f"RiskRangeEngine failed, using proxy: {e}")
             result["errors"].append(f"risk_ranges: {e}")
@@ -2286,6 +2419,38 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 result["greeks_data"] = GreeksProxy().analyze_multi(all_gamma_tickers, prices, vix_last, dxy_ret, quad)
             except Exception as e:
                 logger.warning(f"GreeksProxy failed: {e}"); result["errors"].append(f"greeks: {e}")
+
+        # [v40] Druckenmiller Liquidity — forward-looking regime (NEW)
+        if DRUCKENMILLER_AVAILABLE:
+            try:
+                dr_result = run_druckenmiller_liquidity()
+                result["druckenmiller_liquidity"] = dr_result
+                if result.get("composite_signals") is None: result["composite_signals"] = {}
+                result["composite_signals"]["_liquidity_regime"] = {
+                    "score": dr_result.get("score", 0), "regime": dr_result.get("regime", "NEUTRAL"),
+                    "display": dr_result.get("display", "⚪ NEUTRAL"), "action": dr_result.get("action", ""),
+                    "quad_prediction": dr_result.get("quad_prediction", ""),
+                }
+            except: result["druckenmiller_liquidity"] = {"score": 0, "regime": "NEUTRAL", "display": "⚪ NEUTRAL"}
+        else:
+            result["druckenmiller_liquidity"] = {"score": 0, "regime": "NEUTRAL", "display": "⚪ NEUTRAL"}
+
+        # [v40] Alpha Discovery — early-stage alpha tickers (NEW)
+        if ALPHA_DISCOVERY_AVAILABLE and AlphaDiscoveryEngine is not None and result.get("risk_ranges"):
+            try:
+                a_eng = AlphaDiscoveryEngine()
+                all_tk = list(result["risk_ranges"].get("asset_ranges", {}).keys())
+                a_res = a_eng.discover(all_tk, result, result["risk_ranges"])
+                result["alpha_discovery"] = a_res
+                for td in a_res.get("alpha_tickers", []):
+                    t = td["ticker"]
+                    if t not in result.get("composite_signals", {}): result["composite_signals"][t] = {}
+                    result["composite_signals"][t]["alpha_score"] = td.get("total_score", 0)
+                    result["composite_signals"][t]["alpha_grade"] = td.get("grade", "D")
+                    result["composite_signals"][t]["alpha_thesis"] = td.get("thesis", "")
+            except: result["alpha_discovery"] = {"alpha_tickers": [], "grade_distribution": {}}
+        else:
+            result["alpha_discovery"] = {"alpha_tickers": [], "grade_distribution": {}}
 
         # ---- Composite Signals ----
         if _V2_COMPOSITE:
@@ -3473,7 +3638,9 @@ def build_snapshot(
         "supply_chain_analysis": {}, "thought_process": {}, "top_theses": [],
         "front_run_candidates": [], "auto_discoveries": {}, "crypto_tokens": {},
         "crypto_center": {}, "behavioral_macro": {}, "odte_monitor": {}, "skew_term": {},
-        "reflexivity": {}, "boom_bust": {}, "conviction_sizing": {}, "vanna_charm_flows": {},
+        "reflexivity": {}, "boom_bust": {}, "druckenmiller_liquidity": {},
+        "druckenmiller_liquidity": {},
+        "conviction_sizing": {}, "vanna_charm_flows": {},
         "interconnect": {}, "yfinance_options": {}, "scenario_discovery": {},
         "transmission": {}, "regime_transition": {}, "news_nlp_v3": {}, "bottleneck_v3": {},
         "simulation_results": {}, "simulation_summary": {}, "portfolio_stress": {},
