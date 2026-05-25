@@ -4063,6 +4063,40 @@ def page_dashboard():
 
     st.divider()
 
+    # ═══════════════════════════════════════════════════════════════════
+    # VISUAL CHARTS (matplotlib PNG) + PENJELASAN
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # Check if chart assets exist
+    _assets_dir = os.path.join(os.path.dirname(__file__), "assets")
+    _has_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob.png"))
+    
+    if _has_charts:
+        c1, c2 = st.columns([1.3, 1])
+        with c1:
+            # QUAD PROBABILITY CHART
+            st.markdown("### 📊 Quad Probability Distribution")
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 <b>Q2=Reflation</b>(Growth📈Infl📈) <b>Q3=Stagflation</b>(Growth📉Infl📈). Hijau=Structural(6-12bln), Kuning=Monthly(1-3bln), Merah=Forward 3M. Klik bar untuk detail tema. Score tinggi = kuadran dominan.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "quad_prob.png"), use_container_width=True)
+            
+            # VIX GAUGE
+            st.markdown("### 📊 VIX Volatility Gauge")
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 <b>VIX=Fear Gauge.</b> 16.7=Zona Moderate(15-20). VIX naik=opsi mahal jangan beli call. VIX turun=opsi murah bisa akumulasi. Beda dengan VIX Futures(19.45) = beda instrument!</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "vix_gauge.png"), use_container_width=True)
+        
+        with c2:
+            # CRASH METER GAUGE
+            st.markdown("### 🚨 Crash Meter Gauge")
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 5 indikator leading crash: Yield Curve(A1) + 18m Window(A2) + HY Credit(B1/B2) + CAPE(C). <b>1/5 AMAN</b> = tidak ada sinyal crash. Monitor bulanan. A2=Dalam Window(1bln sisa) = waspada.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "crash_meter.png"), use_container_width=True)
+            
+            # ASSET PULSE BAR CHART
+            st.markdown("### ⚡ Asset Pulse (21D)")
+            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-bottom:4px;">📖 Return 8 aset 21 hari. <b>QQQ leading+Dollar weak</b>=Growth-on Reflation trade. ETH-9.3%=avoid crypto. Hijau=money in, Merah=money out.</div>', unsafe_allow_html=True)
+            st.image(os.path.join(_assets_dir, "asset_pulse.png"), use_container_width=True)
+        
+        st.divider()
+
     # ── LEFT COLUMN: Boom-Bust + Behavioral + Asset Pulse ──
     # ── RIGHT COLUMN: Crash Meter ──
     left, right = st.columns([1, 1.2])
