@@ -179,6 +179,31 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════
+# COLOR PALETTE & PLOTLY TEMPLATE — v40 Dashboard
+# ═══════════════════════════════════════════════════════════════════
+BG_DARK = "#0d1117"
+CARD_BG = "#161b22"
+BORDER = "#30363d"
+TEXT_PRIMARY = "#c9d1d9"
+TEXT_SECONDARY = "#8b949e"
+GREEN = "#3FB950"
+RED = "#F85149"
+AMBER = "#D29922"
+BLUE = "#58A6FF"
+PURPLE = "#A371F7"
+
+# Quad colors
+QUAD_COLORS = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+
+# Default layout template untuk semua Plotly charts
+PLOTLY_TEMPLATE = {
+    "paper_bgcolor": "rgba(0,0,0,0)",
+    "plot_bgcolor": "rgba(0,0,0,0)",
+    "font": {"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
+    "margin": {"t": 30, "b": 40, "l": 40, "r": 20},
+}
+
+# ═══════════════════════════════════════════════════════════════════
 # CONFIG & FALLBACKS
 # ═══════════════════════════════════════════════════════════════════
 def filter_by_simulation(rows, sim_results, threshold=50, require_pass=False):
@@ -715,6 +740,321 @@ def _asset_pulse_box_h(label, ret, sub=""):
     txt = f"{ret:+.1%}" if ret is not None else "-"
     sub_html = f'<div style="font-size:0.52rem;color:#8B949E;margin-top:1px;">{sub}</div>' if sub else ""
     return f'<div class="pulse-hbox" style="background:{c}12;border-color:{c}25;"><div>{txt}</div><div class="pulse-hlabel">{label}</div>{sub_html}</div>'
+
+# ═══════════════════════════════════════════════════════════════════
+# PLOTLY CHART HELPERS — Dashboard Visualizations v40
+# ═══════════════════════════════════════════════════════════════════
+def _plotly_gauge(value, title, max_val=100, color=None, subtitle="", suffix="%", height=200):
+    """Buat Plotly gauge chart untuk metric cards."""
+    if color is None:
+        color = GREEN if value >= 70 else AMBER if value >= 40 else RED
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta" if suffix == "%" else "gauge+number",
+        value=value,
+        title={"text": title, "font": {"size": 12, "color": TEXT_SECONDARY}},
+        number={"suffix": suffix, "font": {"size": 20, "color": TEXT_PRIMARY, "family": "Inter"}, "valueformat": ".0f" if suffix=="%" else ".1f"},
+        gauge={
+            "axis": {"range": [0, max_val], "tickwidth": 1, "tickcolor": BORDER, "tickfont": {"size": 10, "color": TEXT_SECONDARY}},
+            "bar": {"color": color, "thickness": 0.7},
+            "bgcolor": "#21262d",
+            "borderwidth": 1, "bordercolor": BORDER,
+            "steps": [
+                {"range": [0, max_val*0.33], "color": "rgba(248,81,73,0.1)"},
+                {"range": [max_val*0.33, max_val*0.66], "color": "rgba(210,153,34,0.1)"},
+                {"range": [max_val*0.66, max_val], "color": "rgba(63,185,80,0.1)"},
+            ],
+            "threshold": {"line": {"color": TEXT_PRIMARY, "width": 2}, "thickness": 0.8, "value": value},
+        },
+        domain={"x": [0, 1], "y": [0, 1]},
+    ))
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        height=height,
+        margin={"t": 10, "b": 0, "l": 10, "r": 10},
+        annotations=[{"text": subtitle, "x": 0.5, "y": -0.05, "showarrow": False, "font": {"size": 10, "color": TEXT_SECONDARY}}] if subtitle else [],
+    )
+    return fig
+
+def _plotly_quad_probabilities(snap):
+    """Buat horizontal bar chart untuk probabilitas 4 kuadran makro."""
+    # Ambil probabilitas dari snap
+    probs = {}
+    for q in ["Q1", "Q2", "Q3", "Q4"]:
+        p = snap.get("markov_v3", {}).get("forecast_1m", {}).get(q, 0) if isinstance(snap.get("markov_v3"), dict) else 0
+        if p == 0:
+            # Fallback: dari regime_compass data
+            p = 25
+        probs[q] = p * 100 if p <= 1 else p
+
+    quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+    labels = [f"{q} — {quad_names.get(q,q)}" for q in ["Q1", "Q2", "Q3", "Q4"]]
+    values = [probs.get(q, 25) for q in ["Q1", "Q2", "Q3", "Q4"]]
+    colors = [QUAD_COLORS.get(q) for q in ["Q1", "Q2", "Q3", "Q4"]]
+
+    fig = go.Figure()
+    for i, (label, val, color) in enumerate(zip(labels, values, colors)):
+        fig.add_trace(go.Bar(
+            y=[label], x=[val], orientation="h",
+            marker={"color": color, "opacity": 0.85},
+            text=[f"{val:.0f}%"], textposition="outside",
+            textfont={"color": TEXT_PRIMARY, "size": 12},
+            hovertemplate=f"<b>%{{y}}</b><br>Probabilitas: %{{x:.1f}}%<extra></extra>",
+        ))
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        title={"text": "Probabilitas 4 Kuadran Makro", "font": {"size": 14, "color": TEXT_PRIMARY}},
+        xaxis={"title": "Probabilitas (%)", "range": [0, 60], "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY}},
+        yaxis={"gridcolor": "#21262d", "tickfont": {"color": TEXT_PRIMARY, "size": 11}},
+        barmode="group",
+        showlegend=False,
+        height=220,
+    )
+    return fig
+
+def _plotly_crash_meter(snap):
+    """Buat multi-indicator gauge untuk Crash Meter v3."""
+    # Ambil data crash meter dari snap
+    cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
+    # Indikator: Yield Curve, Credit Spread, CAPE, VIX percentile
+    indicators = [
+        {"name": "Yield Curve", "value": cm.get("yield_curve_score", 1), "max": 5, "color": GREEN},
+        {"name": "Credit Spread", "value": cm.get("credit_spread_score", 1), "max": 5, "color": GREEN},
+        {"name": "CAPE", "value": cm.get("cape_score", 1), "max": 5, "color": GREEN},
+        {"name": "VIX %ile", "value": cm.get("vix_percentile_score", 1), "max": 5, "color": GREEN},
+        {"name": "Margin Debt", "value": cm.get("margin_score", 2), "max": 5, "color": AMBER},
+    ]
+    # Color logic: 1=green, 2=amber, 3+=red
+    for ind in indicators:
+        v = ind["value"]
+        ind["color"] = GREEN if v <= 1 else AMBER if v <= 2 else RED
+
+    fig = make_subplots(
+        rows=1, cols=len(indicators),
+        specs=[[{"type": "indicator"}] * len(indicators)],
+        subplot_titles=[ind["name"] for ind in indicators],
+    )
+    for i, ind in enumerate(indicators):
+        fig.add_trace(go.Indicator(
+            mode="gauge+number",
+            value=ind["value"],
+            title={"text": ind["name"], "font": {"size": 10, "color": TEXT_SECONDARY}},
+            number={"font": {"size": 16, "color": TEXT_PRIMARY}},
+            gauge={
+                "axis": {"range": [0, ind["max"]], "tickwidth": 1},
+                "bar": {"color": ind["color"], "thickness": 0.75},
+                "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": BORDER,
+                "steps": [
+                    {"range": [0, 1.5], "color": "rgba(63,185,80,0.08)"},
+                    {"range": [1.5, 2.5], "color": "rgba(210,153,34,0.08)"},
+                    {"range": [2.5, 5], "color": "rgba(248,81,73,0.08)"},
+                ],
+            },
+        ), row=1, col=i+1)
+
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        title={"text": "🚨 Crash Meter v3 — 5 Indikator Sistemik", "font": {"size": 13, "color": TEXT_PRIMARY}},
+        height=200,
+        annotations=[{"text": "<b>📖 Penjelasan:</b> Skor 1-2 (hijau) = AMAN. Skor 3-5 (merah) = WASPADA. Crash mungkin terjadi jika ≥3 indikator merah.",
+                      "x": 0.5, "y": -0.15, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+    )
+    return fig
+
+def _plotly_asset_pulse(snap, prices):
+    """Buat horizontal bar chart untuk Asset Pulse 21D."""
+    pulse_assets = [
+        ("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"),
+        ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"),
+        ("BTC-USD", "BTC"), ("ETH-USD", "ETH"),
+    ]
+    labels, values, colors = [], [], []
+    for t, label in pulse_assets:
+        ret = _price_ret(t, prices, 21)
+        if ret is not None:
+            labels.append(label)
+            values.append(ret * 100)  # convert to percentage
+            colors.append(GREEN if ret > 0.03 else "#2EA043" if ret > 0 else "#DA3633" if ret < -0.03 else RED if ret < 0 else AMBER)
+
+    fig = go.Figure(go.Bar(
+        y=labels, x=values, orientation="h",
+        marker={"color": colors, "opacity": 0.85, "line": {"width": 0}},
+        text=[f"{v:+.1f}%" for v in values],
+        textposition="outside",
+        textfont={"color": TEXT_PRIMARY, "size": 11},
+        hovertemplate="<b>%{y}</b><br>Return 21D: %{x:.2f}%<extra></extra>",
+    ))
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        title={"text": "⚡ Asset Pulse — Return 21 Hari Terakhir", "font": {"size": 14, "color": TEXT_PRIMARY}},
+        xaxis={"title": "Return (%)", "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY},
+               "zeroline": True, "zerolinecolor": BORDER, "zerolinewidth": 1},
+        yaxis={"gridcolor": "#21262d", "tickfont": {"color": TEXT_PRIMARY, "size": 11}},
+        showlegend=False,
+        height=280,
+        annotations=[{"text": "<b>📖 Penjelasan:</b> Hijau = money IN (return positif). Merah = money OUT (return negatif). QQQ leading + Dollar weak = Growth-on Reflation trade.",
+                      "x": 0.5, "y": -0.18, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+    )
+    return fig
+
+def _plotly_behavioral_bar(snap):
+    """Buat stacked bar chart untuk AAII Sentiment."""
+    behavioral = snap.get("behavioral_macro", {}) or {}
+    bullish = behavioral.get("bullish", 30)
+    bearish = behavioral.get("bearish", 30)
+    neutral = behavioral.get("neutral", 40)
+    total = bullish + bearish + neutral
+    if total == 0:
+        total = 1
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        name="Bullish", y=["Sentimen"], x=[bullish/total*100],
+        marker={"color": GREEN, "opacity": 0.85},
+        text=[f"🐂 {bullish:.0f}%"], textposition="inside",
+        textfont={"color": "white", "size": 12},
+        hovertemplate="Bullish: %{x:.1f}%<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        name="Neutral", y=["Sentimen"], x=[neutral/total*100],
+        marker={"color": TEXT_SECONDARY, "opacity": 0.7},
+        text=[f"⚖ {neutral:.0f}%"], textposition="inside",
+        textfont={"color": "white", "size": 12},
+        hovertemplate="Neutral: %{x:.1f}%<extra></extra>",
+    ))
+    fig.add_trace(go.Bar(
+        name="Bearish", y=["Sentimen"], x=[bearish/total*100],
+        marker={"color": RED, "opacity": 0.85},
+        text=[f"🐻 {bearish:.0f}%"], textposition="inside",
+        textfont={"color": "white", "size": 12},
+        hovertemplate="Bearish: %{x:.1f}%<extra></extra>",
+    ))
+
+    casino_score = min(100, max(0, (bullish - 45) * 3))
+    cash_raise = min(50, max(0, casino_score * 0.4))
+
+    status_text = "✅ Sentimen seimbang — tidak ada casino behavior" if casino_score <= 40 else f"⚠️ Casino Behavior — pertimbangkan raise {cash_raise:.0f}% cash"
+
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        title={"text": "🧠 Behavioral Macro — AAII Sentimen", "font": {"size": 14, "color": TEXT_PRIMARY}},
+        xaxis={"title": "%", "range": [0, 100], "gridcolor": "#21262d", "tickfont": {"color": TEXT_SECONDARY}},
+        yaxis={"visible": False},
+        barmode="stack",
+        showlegend=True,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5, "font": {"color": TEXT_SECONDARY}},
+        height=160,
+        annotations=[{"text": f"<b>📖 Penjelasan:</b> {status_text}. Score casino = {casino_score:.0f}. Bullish >45% = crowd behavior.",
+                      "x": 0.5, "y": -0.25, "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+    )
+    return fig
+
+def _plotly_boombust_gauge(snap):
+    """Buat gauge untuk Boom-Bust Super Bubble Score."""
+    bb = snap.get("boom_bust", {}) or {}
+    stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
+    reflex = snap.get("reflexivity", {}) or {}
+    score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
+
+    stage_colors = {"INCEPTION": AMBER, "ACCELERATION": AMBER, "EUPHORIA": RED, "CRISIS": RED, "AUCTION": GREEN}
+    color = stage_colors.get(stage, AMBER)
+
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=score,
+        title={"text": f"Boom-Bust Stage<br><span style='font-size:10px;color:{TEXT_SECONDARY}'>{stage}</span>",
+               "font": {"size": 12, "color": TEXT_SECONDARY}},
+        number={"font": {"size": 24, "color": TEXT_PRIMARY}},
+        delta={"reference": 5, "increasing": {"color": RED}, "decreasing": {"color": GREEN}},
+        gauge={
+            "axis": {"range": [0, 10], "tickwidth": 1, "tickcolor": BORDER},
+            "bar": {"color": color, "thickness": 0.75},
+            "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": BORDER,
+            "steps": [
+                {"range": [0, 2], "color": "rgba(63,185,80,0.1)"},
+                {"range": [2, 5], "color": "rgba(210,153,34,0.1)"},
+                {"range": [5, 8], "color": "rgba(248,81,73,0.15)"},
+                {"range": [8, 10], "color": "rgba(248,81,73,0.25)"},
+            ],
+            "threshold": {"line": {"color": "#E6EDF3", "width": 2}, "thickness": 0.8, "value": score},
+        },
+    ))
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        height=200,
+        annotations=[{"text": "<b>📖 Penjelasan:</b> Skor 0-2 = akumulasi aman. 5-7 = waspada gelembung. 8-10 = euphoria/risiko koreksi tinggi.",
+                      "x": 0.5, "y": -0.1, "showarrow": False, "font": {"size": 10, "color": TEXT_SECONDARY}}],
+    )
+    return fig
+
+def _plotly_deep_technical(snap):
+    """Buat subplot grid untuk Deep Technical section."""
+    # CRI data
+    cri = snap.get("cri_v2_data", {}) or {}
+    cri_items = [(t, d.get("cri_v2", 0), d.get("velocity", ""))
+                 for t, d in list(cri.items())[:5] if isinstance(d, dict)]
+
+    # Squeeze data
+    sq_scan = snap.get("squeeze_scanner", {}) or {}
+    sq_items = [(i.get("ticker",""), i.get("squeeze_score",0))
+                for i in sq_scan.get("imminent_squeezes", [])[:5] if isinstance(i, dict)]
+
+    # VRP data
+    vrp = snap.get("vrp_scanner", {}) or {}
+    vrp_items = [(i.get("ticker",""), i.get("vrp_pct",0))
+                 for i in vrp.get("high_vrp_sell_premium", [])[:5] if isinstance(i, dict)]
+
+    if not cri_items and not sq_items and not vrp_items:
+        return None
+
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=("CRI v2 (Options Velocity)", "Squeeze Score", "VRP (Sell Premium)"),
+        specs=[[{"type": "bar"}, {"type": "bar"}, {"type": "bar"}]],
+    )
+
+    if cri_items:
+        cri_tickers, cri_vals, cri_vels = zip(*cri_items) if cri_items else ([], [], [])
+        cri_colors = [RED if v == "EXTREME" else AMBER if v == "HIGH" else GREEN for v in cri_vels]
+        fig.add_trace(go.Bar(
+            x=list(cri_tickers), y=list(cri_vals),
+            marker={"color": cri_colors, "opacity": 0.85},
+            hovertemplate="%{x}: %{y:.2f}<extra></extra>",
+            showlegend=False,
+        ), row=1, col=1)
+
+    if sq_items:
+        sq_tickers, sq_vals = zip(*sq_items) if sq_items else ([], [])
+        fig.add_trace(go.Bar(
+            x=list(sq_tickers), y=list(sq_vals),
+            marker={"color": AMBER, "opacity": 0.85},
+            hovertemplate="%{x}: %{y:.0f}<extra></extra>",
+            showlegend=False,
+        ), row=1, col=2)
+
+    if vrp_items:
+        vrp_tickers, vrp_vals = zip(*vrp_items) if vrp_items else ([], [])
+        fig.add_trace(go.Bar(
+            x=list(vrp_tickers), y=list(vrp_vals),
+            marker={"color": RED, "opacity": 0.7},
+            hovertemplate="%{x}: %{y:.1f}%<extra></extra>",
+            showlegend=False,
+        ), row=1, col=3)
+
+    fig.update_layout(
+        **PLOTLY_TEMPLATE,
+        height=240,
+        title={"text": "🔬 Deep Technical — Engine Output", "font": {"size": 14, "color": TEXT_PRIMARY}},
+        annotations=[{"text": "<b>📖 Penjelasan:</b> CRI = options velocity (tinggi = ekstrem). Squeeze = kemungkinan short squeeze. VRP tinggi = jual premium.",
+                      "x": 0.5, "y": -0.2, "xref": "paper", "yref": "paper",
+                      "showarrow": False, "font": {"size": 11, "color": TEXT_SECONDARY}}],
+    )
+    return fig
+
+def _penjelasan(text):
+    """Format penjelasan teks di bawah chart."""
+    return ('<div style="font-size:0.72rem;color:#8b949e;margin-top:6px;line-height:1.5;'
+            'background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 10px;"'
+            '>📖 <b>Penjelasan:</b> ' + str(text) + '</div>')
 
 # ═══════════════════════════════════════════════════════════════════
 # OPTIONS / GREEKS / MM DATA ENRICHMENT
@@ -3913,259 +4253,149 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: DASHBOARD
 # ═══════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════
+# PAGE: DASHBOARD
+# ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
     render_regime_compass(snap)
 
+    # Narrative card (tetap sama)
     narrative = snap.get("narrative", {}) or {}
     macro_nar = (narrative.get("macro_narrative") or {}) if isinstance(narrative, dict) else {}
     if macro_nar.get("headline") or macro_nar.get("narrative"):
         headline = macro_nar.get("headline", macro_nar.get("narrative", ""))
-        st.markdown(f'<div class="narrative-card">'
-                    f'<div class="narrative-headline">{str(headline)[:180]}{"..." if len(str(headline)) > 180 else ""}</div>'
-                    f'<div class="narrative-sub">{macro_nar.get("sub_narrative", "")[:120]}</div></div>', unsafe_allow_html=True)
+        nar_html = ('<div class="narrative-card">'
+                    '<div class="narrative-headline">' + str(headline)[:180] + ("..." if len(str(headline)) > 180 else "") + '</div>'
+                    '<div class="narrative-sub">' + str(macro_nar.get("sub_narrative", ""))[:120] + '</div></div>')
+        st.markdown(nar_html, unsafe_allow_html=True)
 
     st.divider()
 
+    # ═══════════════════════════════════════════════════════════
+    # ROW 1: KEY METRICS — 4 Plotly gauges di atas
+    # ═══════════════════════════════════════════════════════════
     summary = snap.get("summary", {}) or {}
     health = snap.get("health", {}) or {}
     markov = snap.get("markov_v3", {}) or {}
     behavioral = snap.get("behavioral_macro", {}) or {}
 
-    k1, k2, k3, k4, k5, k6, k7, k8 = st.columns(8)
-    with k1:
-        vix_color = "#3FB950" if vix_now < 18 else "#D29922" if vix_now < 25 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Volatility (VIX)</div>'
-                    f'<div class="metric-grid-value" style="color:{vix_color};">{vix_now:.1f}</div>'
-                    f'{_gauge_html(vix_now, max_val=40, color=vix_color, height=8, label_left="Low", label_right="High")}'
-                    f'</div>', unsafe_allow_html=True)
-    with k2:
-        health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
-        hcolor = "#3FB950" if health_score >= 70 else "#D29922" if health_score >= 50 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Market Health</div>'
-                    f'<div class="metric-grid-value" style="color:{hcolor};">{health_score:.0f}</div>'
-                    f'{_gauge_html(health_score, max_val=100, color=hcolor, height=8, label_left="Weak", label_right="Strong")}'
-                    f'</div>', unsafe_allow_html=True)
-    with k3:
-        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-        alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
-        n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
-        alert_color = "#F85149" if alert_level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if alert_level == "MEDIUM" or n_alerts > 0 else "#3FB950"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Behavioral Alerts</div>'
-                    f'<div class="metric-grid-value" style="color:{alert_color};">{n_alerts}</div>'
-                    f'<div class="metric-grid-sub">Yves / AAII · {alert_level}</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with k4:
-        kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
-        kelly_color = "#3FB950" if kelly >= 0.5 else "#D29922" if kelly >= 0.25 else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Kelly Fraction</div>'
-                    f'<div class="metric-grid-value" style="color:{kelly_color};">{kelly:.0%}</div>'
-                    f'<div class="metric-grid-sub">Optimal bet size</div>'
-                    f'</div>', unsafe_allow_html=True)
-    with k5:
-        vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
-        vix_l = (snap.get("vix_bucket") or {}).get("label", "—")
-        vix_c = "#3FB950" if vix_b == "INVESTABLE" else "#D29922" if vix_b == "CHOP" else "#F85149"
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">VIX Bucket</div>'
-                    f'<div class="metric-grid-value" style="color:{vix_c};">{vix_b}</div>'
-                    f'<div class="metric-grid-sub">{vix_l}</div></div>', unsafe_allow_html=True)
-    with k6:
-        gk_passed = snap.get("summary", {}).get("v39_gatekeeper_passed", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Gatekeeper</div>'
-                    f'<div class="metric-grid-value" style="color:{"#3FB950" if gk_passed > 0 else "#8B949E"};">{gk_passed}</div>'
-                    f'<div class="metric-grid-sub">8-gate passed</div></div>', unsafe_allow_html=True)
-    with k7:
-        keith_ov = snap.get("summary", {}).get("v39_keith_overrides", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Keith Overrides</div>'
-                    f'<div class="metric-grid-value" style="color:{"#D29922" if keith_ov > 0 else "#8B949E"};">{keith_ov}</div>'
-                    f'<div class="metric-grid-sub">P0 signal sync</div></div>', unsafe_allow_html=True)
-    with k8:
-        wf_passed = snap.get("summary", {}).get("v39_walkforward_passed", 0)
-        st.markdown(f'<div class="metric-grid-card">'
-                    f'<div class="metric-grid-title">Walkforward</div>'
-                    f'<div class="metric-grid-value" style="color:{"#3FB950" if wf_passed > 0 else "#8B949E"};">{wf_passed}</div>'
-                    f'<div class="metric-grid-sub">MC 100x passed</div></div>', unsafe_allow_html=True)
+    # Hitung metric values
+    health_score = health.get("composite_score", 50) if isinstance(health, dict) else 50
+    kelly = markov.get("kelly_fraction", 0.25) if isinstance(markov, dict) else 0.25
+    yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
+    alert_level = yves.get("alert_level", "NONE") if isinstance(yves, dict) else "NONE"
+    n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
+    vix_b = (snap.get("vix_bucket") or {}).get("bucket", "—")
+    vix_b_label = (snap.get("vix_bucket") or {}).get("label", "—")
+    gk_passed = summary.get("v39_gatekeeper_passed", 0)
+    keith_ov = summary.get("v39_keith_overrides", 0)
+    wf_passed = summary.get("v39_walkforward_passed", 0)
+
+    # Render 4 gauges
+    g1, g2, g3, g4 = st.columns(4)
+    with g1:
+        vix_color = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
+        fig = _plotly_gauge(vix_now, "Volatility (VIX)", max_val=40, color=vix_color, subtitle=f"{vix_b} · {vix_b_label}", suffix="", height=200)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with g2:
+        hcolor = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
+        fig = _plotly_gauge(health_score, "Market Health", max_val=100, color=hcolor, subtitle="Composite score", height=200)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with g3:
+        kcolor = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
+        fig = _plotly_gauge(kelly*100, "Kelly Fraction", max_val=100, color=kcolor, subtitle="Optimal bet size", suffix="%", height=200)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    with g4:
+        acolor = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
+        fig = _plotly_gauge(n_alerts, "Behavioral Alerts", max_val=10, color=acolor, subtitle=f"Level: {alert_level}", suffix="", height=200)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # Penjelasan Row 1
+    st.markdown(_penjelasan(
+        "<b>VIX</b> = volatilitas pasar. <20 hijau (tenang), 20-25 kuning (waspada), >25 merah (panik). "
+        "<b>Market Health</b> = skor komposit kesehatan pasar 0-100. <b>Kelly Fraction</b> = ukuran taruhan optimal "
+        "berdasarkan probabilitas menang (20-50% normal, >50% agresif). <b>Behavioral Alerts</b> = sinyal behavioral "
+        "dari Yves/AAII. Alert >0 = crowd behavior terdeteksi, pertimbangkan raise cash."
+    ), unsafe_allow_html=True)
 
     st.divider()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # MATPLOTLIB CHARTS v2 — Proper Visualization Layout
-    # ═══════════════════════════════════════════════════════════════════
-    # Try local assets first, then fallback to output dir
-    _assets_dir_local = os.path.join(os.path.dirname(__file__), "assets")
-    _assets_dir_output = "/mnt/agents/output/assets"
-    _assets_dir = _assets_dir_local if os.path.exists(os.path.join(_assets_dir_local, "quad_prob_v2.png")) else _assets_dir_output
-    _has_v2_charts = os.path.exists(os.path.join(_assets_dir, "quad_prob_v2.png"))
-
-    if _has_v2_charts:
-        # Row 1: Quad Probability (left, wider) | Crash Meter (right)
-        c1, c2 = st.columns([1.4, 1])
-        with c1:
-            st.markdown("### 📊 Quad Probability Distribution")
-            st.image(os.path.join(_assets_dir, "quad_prob_v2.png"), use_container_width=True)
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 Probabilitas 4 kuadran makro: Q1=Slowdown, Q2=Reflation, Q3=Stagflation, Q4=Goldilocks. Score tinggi = kuadran dominan saat ini.</div>', unsafe_allow_html=True)
-        with c2:
-            st.markdown("### 🚨 Crash Meter Gauge")
-            st.image(os.path.join(_assets_dir, "crash_meter_v2.png"), use_container_width=True)
-            st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 5 indikator leading crash: Yield Curve + Credit Spread + Valuasi. 1/5 AMAN = tidak ada sinyal crash. Monitor bulanan.</div>', unsafe_allow_html=True)
-
-        st.divider()
-
-        # Row 2: Asset Pulse (full width)
-        st.markdown("### ⚡ Asset Pulse (21D)")
-        st.image(os.path.join(_assets_dir, "asset_pulse_v2.png"), use_container_width=True)
-        st.markdown('<div style="font-size:0.65rem;color:#8B949E;margin-top:4px;">📖 Return 8 aset 21 hari terakhir. Hijau = money in, Merah = money out. QQQ leading + Dollar weak = Growth-on Reflation trade. ETH merah = avoid crypto.</div>', unsafe_allow_html=True)
-
-        st.divider()
-
-    # ── LEFT COLUMN: Boom-Bust + Behavioral + Asset Pulse ──
-    # ── RIGHT COLUMN: Crash Meter ──
-    left, right = st.columns([1, 1.2])
-    with left:
-        st.markdown("### 🌀 Boom-Bust Stage")
-        bb = snap.get("boom_bust", {}) or {}
-        stage = bb.get("stage", "INCEPTION") if isinstance(bb, dict) else "INCEPTION"
-        reflex = snap.get("reflexivity", {}) or {}
-        score = reflex.get("super_bubble_score", 0) if isinstance(reflex, dict) else 0
-        st.markdown(_timeline_html(stage), unsafe_allow_html=True)
-        st.markdown(f'<div style="margin-top:6px;font-size:0.75rem;color:#8B949E;">Super Bubble Score: <span style="color:#E6EDF3;font-weight:700;">{score:.1f}</span>/10</div>', unsafe_allow_html=True)
-        st.markdown(_gauge_html(score, max_val=10, color="#D29922", height=8, label_left="0", label_right="10"), unsafe_allow_html=True)
-
-        st.markdown("### 🧠 Behavioral Macro (Yves)")
-        behavioral = snap.get("behavioral_macro", {}) or {}
-        yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-        n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
-        if isinstance(yves, dict):
-            alert = yves.get("alert", "")
-            level = yves.get("alert_level", "NONE")
-            if level == "NONE" and not alert:
-                bullish = behavioral.get("bullish", 30)
-                bearish = behavioral.get("bearish", 30)
-                neutral = behavioral.get("neutral", 40)
-                total = bullish + bearish + neutral
-                if total > 0:
-                    bull_pct = bullish / total * 100
-                    bear_pct = bearish / total * 100
-                    neut_pct = neutral / total * 100
-                    casino_score = min(100, max(0, (bullish - 45) * 3))
-                    cash_raise = min(50, max(0, casino_score * 0.4))
-                    st.markdown(
-                        f'<div style="font-size:0.75rem;color:#8B949E;margin-bottom:4px;">AAII Sentiment · Casino Score: <span style="color:{"#F85149" if casino_score > 60 else "#D29922" if casino_score > 40 else "#3FB950"};font-weight:700;">{casino_score:.0f}</span></div>'
-                        f'<div style="display:flex;height:18px;border-radius:4px;overflow:hidden;background:#21262D;margin-bottom:6px;">'
-                        f'<div style="width:{bull_pct:.0f}%;background:#3FB950;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐂 {bullish}</div>'
-                        f'<div style="width:{neut_pct:.0f}%;background:#8B949E;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">⚖ {neutral}</div>'
-                        f'<div style="width:{bear_pct:.0f}%;background:#F85149;display:flex;align-items:center;justify-content:center;font-size:0.55rem;font-weight:700;color:#fff;">🐻 {bearish}</div>'
-                        f'</div>', unsafe_allow_html=True)
-                    if casino_score > 40:
-                        st.markdown(
-                            f'<div style="background:#F8514915;border-left:3px solid #F85149;border-radius:6px;padding:6px 10px;margin:4px 0;">'
-                            f'<div style="font-size:0.75rem;color:#F85149;font-weight:700;">⚠️ Casino Behavior Detected</div>'
-                            f'<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">Bullish extreme ({bullish}%) = herd behavior. Consider raising <b>{cash_raise:.0f}% cash</b>. Wait for washout.</div>'
-                            f'</div>', unsafe_allow_html=True)
-                    else:
-                        st.markdown(
-                            f'<div style="font-size:0.7rem;color:#3FB950;margin-top:4px;">✅ Sentiment balanced. No casino behavior detected.</div>', unsafe_allow_html=True)
-                else:
-                    st.caption("Behavioral data unavailable")
-            else:
-                color = "#F85149" if level in ("HIGH", "CRITICAL") or n_alerts > 2 else "#D29922" if level == "MEDIUM" or n_alerts > 0 else "#3FB950"
-                st.markdown(f'<div style="font-size:0.85rem;color:{color};font-weight:600;">{level}</div>', unsafe_allow_html=True)
-                st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{alert}</div>', unsafe_allow_html=True)
-        else:
-            st.caption("Behavioral macro unavailable")
-
-        # ── ASSET PULSE (COMPACTED below Behavioral) ──
-        st.markdown("### ⚡ Asset Pulse (21D)")
-        pulse_assets = [("SPY", "US Eq"), ("QQQ", "Tech"), ("IWM", "Small"), ("GLD", "Gold"), ("TLT", "Bonds"), ("UUP", "DXY"), ("BTC-USD", "BTC"), ("ETH-USD", "ETH")]
-        pulse_html = '<div style="display:flex;gap:6px;overflow-x:auto;padding:2px 0;">'
-        for t, label in pulse_assets:
-            ret = _price_ret(t, prices, 21)
-            pulse_html += _asset_pulse_box_h(label, ret, t)
-        pulse_html += '</div>'
-        st.markdown(pulse_html, unsafe_allow_html=True)
-
-    with right:
-        st.markdown("### 🚨 Crash Meter v3")
-        st.markdown("<div style='font-size:0.65rem;color:#8B949E;margin-bottom:8px;'>Sistemik risk meter: Yield Curve + Credit Spread + Valuasi (Tomhardi Methodology). Update harian kecuali CAPE (bulanan).</div>", unsafe_allow_html=True)
-        st.markdown(_render_crash_meter(snap), unsafe_allow_html=True)
+    # ═══════════════════════════════════════════════════════════
+    # ROW 2: QUAD PROBABILITY + CRASH METER
+    # ═══════════════════════════════════════════════════════════
+    q1, q2 = st.columns([1.2, 1])
+    with q1:
+        fig = _plotly_quad_probabilities(snap)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown(_penjelasan(
+            "Probabilitas 4 kuadran makro berdasarkan model Markov + GIP. <b>Q1 Goldilocks</b> = growth naik, inflasi turun (saham naik). "
+            "<b>Q2 Reflation</b> = growth naik, inflasi naik (commodity/energy naik). <b>Q3 Stagflation</b> = growth turun, inflasi naik (gold/bonds). "
+            "<b>Q4 Deflation</b> = growth turun, inflasi turun (crash mode). Kuadran dominan menentukan playbook."
+        ), unsafe_allow_html=True)
+    with q2:
+        fig = _plotly_crash_meter(snap)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown(_penjelasan(
+            "<b>Crash Meter v3</b> — 5 indikator leading crash: Yield Curve (inversi = recession), Credit Spread (melebar = default risk), "
+            "CAPE (valuasi tinggi = bubble), VIX Percentile (volatilitas ekstrem), Margin Debt (leverage tinggi). "
+            "<b>Skor 1-2 AMAN</b> (hijau). <b>Skor 3 WASPADA</b> (kuning). <b>Skor 4-5 KRITIS</b> (merah = potensi crash)."
+        ), unsafe_allow_html=True)
 
     st.divider()
 
+    # ═══════════════════════════════════════════════════════════
+    # ROW 3: BOOM-BUST GAUGE + ASSET PULSE
+    # ═══════════════════════════════════════════════════════════
+    b1, b2 = st.columns([1, 1.8])
+    with b1:
+        fig = _plotly_boombust_gauge(snap)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown(_penjelasan(
+            "<b>Super Bubble Score</b> mengukur tahapan gelembung: 0-2 INCEPTION (akumulasi aman), 3-4 ACCELERATION (momentum naik), "
+            "5-7 EUPHORIA (waspada, pertimbangkan take profit), 8-10 CRISIS/AUCTION (koreksi besar mungkin terjadi). "
+            "Berdasarkan framework George Soros + Hyman Minsky."
+        ), unsafe_allow_html=True)
+    with b2:
+        fig = _plotly_asset_pulse(snap, prices)
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.markdown(_penjelasan(
+            "<b>Asset Pulse</b> menunjukkan return 21 hari terakhir untuk 8 aset kunci. Hijau = uang masuk (performa positif), "
+            "Merah = uang keluar (performa negatif). <b>Pola yang perlu diperhatikan:</b> QQQ leading + Dollar weak = Growth-on Reflation trade aktif. "
+            "ETH merah sementara BTC hijau = crypto selectivity, hindari alt-coin. Gold hijau = flight to safety."
+        ), unsafe_allow_html=True)
+
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════
+    # ROW 4: BEHAVIORAL MACRO
+    # ═══════════════════════════════════════════════════════════
+    fig = _plotly_behavioral_bar(snap)
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.markdown(_penjelasan(
+        "<b>AAII Sentiment</b> = survei investor retail Amerika. <b>Bullish >45%</b> = crowd behavior / FOMO (hati-hati). "
+        "<b>Bearish >35%</b> = fear extreme (peluang beli kontrarian). <b>Casino Score</b> dihitung dari deviasi bullish vs normal. "
+        "Score >40 = pertimbangkan raise cash 20-50% dan tunggu washout."
+    ), unsafe_allow_html=True)
+
+    st.divider()
+
+    # ═══════════════════════════════════════════════════════════
+    # ROW 5: DEEP TECHNICAL (expander)
+    # ═══════════════════════════════════════════════════════════
     with st.expander("🔬 Deep Technical", expanded=False):
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("**CRI_v2 (Options Velocity)**")
-            cri = snap.get("cri_v2_data", {}) or {}
-            if cri:
-                for t, data in list(cri.items())[:3]:
-                    if isinstance(data, dict):
-                        cri_color = "#F85149" if data.get("velocity") == "EXTREME" else "#D29922" if data.get("velocity") == "HIGH" else "#3FB950"
-                        st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
-                                    f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{t}</span>'
-                                    f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,data.get("cri_v2",0)*100):.0f}%;background:{cri_color};"></div></div>'
-                                    f'<span style="font-size:0.65rem;color:{cri_color};font-weight:700;width:60px;text-align:right;">{data.get("velocity","—")}</span></div>',
-                                    unsafe_allow_html=True)
-            else:
-                st.caption("CRI_v2 unavailable")
+        fig = _plotly_deep_technical(snap)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.markdown(_penjelasan(
+                "<b>CRI v2</b> (Options Velocity) = kecepatan perubahan options flow. EXTREME = market stress. "
+                "<b>Squeeze Score</b> = probabilitas short squeeze (score >70 = imminent). "
+                "<b>VRP</b> (Volatility Risk Premium) tinggi = options mahal = strategi jual premium (sell call/put)."
+            ), unsafe_allow_html=True)
+        else:
+            st.caption("Deep Technical data unavailable")
 
-            st.markdown("**Skew Term**")
-            skew = snap.get("skew_term", {}) or {}; skew_data = skew.get("skew_data", {}) if isinstance(skew, dict) else {}
-            d30 = d60 = d90 = None
-            if isinstance(skew_data, dict):
-                for k, v in skew_data.items():
-                    if isinstance(v, dict):
-                        val = v.get("skew") or v.get("value") or v.get("90_10")
-                        if "30" in str(k).lower() or "1m" in str(k).lower(): d30 = _safe_float(val)
-                        if "60" in str(k).lower() or "2m" in str(k).lower(): d60 = _safe_float(val)
-                        if "90" in str(k).lower() or "3m" in str(k).lower(): d90 = _safe_float(val)
-            st.markdown(_skew_bars_html(d30, d60, d90), unsafe_allow_html=True)
-            st.markdown("**GEX**")
-            gex = snap.get("gex_data", {}) or {}; gex_val = None
-            if isinstance(gex, dict):
-                for k, v in gex.items():
-                    if isinstance(v, dict):
-                        gv = v.get("net_gex") or v.get("gex") or v.get("total_gex")
-                        if gv is not None: gex_val = _safe_float(gv); break
-            st.markdown(_gex_bar_html(gex_val), unsafe_allow_html=True)
-        with c2:
-            st.markdown("**VRP**")
-            vrp = snap.get("vrp_scanner", {}) or {}
-            if isinstance(vrp, dict) and vrp.get("ok"):
-                for item in vrp.get("high_vrp_sell_premium", [])[:3]:
-                    if isinstance(item, dict):
-                        score = item.get("vrp_pct", 0)
-                        st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
-                                    f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
-                                    f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,abs(score)*5):.0f}%;background:#F85149;"></div></div>'
-                                    f'<span style="font-size:0.65rem;color:#F85149;font-weight:700;width:35px;text-align:right;">{score:.0f}%</span></div>', unsafe_allow_html=True)
-            else: st.caption("VRP unavailable")
-            st.markdown("**Squeeze**")
-            sq_scan = snap.get("squeeze_scanner", {}) or {}
-            if isinstance(sq_scan, dict) and sq_scan.get("ok"):
-                for item in sq_scan.get("imminent_squeezes", [])[:3]:
-                    if isinstance(item, dict):
-                        score = item.get("squeeze_score", 0)
-                        st.markdown(f'<div style="display:flex;align-items:center;gap:6px;margin:3px 0;">'
-                                    f'<span style="font-size:0.72rem;color:#E6EDF3;min-width:45px;">{item.get("ticker","—")}</span>'
-                                    f'<div class="gauge-track" style="flex:1;height:8px;"><div class="gauge-fill" style="width:{min(100,score):.0f}%;background:#D29922;"></div></div>'
-                                    f'<span style="font-size:0.65rem;color:#D29922;font-weight:700;width:35px;text-align:right;">{score:.0f}</span></div>', unsafe_allow_html=True)
-            else: st.caption("Squeeze unavailable")
-            st.markdown("**Vol Forecast**")
-            vol_f = snap.get("vol_forecast", {}) or {}
-            if isinstance(vol_f, dict):
-                for k, v in list(vol_f.items())[:3]:
-                    if isinstance(v, dict):
-                        regime = v.get("vol_regime", "-")
-                        color = "#3FB950" if regime == "LOW" else "#D29922" if regime == "NORMAL" else "#F85149"
-                        st.markdown(f'<div style="font-size:0.75rem;color:#8B949E;">{k}: <span style="color:{color};font-weight:700;">{v.get("current_ann_vol",0):.1f}%</span> ({regime})</div>', unsafe_allow_html=True)
-            else: st.caption("Vol forecast unavailable")
+        # Engine status table
         st.markdown("**Engine Status**")
         engines = [
             ("GIP v10", snap.get("gip_v10") is not None), ("Markov V3", snap.get("markov_v3") is not None),
@@ -4179,6 +4409,7 @@ def page_dashboard():
         for i, (name, ok) in enumerate(engines):
             color = "#3FB950" if ok else "#F85149"
             cols[i % 4].markdown(f"<span style='color:{color};font-size:0.75rem;'>● {name}</span>", unsafe_allow_html=True)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: ALPHA CENTER
