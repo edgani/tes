@@ -6119,8 +6119,14 @@ with st.sidebar:
         inc_comm = st.checkbox("Commodities", True)
         inc_cryp = st.checkbox("Crypto", True)
         inc_ihsg = st.checkbox("Indonesia", True)
-    # v46: Show pipeline errors in sidebar
-    _snap_errs = st.session_state.snap.get("errors", []) if st.session_state.snap else []
+    # v46: Show pipeline status in sidebar
+    _snap = st.session_state.snap
+    _snap_errs = _snap.get("errors", []) if _snap else []
+    _snap_src = _snap.get("_source", "") if _snap else ""
+    if _snap_src == "snapshot":
+        st.markdown(f'<span style="font-size:0.65rem;color:#D29922;">📦 Cached data ({_snap.get("_snapshot_age", "unknown")})</span>', unsafe_allow_html=True)
+    elif _snap_src == "stale_fallback":
+        st.markdown(f'<span style="font-size:0.65rem;color:#F85149;">⚠️ Stale data — yfinance rate limited</span>', unsafe_allow_html=True)
     if _snap_errs:
         with st.expander("⚠️ Pipeline Errors"):
             for e in _snap_errs[:5]:
@@ -6162,7 +6168,7 @@ if st.session_state.loading or snap is None:
             from orchestrator import run_orchestrator
             snap = run_orchestrator(
                 portfolio_value=st.session_state.get("portfolio_value", 100_000),
-                max_age_hours=1,
+                max_age_hours=72,
                 progress_cb=lambda msg, pct: None,
             )
             st.session_state.snap = snap

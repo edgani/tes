@@ -1783,7 +1783,7 @@ def _alpha_center_proxy(prices, risk_ranges, quad, vix, news_analysis=None,
 # ═══════════════════════════════════════════════════════════════════════
 # CORE ORCHESTRATOR (v39)
 # ═══════════════════════════════════════════════════════════════════════
-def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: float = 12.0, **kwargs) -> dict:
+def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: float = 72.0, **kwargs) -> dict:
     t0 = time.time()
     _safe_progress(progress_cb, "Checking snapshot cache...", 0.02)
     if use_cache:
