@@ -813,13 +813,142 @@ def _plotly_quad_probabilities(snap):
     return fig
 
 
-def _plotly_regime_merged(snap):
-    """MERGED REGIME GRAPH: Horizontal bar chart yang merge semua info jadi 1 visual.
-    Lebih clean dan readable dari radar yang tumpang tindih.
-    Layout: [Current Regime Card kiri] [Grouped Bar Q1-Q4 kanan]
+def _regime_left_cards(snap):
+    """HTML card kiri: Structural / Monthly / Markov + dominance bar.
+    Style seperti attachment 3 yang user suka."""
+    gip_data = snap.get("gip") or {}
+    if not isinstance(gip_data, dict):
+        gip_data = {}
+    sq = str(gip_data.get("structural_quad") or "Q3").upper()
+    mq = str(gip_data.get("monthly_quad") or "Q2").upper()
+    sq_conf = float(gip_data.get("structural_confidence", 0) or 0)
+
+    markov = snap.get("markov_v3") or {}
+    if not isinstance(markov, dict):
+        markov = {}
+    mk_conf = float(markov.get("confidence", 0) or 0)
+    mk_kelly = float(markov.get("kelly_fraction", 0.25) or 0.25)
+    f1m = markov.get("forecast_1m") or {}
+    f3m = markov.get("forecast_3m") or {}
+    mk_next = str(markov.get("next_quad") or "").upper()
+    if not mk_next and isinstance(f1m, dict):
+        best_p, best_q = 0, ""
+        for q, p in f1m.items():
+            if isinstance(p, (int, float)) and p > best_p and q != sq:
+                best_p, best_q = p, q
+        mk_next = best_q
+
+    # Quad colors (no names)
+    qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+    sq_c = qc.get(sq, "#8b949e")
+    mq_c = qc.get(mq, "#8b949e")
+    mk_c = qc.get(mk_next, "#8b949e") if mk_next else "#484f58"
+
+    conf = max(sq_conf, mk_conf)
+    conf_pct = int(conf * 100) if conf <= 1 else int(conf)
+
+    # Dominance: dari structural probs — Bull = Q1+Q2, Bear = Q3+Q4, Neutral sisa
+    s_probs = gip_data.get("structural_probs") or {}
+    bull_pct = int((float(s_probs.get("Q1", 0) or 0) + float(s_probs.get("Q2", 0) or 0)) * 100)
+    bear_pct = int((float(s_probs.get("Q3", 0) or 0) + float(s_probs.get("Q4", 0) or 0)) * 100)
+    neut_pct = max(0, 100 - bull_pct - bear_pct)
+    dom = "Bull" if bull_pct > bear_pct else "Bear" if bear_pct > bull_pct else "Netral"
+    dom_c = "#3FB950" if dom == "Bull" else "#F85149" if dom == "Bear" else "#8b949e"
+
+    # Bar color (structural color, fill = conf%)
+    bar_color = sq_c
+
+    html = (
+        f'<div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px 14px;height:100%;">'
+        f'  <div style="display:flex;gap:4px;margin-bottom:8px;">'
+        f'    <div style="flex:1;text-align:center;">'
+        f'      <div style="font-size:0.58rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">STRUCTURAL</div>'
+        f'      <div style="font-size:1.3rem;font-weight:800;color:{sq_c};">{sq}</div>'
+        f'    </div>'
+        f'    <div style="width:1px;background:#30363d;"></div>'
+        f'    <div style="flex:1;text-align:center;">'
+        f'      <div style="font-size:0.58rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MONTHLY</div>'
+        f'      <div style="font-size:1.3rem;font-weight:800;color:{mq_c};">{mq}</div>'
+        f'    </div>'
+        f'    <div style="width:1px;background:#30363d;"></div>'
+        f'    <div style="flex:1;text-align:center;">'
+        f'      <div style="font-size:0.58rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MARKOV</div>'
+        f'      <div style="font-size:1.1rem;font-weight:800;color:{mk_c};">{mk_next or "—"}</div>'
+        f'    </div>'
+        f'  </div>'
+        f'  <div style="font-size:0.65rem;color:#8b949e;text-align:center;margin-bottom:8px;">'
+        f'    Conf {conf_pct}% · Kelly {int(mk_kelly*100)}%'
+        f'  </div>'
+        f'  <div style="position:relative;height:10px;background:#21262d;border-radius:5px;overflow:hidden;margin-bottom:6px;">'
+        f'    <div style="position:absolute;top:0;left:0;height:100%;width:{conf_pct}%;background:{bar_color};border-radius:5px;opacity:0.85;"></div>'
+        f'  </div>'
+        f'  <div style="display:flex;justify-content:center;gap:8px;font-size:0.6rem;color:#8b949e;">'
+        f'    <span>🐂 {bull_pct}%</span><span>·</span><span>🐻 {bear_pct}%</span><span>·</span><span>😐 {neut_pct}%</span>'
+        f'    <span style="color:#484f58;">·</span><span>Dom: <b style="color:{dom_c};">{dom}</b></span>'
+        f'  </div>'
+        f'</div>'
+    )
+    return html
+
+
+def _catalyst_monitor(snap):
+    """Identifikasi indikator apa yang paling deket trigger transisi quad.
+    Return: list of (indikator, arah, impact) yang paling kritis."""
+    catalysts = []
+
+    # 1. VIX spike = panik → transisi ke Q3/Q4
+    vix_val = vix_now if 'vix_now' in globals() else 20
+    if vix_val > 25:
+        catalysts.append((f"VIX {vix_val:.1f}", "🔴 Spike", "Transisi ke Q3/Q4"))
+    elif vix_val < 15:
+        catalysts.append((f"VIX {vix_val:.1f}", "🟢 Rendah", "Stabil di Q1/Q2"))
+
+    # 2. Yield Curve
+    cm = snap.get("crash_meter") or {}
+    if isinstance(cm, dict):
+        yc = cm.get("yield_curve_score", 1)
+        if yc >= 4:
+            catalysts.append(("Yield Curve", "🔴 Inverted", "Q4 Deflation risk"))
+        elif yc >= 3:
+            catalysts.append(("Yield Curve", "🟡 Flat", "Monitor Q3"))
+
+    # 3. Credit Spread
+        cs = cm.get("credit_spread_score", 1)
+        if cs >= 4:
+            catalysts.append(("Credit Spread", "🔴 Wide", "Q3/Q4 crash risk"))
+
+    # 4. Inflation trend (dari regime)
+    gip = snap.get("gip") or {}
+    if isinstance(gip, dict):
+        trend = str(gip.get("inflation_trend", "")).lower()
+        if "up" in trend or "naik" in trend:
+            catalysts.append(("Inflasi", "🔴 Naik", "Q2→Q3 risk"))
+        elif "down" in trend or "turun" in trend:
+            catalysts.append(("Inflasi", "🟢 Turun", "Q3→Q1 possible"))
+
+    # 5. Behavioral / AAII extreme
+    beh = snap.get("behavioral_macro") or {}
+    if isinstance(beh, dict):
+        bull = beh.get("bullish")
+        bear = beh.get("bearish")
+        if isinstance(bull, (int, float)) and bull > 50:
+            catalysts.append(("AAII Bullish", "🔴 Extreme FOMO", "Top signal"))
+        if isinstance(bear, (int, float)) and bear > 45:
+            catalysts.append(("AAII Bearish", "🟢 Extreme fear", "Bottom signal"))
+
+    if not catalysts:
+        catalysts.append(("Tidak ada sinyal kritis", "🟡", "Regime stabil"))
+
+    return catalysts
+
+
+def _plotly_regime_dashboard(snap):
+    """v41: Split layout seperti attachment 3.
+    KIRI: HTML cards (Structural/Monthly/Markov + dominance bar)
+    KANAN: Horizontal bar Q1-Q4 (no Goldilocks label) + Next Quad + Catalyst
     """
     # ── Data extraction ──
-    gip_data = snap.get("gip")
+    gip_data = snap.get("gip") or {}
     if not isinstance(gip_data, dict):
         gip_data = {}
     q_probs = gip_data.get("structural_probs") or {}
@@ -828,22 +957,19 @@ def _plotly_regime_merged(snap):
     mq = str(gip_data.get("monthly_quad") or "Q2").upper()
     sq_conf = float(gip_data.get("structural_confidence", 0) or 0)
 
-    markov = snap.get("markov_v3")
+    markov = snap.get("markov_v3") or {}
     if not isinstance(markov, dict):
         markov = {}
     mk_conf = float(markov.get("confidence", 0) or 0)
     mk_kelly = float(markov.get("kelly_fraction", 0.25) or 0.25)
     f1m = markov.get("forecast_1m") or {}
     f3m = markov.get("forecast_3m") or {}
-    if not isinstance(f1m, dict):
-        f1m = {}
-    if not isinstance(f3m, dict):
-        f3m = {}
+    if not isinstance(f1m, dict): f1m = {}
+    if not isinstance(f3m, dict): f3m = {}
 
     quads = ["Q1", "Q2", "Q3", "Q4"]
-    quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
+    # NO quad_names — cuma Q1, Q2, Q3, Q4
     quad_colors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
-    quad_desc = {"Q1": "Growth↑ Inflasi↓", "Q2": "Growth↑ Inflasi↑", "Q3": "Growth↓ Inflasi↑", "Q4": "Growth↓ Inflasi↓"}
 
     s_vals = [float(q_probs.get(q, 0) or 0) for q in quads]
     mo_vals = [float(m_probs.get(q, 0) or 0) for q in quads]
@@ -876,84 +1002,61 @@ def _plotly_regime_merged(snap):
             else:
                 next_est = ">90hari"
 
-    sq_color = quad_colors.get(sq, "#8b949e")
-    mq_color = quad_colors.get(mq, "#8b949e")
-    conf_pct = max(sq_conf, mk_conf)
-
-    # ── Build figure: [Regime Card kiri] + [Vertical Bar kanan] ──
-    sq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(sq, "⚪")
-    mq_emoji = {"Q1": "🟢", "Q2": "🟡", "Q3": "🔴", "Q4": "🟣"}.get(mq, "⚪")
-    forecast_text = ""
-    if next_q:
-        forecast_text = f"🔮 Next: <b>{next_q}</b> {quad_names.get(next_q)} · {next_prob:.0%} · {next_est}"
-
+    # ── Horizontal bar chart Q1-Q4 (kanan) ──
     fig = go.Figure()
 
-    # Vertical bars: Q1-Q4 dengan 3 layer (structural/monthly/forward)
-    for i, q in enumerate(quads):
-        color = quad_colors[q]
-        offset = i * 3  # 3 bar per quad
-        # Structural (solid, front)
-        fig.add_trace(go.Bar(
-            x=[q], y=[s_vals[i]],
-            marker_color=color, opacity=1.0,
-            text=f"{s_vals[i]:.0%}", textposition="outside",
-            textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
-            name=f"📊 Structural" if i == 0 else "", showlegend=(i == 0),
-            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Structural: %{{y:.1%}}<extra></extra>",
-            width=0.25, offsetgroup=0,
-        ))
-        # Monthly (medium)
-        fig.add_trace(go.Bar(
-            x=[q], y=[mo_vals[i]],
-            marker_color=color, opacity=0.5,
-            text=f"{mo_vals[i]:.0%}", textposition="outside",
-            textfont={"size": 9, "color": "#8b949e"},
-            name=f"📅 Monthly" if i == 0 else "", showlegend=(i == 0),
-            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Monthly: %{{y:.1%}}<extra></extra>",
-            width=0.25, offsetgroup=1,
-        ))
-        # Forward 1M (ghost)
-        fig.add_trace(go.Bar(
-            x=[q], y=[f1m_vals[i]],
-            marker_color=color, opacity=0.2,
-            text=f"{f1m_vals[i]:.0%}", textposition="outside",
-            textfont={"size": 8, "color": "#484f58"},
-            name=f"🔮 Forward 1M" if i == 0 else "", showlegend=(i == 0),
-            hovertemplate=f"<b>{q} {quad_names[q]}</b><br>Forward 1M: %{{y:.1%}}<extra></extra>",
-            width=0.25, offsetgroup=2,
-        ))
+    # Gunakan y-axis = Q1, Q2, Q3, Q4 (horizontal bars)
+    labels = quads  # Cuma "Q1", "Q2", "Q3", "Q4" — tanpa Goldilocks dll
 
-    # Title yang jelas bedakan Structural vs Monthly
-    title_text = (
-        f"{sq_emoji} Structural: <b style='color:{sq_color};'>{sq} {quad_names.get(sq)}</b> "
-        f"| {mq_emoji} Monthly: <b style='color:{mq_color};'>{mq}</b> "
-        f"| Conf {conf_pct:.0%} | Kelly {mk_kelly:.0%}"
-    )
+    # Structural (solid)
+    fig.add_trace(go.Bar(
+        y=labels, x=[v * 100 for v in s_vals], orientation="h",
+        name="Structural",
+        marker={"color": [quad_colors[q] for q in quads], "opacity": 1.0},
+        text=[f"{v:.0f}%" for v in s_vals],
+        textposition="outside",
+        textfont={"size": 10, "color": "#c9d1d9", "weight": 700},
+        hovertemplate="<b>%{y}</b><br>Structural: %{x:.0f}%<extra></extra>",
+        width=0.25, offsetgroup=0,
+    ))
+    # Monthly (medium)
+    fig.add_trace(go.Bar(
+        y=labels, x=[v * 100 for v in mo_vals], orientation="h",
+        name="Monthly",
+        marker={"color": [quad_colors[q] for q in quads], "opacity": 0.55},
+        text=[f"{v:.0f}%" for v in mo_vals],
+        textposition="outside",
+        textfont={"size": 9, "color": "#8b949e"},
+        hovertemplate="<b>%{y}</b><br>Monthly: %{x:.0f}%<extra></extra>",
+        width=0.25, offsetgroup=1,
+    ))
+    # Forward 1M (ghost)
+    fig.add_trace(go.Bar(
+        y=labels, x=[v * 100 for v in f1m_vals], orientation="h",
+        name="Forward 1M",
+        marker={"color": [quad_colors[q] for q in quads], "opacity": 0.2},
+        text=[f"{v:.0f}%" for v in f1m_vals],
+        textposition="outside",
+        textfont={"size": 8, "color": "#484f58"},
+        hovertemplate="<b>%{y}</b><br>Forward 1M: %{x:.0f}%<extra></extra>",
+        width=0.25, offsetgroup=2,
+    ))
 
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
-        margin={"t": 50, "b": 35, "l": 50, "r": 50},
-        height=200, barmode="group", bargap=0.15, bargroupgap=0.1,
+        margin={"t": 30, "b": 15, "l": 35, "r": 50},
+        height=180, barmode="group", bargap=0.15, bargroupgap=0.1,
         showlegend=True,
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "right", "x": 1.0,
                 "font": {"size": 9, "color": "#8b949e"}, "bgcolor": "rgba(0,0,0,0)"},
-        xaxis={"tickfont": {"size": 12, "color": "#c9d1d9", "weight": 700},
-               "gridcolor": "#21262d"},
-        yaxis={"tickformat": ".0%", "range": [0, 1.15], "gridcolor": "#21262d",
-               "tickfont": {"size": 9, "color": "#8b949e"}},
-        title={
-            "text": title_text,
-            "font": {"size": 11, "color": "#c9d1d9"}, "x": 0.5, "xanchor": "center",
-        },
-        annotations=[{
-            "text": forecast_text, "x": 0.99, "y": -0.15, "xref": "paper", "yref": "paper",
-            "showarrow": False, "font": {"size": 10, "color": "#8b949e"}, "align": "right",
-            "bgcolor": "rgba(13,17,23,0.8)", "bordercolor": "#30363d", "borderwidth": 1, "borderpad": 4,
-        }] if forecast_text else [],
+        yaxis={"tickfont": {"size": 11, "color": "#c9d1d9", "weight": 700},
+               "gridcolor": "#21262d", "categoryorder": "array",
+               "categoryarray": ["Q4", "Q3", "Q2", "Q1"]},  # Q1 di bawah
+        xaxis={"range": [0, 100], "tickformat": ".0f", "ticksuffix": "%",
+               "gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"}},
     )
-    return fig
+    return fig, sq, next_q, next_prob, next_est
 
 
 def _plotly_crash_meter(snap):
@@ -1086,21 +1189,37 @@ def _plotly_behavioral_bar(snap):
         width=0.5,
     ))
     
+    # ── Casino Score badge ──
+    cs_html = f"🎰 Casino Score: {casino_score:.0f}/100"
+    if casino_score <= 30:
+        cs_color, cs_label = "#3FB950", "Seimbang"
+    elif casino_score <= 60:
+        cs_color, cs_label = "#D29922", f"Waspada — raise {min(50, casino_score * 0.4):.0f}% cash"
+    else:
+        cs_color, cs_label = "#F85149", f"🚨 Casino — raise {min(50, casino_score * 0.4):.0f}% cash"
+
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 11},
-        margin={"t": 30, "b": 20, "l": 60, "r": 20},
+        margin={"t": 30, "b": 25, "l": 60, "r": 20},
         xaxis={"range": [0, 100], "visible": False},
         yaxis={"visible": True, "tickfont": {"size": 11, "color": "#8b949e", "weight": 600}},
         barmode="stack", showlegend=True,
         legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "center", "x": 0.5,
                 "font": {"size": 10, "color": "#8b949e"}},
-        height=110,
-        annotations=[{
-            "text": f"<span style='color:{status_color};font-size:0.72rem;'>{status_text}</span>",
-            "x": 0.5, "y": -0.18, "xref": "paper", "yref": "paper",
-            "showarrow": False,
-        }],
+        height=120,
+        annotations=[
+            {
+                "text": f"<span style='color:{cs_color};font-size:0.72rem;'>🎰 <b>Casino Score: {casino_score:.0f}/100</b> · {cs_label}</span>",
+                "x": 0.5, "y": -0.18, "xref": "paper", "yref": "paper",
+                "showarrow": False,
+            },
+            {
+                "text": f"<span style='color:{status_color};font-size:0.62rem;'>{status_text}</span>",
+                "x": 0.5, "y": -0.32, "xref": "paper", "yref": "paper",
+                "showarrow": False,
+            },
+        ],
     )
     return fig
 
@@ -4495,14 +4614,54 @@ def page_dashboard():
     st.markdown("## 🏠 Macro Dashboard")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 1: 1 UNIFIED REGIME GRAPH (semua info di 1 visual)
+    # ROW 1: REGIME DASHBOARD — Split kiri (cards) + kanan (bar)
     # ═══════════════════════════════════════════════════════════
-    fig_regime = _plotly_regime_merged(snap)
-    st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_unified")
-    st.caption("📖 **Structural** = regime jangka panjang (bulan-kuartal). **Monthly** = regime jangka pendek (bulan ini). "
-               "**Forward 1M** = prediksi Markov 1 bulan ke depan. "
-               "Bar solid = Structural, bar transparan = Monthly, bar ghost = Forward. "
-               "🔮 = kuadran berikutnya yang paling mungkin terjadi beserta estimasi waktu.")
+    # KIRI: HTML cards (Structural / Monthly / Markov + dominance)
+    # KANAN: Horizontal bar Q1-Q4 (no Goldilocks label) + Next Quad + Catalyst
+
+    # ── Next Quad Forecast + Catalyst (data) ──
+    fig_regime, sq_current, next_q, next_prob, next_est = _plotly_regime_dashboard(snap)
+
+    # Get catalyst data
+    catalysts = _catalyst_monitor(snap)
+
+    # Layout: cards kiri | bar kanan
+    rc1, rc2 = st.columns([2, 5])
+
+    with rc1:
+        # HTML cards (attachment 3 style)
+        st.markdown(_regime_left_cards(snap), unsafe_allow_html=True)
+
+        # ── Next Quad Forecast box ──
+        if next_q:
+            qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+            nqc = qc.get(next_q, "#8b949e")
+            st.markdown(
+                f'<div style="background:#161b22;border:1px solid {nqc}40;border-radius:8px;padding:8px 10px;margin-top:8px;">'
+                f'<div style="font-size:0.58rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">🔮 NEXT QUAD FORECAST</div>'
+                f'<div style="font-size:1.1rem;font-weight:800;color:{nqc};">{next_q}</div>'
+                f'<div style="font-size:0.65rem;color:#c9d1d9;">Probabilitas: <b>{next_prob:.0%}</b></div>'
+                f'<div style="font-size:0.65rem;color:#8b949e;">Estimasi transisi: {next_est}</div>'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        # ── Catalyst Monitor ──
+        cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px;margin-top:8px;">'
+        cat_html += '<div style="font-size:0.58rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">⚡ CATALYST MONITOR</div>'
+        cat_html += '<div style="font-size:0.6rem;color:#8b949e;margin-bottom:4px;">Data yang paling deket trigger transisi:</div>'
+        for ind, arah, impact in catalysts[:4]:
+            cat_html += f'<div style="font-size:0.6rem;padding:2px 0;"><span style="color:#c9d1d9;">{ind}</span> <span style="color:#484f58;">→</span> <span>{arah}</span> <span style="color:#484f58;">·</span> <span style="color:#D29922;">{impact}</span></div>'
+        cat_html += '</div>'
+        st.markdown(cat_html, unsafe_allow_html=True)
+
+    with rc2:
+        # Horizontal bar Q1-Q4
+        st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v41")
+
+    st.caption("📖 Bar solid = Structural, bar transparan = Monthly, bar ghost = Forward 1M. "
+               "🐂 = Q1+Q2 (growth naik), 🐻 = Q3+Q4 (growth turun). "
+               "⚡ Catalyst = indikator yang paling deket mengubah quad.")
 
     # ── Narrative ──
     narrative = snap.get("narrative", {}) or {}
@@ -4600,7 +4759,8 @@ def page_dashboard():
         st.markdown("<div style='font-size:0.72rem;color:#D29922;font-weight:700;margin:8px 0 4px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
         fig_bh = _plotly_behavioral_bar(snap)
         st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
-        st.caption("📖 AAII: Bullish&gt;45%=FOMO/waspada · Bearish&gt;35%=beli kontrarian · Casino&gt;40=raise cash")
+        st.caption("📖 🎰 Casino Score = greed/fear retail (0=seimbang, 100=casino). "
+                   "Bullish&gt;45%=FOMO · Bearish&gt;35%=kontrarian buy · Casino&gt;60=raise cash 50%.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
