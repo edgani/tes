@@ -6145,8 +6145,8 @@ snap = st.session_state.snap
 if st.session_state.loading or snap is None:
     with st.spinner("🔄 Building macro regime snapshot..."):
         try:
-            from orchestrator import run_pipeline
-            snap = run_pipeline(
+            from orchestrator import run_orchestrator
+            snap = run_orchestrator(
                 portfolio_value=st.session_state.get("portfolio_value", 100_000),
                 max_age_hours=1,
                 progress_cb=lambda msg, pct: None,
