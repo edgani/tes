@@ -548,6 +548,61 @@ except Exception as e:
     _V41_SCRAPERS["cftc_cot"] = False
     CFTCCOTScraper = None
 
+try:
+    from engines.laevitas_scraper import LaevitasScraper
+    _V41_SCRAPERS["laevitas"] = True
+except Exception as e:
+    logger.error(f"Failed to import laevitas_scraper: {e}")
+    _V41_SCRAPERS["laevitas"] = False
+    LaevitasScraper = None
+
+try:
+    from engines.cme_scraper import CMEScraper
+    _V41_SCRAPERS["cme"] = True
+except Exception as e:
+    logger.error(f"Failed to import cme_scraper: {e}")
+    _V41_SCRAPERS["cme"] = False
+    CMEScraper = None
+
+# ═══════════════════════════════════════════════════════════════════════
+# V44 ENGINE IMPORTS (Universe Expansion, Real-time, Performance, IHSG v39)
+# ═══════════════════════════════════════════════════════════════════════
+_V44_ENGINES = {}
+
+try:
+    from engines.universe_expansion import UniverseManager
+    _V44_ENGINES["universe"] = True
+except Exception as e:
+    logger.error(f"Failed to import universe_expansion: {e}")
+    _V44_ENGINES["universe"] = False
+    UniverseManager = None
+
+try:
+    from engines.realtime_feed import RealtimeFeed
+    _V44_ENGINES["realtime"] = True
+except Exception as e:
+    logger.error(f"Failed to import realtime_feed: {e}")
+    _V44_ENGINES["realtime"] = False
+    RealtimeFeed = None
+
+try:
+    from engines.performance_optimizer import LazyEngine, TieredCache, ParallelPipeline
+    _V44_ENGINES["performance"] = True
+except Exception as e:
+    logger.error(f"Failed to import performance_optimizer: {e}")
+    _V44_ENGINES["performance"] = False
+    LazyEngine = None
+    TieredCache = None
+    ParallelPipeline = None
+
+try:
+    from engines.ihsg_specialist_v39 import IHSGSpecialistEngine
+    _V44_ENGINES["ihsg_v39"] = True
+except Exception as e:
+    logger.error(f"Failed to import ihsg_specialist_v39: {e}")
+    _V44_ENGINES["ihsg_v39"] = False
+    IHSGSpecialistEngine = None
+
 # ═══════════════════════════════════════════════════════════════════════
 # TIER S ENGINE IMPORTS (v39 fix — previously uncalled, now wired)
 # ═══════════════════════════════════════════════════════════════════════

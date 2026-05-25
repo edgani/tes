@@ -16,6 +16,33 @@ import json, os
 from datetime import datetime
 
 logger = __import__("logging").getLogger(__name__)
+
+# v39: Optional scraper imports (defensive — app works without them)
+try:
+    from engines.cftc_cot_scraper import CFTCCOTScraper
+    _cot_scraper = CFTCCOTScraper()
+except Exception:
+    _cot_scraper = None
+
+try:
+    from engines.defillama_scraper import DeFiLlamaFetcher
+    _defillama = DeFiLlamaFetcher()
+except Exception:
+    _defillama = None
+
+# v43: Market-specific card renderer + CME scraper
+try:
+    from engines.market_card_renderer import render_market_card
+    _MARKET_CARD = True
+except Exception:
+    _MARKET_CARD = False
+
+try:
+    from engines.cme_scraper import CMEScraper
+    _cme_scraper = CMEScraper()
+except Exception:
+    _cme_scraper = None
+
 st.set_page_config(page_title="MacroRegime Pro v39", page_icon="📊", layout="wide", initial_sidebar_state="expanded")
 
 # ═══════════════════════════════════════════════════════════════════
@@ -2077,6 +2104,27 @@ def _detect_unusual_activity(ticker, prices, snap, market_type):
 # COT PROXY (for forex/commodities)
 # ═══════════════════════════════════════════════════════════════════
 def _get_cot_proxy(ticker):
+    """v39 FIX: Try CFTCCOTScraper first, fallback to hardcoded COT map."""
+    # Try live COT scraper first
+    if _cot_scraper:
+        try:
+            # Map yfinance ticker to COT product name
+            cot_product_map = {
+                "EURUSD=X": "EUR/USD", "GBPUSD=X": "GBP/USD", "USDJPY=X": "JPY/USD",
+                "AUDUSD=X": "AUD/USD", "USDCAD=X": "CAD/USD", "USDCHF=X": "CHF/USD",
+                "NZDUSD=X": "NZD/USD", "DX-Y.NYB": "DXY",
+                "GC=F": "Gold", "SI=F": "Silver", "CL=F": "Crude Oil",
+                "NG=F": "Natural Gas", "HG=F": "Copper",
+            }
+            product = cot_product_map.get(ticker)
+            if product:
+                cot_data = _cot_scraper.get_signal(product)
+                if cot_data and cot_data.get("signal") != "NEUTRAL":
+                    return cot_data
+        except Exception:
+            pass  # Fallback to hardcoded below
+
+    # Fallback: hardcoded COT map (last-resort proxy)
     cot_map = {
         "EURUSD=X": {"net_noncom": 45000, "net_com": -32000, "change_wow": 2500, "signal": "BULLISH"},
         "GBPUSD=X": {"net_noncom": 12000, "net_com": -8000, "change_wow": -1500, "signal": "NEUTRAL"},
@@ -3570,13 +3618,59 @@ def _build_execution_checklist(row, px, entry, stop, t1, t2, rr, chase_status):
 
     return items
 
+
+def render_invalid_cards(invalid_rows):
+    """Render filtered-out invalid setup cards."""
+    if not invalid_rows:
+        return
+    st.markdown(f'<div style="font-size:0.68rem;color:#8B949E;margin-bottom:4px;">{len(invalid_rows)} setup(s) filtered out — stop too tight, trend conflict, walk-forward fail, or AVOID</div>', unsafe_allow_html=True)
+    for r in invalid_rows[:15]:
+        ticker = r.get("ticker", "?")
+        reason = r.get("setup_note", "") or r.get("formation", "") or r.get("chase_text", "") or "Invalid"
+        px = r.get("price", 0)
+        dir_ = r.get("direction", "")
+        grade = r.get("grade", "C")
+        mt = r.get("market_type", "")
+        if not mt:
+            t = ticker.upper()
+            if "=" in t or t in ("EURUSD", "GBPUSD", "USDJPY"):
+                mt = "forex"
+            elif "-USD" in t or "-USDT" in t or "-USDC" in t:
+                mt = "crypto"
+            elif "CL=F" in t or "GC=F" in t or "SI=F" in t or t.startswith("/"):
+                mt = "commodity"
+            else:
+                mt = "us_equity"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:8px;padding:5px 10px;background:#161B22;border:1px solid #30363D;border-radius:6px;margin:2px 0;">'
+            f'<span style="font-weight:700;font-size:0.8rem;color:#E6EDF3;min-width:55px;">{ticker}</span>'
+            f'<span style="font-size:0.6rem;padding:1px 5px;border-radius:4px;background:#F8514915;color:#F85149;border:1px solid #F8514940;">{dir_} {grade}</span>'
+            f'<span style="flex:1;font-size:0.68rem;color:#8B949E;">{reason[:100]}</span>'
+            f'<span style="font-size:0.65rem;color:#484F58;min-width:50px;text-align:right;">{_ffm(px, mt)}</span>'
+            f'</div>', unsafe_allow_html=True
+        )
+
 def render_ticker_cards_v4(rows, max_rows=30):
     if not rows:
         st.info("No setups pass filter.")
         return
     st.markdown(f'<div style="font-size:0.72rem;color:#8B949E;margin-bottom:4px;">Showing {min(len(rows), max_rows)} of {len(rows)} setups</div>', unsafe_allow_html=True)
     for i, r in enumerate(rows[:max_rows]):
-        render_ticker_card_v4(r, expanded=False)
+        # v43: Use market-specific card renderer if available
+        if _MARKET_CARD:
+            mt = r.get("market_type", "us_equity")
+            st.markdown(render_market_card(r, mt), unsafe_allow_html=True)
+        else:
+            render_card_v5(r)
+
+# v43: Wrapper for direct market page calls
+def render_card_v5(row):
+    """Render ticker card — uses market_card_renderer if available, else v4."""
+    if _MARKET_CARD:
+        mt = row.get("market_type", "us_equity")
+        st.markdown(render_market_card(row, mt), unsafe_allow_html=True)
+    else:
+        render_ticker_card_v4(row, expanded=False)
 
 # ═══════════════════════════════════════════════════════════════════
 # REGIME COMPASS
@@ -4439,7 +4533,7 @@ def page_alpha():
                         f'<div class="alpha-thesis-sub"><b>Why:</b> {why}</div>'
                         f'<div class="alpha-thesis-sub" style="color:#D29922;"><b>Timing:</b> {timing}</div>'
                         f'</div>', unsafe_allow_html=True)
-                    render_ticker_card_v4(r, expanded=False)
+                    render_card_v5(r)
 
         # ── DISPLAY: READY SHORTS ──
         if ready_shorts:
@@ -4462,7 +4556,7 @@ def page_alpha():
                         f'<div class="alpha-thesis-sub"><b>Why:</b> {why}</div>'
                         f'<div class="alpha-thesis-sub" style="color:#D29922;"><b>Timing:</b> {timing}</div>'
                         f'</div>', unsafe_allow_html=True)
-                    render_ticker_card_v4(r, expanded=False)
+                    render_card_v5(r)
 
         # ── DISPLAY: WAIT ──
         if wait_longs:
@@ -4482,7 +4576,7 @@ def page_alpha():
                         f'<div class="alpha-thesis-sub"><b>Thesis:</b> {thesis}</div>'
                         f'<div class="alpha-thesis-sub"><b>Why:</b> {r.get("alpha_why","")}</div>'
                         f'</div>', unsafe_allow_html=True)
-                    render_ticker_card_v4(r, expanded=False)
+                    render_card_v5(r)
 
         # ── MONITOR bucket (valid tapi belum high conviction) ──
         if mon_longs or mon_shorts:
@@ -4502,7 +4596,7 @@ def page_alpha():
                         f'<div class="alpha-thesis-sub"><b>Thesis:</b> {thesis}</div>'
                         f'<div class="alpha-thesis-sub" style="color:#8B949E;font-size:0.65rem;">Quality: {r.get("quality_score",0):.0f} · RR {r.get("rr",0):.1f}x · Grade {r.get("grade","C")}</div>'
                         f'</div>', unsafe_allow_html=True)
-                    render_ticker_card_v4(r, expanded=False)
+                    render_card_v5(r)
 
         if invalid:
             with st.expander(f"⚠️ Filtered ({len(invalid)} invalid / conflict / avoid)", expanded=False):
@@ -4715,7 +4809,11 @@ def page_us_stocks():
             render_invalid_cards(etf_invalid)
 
     st.divider()
-    us_tickers = list(US_SECTORS.keys()) if US_SECTORS else []
+    # v39 FIX: US_SECTORS is dict of sector_name -> [tickers], so flatten .values()
+    us_tickers = []
+    if US_SECTORS:
+        for tickers in US_SECTORS.values():
+            us_tickers.extend(tickers)
     for bucket in ["Growth","Quality","Defensives","Semis","Energy","Industrials","Financials","AI_Infra","PreciousMetals"]:
         us_tickers += US_BUCKETS.get(bucket, []) if US_BUCKETS else []
     if not us_tickers: us_tickers = FALLBACK_US
@@ -4959,6 +5057,8 @@ def page_global():
     st.markdown("## 🌍 Global & EM")
     global_ = snap.get("global", {}) or {}
     country_list = global_.get("country_list", []) if isinstance(global_, dict) else []
+    # v39 NOTE: Hardcoded base_map is FALLBACK ONLY when snap has no dynamic global data.
+    # Preferred path: orchestrator should supply snap["global"]["country_list"] from live sources.
     if not country_list:
         base_map = {
             "Q1": ["USA","Japan","India","Taiwan","South Korea","Vietnam","Mexico","Singapore","Philippines","Malaysia","UAE","Israel","Poland","Czech Republic","Romania"],
@@ -5559,12 +5659,52 @@ def render_supply_chain_chains(snap):
 
 
 def render_crypto_onchain_v2(snap):
+    # v39 FIX: Try DeFiLlamaFetcher first for real on-chain data
     tokens = snap.get("crypto_tokens", {})
     cc = snap.get("crypto_center", {})
-    if not tokens:
+
+    # Try DeFiLlama for real TVL/liquidity data
+    defi_data = {}
+    if _defillama:
+        try:
+            regime = _defillama.get_crypto_liquidity_regime()
+            if regime:
+                defi_data["liquidity_regime"] = regime
+            # Get chain TVL for major chains
+            for chain in ["bitcoin", "ethereum", "solana"]:
+                try:
+                    tvl = _defillama.get_chain_tvl(chain)
+                    if tvl:
+                        defi_data.setdefault("chain_tvl", {})[chain] = tvl
+                except Exception:
+                    pass
+        except Exception:
+            pass  # Fallback to snap data
+
+    if not tokens and not defi_data:
         st.caption("Crypto on-chain data unavailable")
         return
     st.markdown("### ₿ On-Chain Intelligence v2")
+
+    # Show DeFiLlama real data if available
+    if defi_data.get("liquidity_regime"):
+        lr = defi_data["liquidity_regime"]
+        lr_color = "#3FB950" if lr.get("signal") == "EXPANDING" else "#F85149" if lr.get("signal") == "CONTRACTING" else "#D29922"
+        st.markdown(
+            f'<div style="background:#161B22;border:1px solid {lr_color}40;border-radius:8px;padding:8px 10px;margin:4px 0;">'
+            f'<span style="font-size:0.65rem;color:#8B949E;text-transform:uppercase;font-weight:600;">DeFiLlama Liquidity Regime</span> '
+            f'<span style="font-size:0.75rem;color:{lr_color};font-weight:700;">{lr.get("signal", "—")}</span> '
+            f'<span style="font-size:0.6rem;color:#484F58;">(real TVL data)</span></div>',
+            unsafe_allow_html=True,
+        )
+    if defi_data.get("chain_tvl"):
+        tvl_html = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:4px 0;">'
+        for chain, tvl in defi_data["chain_tvl"].items():
+            tvl_b = tvl / 1e9 if isinstance(tvl, (int, float)) else 0
+            tvl_html += f'<span style="background:#0D1117;border:1px solid #30363D;border-radius:6px;padding:4px 8px;font-size:0.65rem;color:#8B949E;">{chain.title()}: <b style="color:#E6EDF3;">${tvl_b:.1f}B</b></span>'
+        tvl_html += '</div>'
+        st.markdown(tvl_html, unsafe_allow_html=True)
+
     whale_acc = sum(1 for v in tokens.values() if isinstance(v, dict) and v.get("whale_signal") == "ACCUMULATING")
     whale_dist = sum(1 for v in tokens.values() if isinstance(v, dict) and v.get("whale_signal") == "DISTRIBUTING")
     c1, c2, c3 = st.columns(3)
