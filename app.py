@@ -5899,25 +5899,3 @@ elif page == "📊 Portfolio Stress": page_portfolio_stress()
 st.divider()
 flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
 st.caption(f"MacroRegime Pro v39 ALPHA · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators · AFS {snap.get('summary',{}).get('v32_afs',0):.1f}{flip_note}")
- "tail"): vix_now = _safe_float(_vix_raw.tail(1)) or 20.0
-        elif hasattr(_vix_raw, "__len__") and len(_vix_raw) > 0: vix_now = _safe_float(pd.Series(_vix_raw).iloc[-1]) or 20.0
-        else: vix_now = _safe_float(_vix_raw) or 20.0
-    except Exception: vix_now = 20.0
-
-# ═══════════════════════════════════════════════════════════════════
-# MAIN ROUTER
-# ═══════════════════════════════════════════════════════════════════
-if page == "🏠 Dashboard": page_dashboard()
-elif page == "⚡ Alpha Center": page_alpha()
-elif page == "🇺🇸 US Stocks": page_us_stocks()
-elif page == "💱 Forex": page_forex()
-elif page == "🛢️ Commodities": page_commodities()
-elif page == "₿ Crypto": page_crypto()
-elif page == "🌍 Global & EM": page_global()
-elif page == "📖 Themes": page_themes()
-elif page == "📊 Portfolio Stress": page_portfolio_stress()
-# Ticker Detail removed from sidebar — accessible via Quick Lookup in each market page
-
-st.divider()
-flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
-st.caption(f"MacroRegime Pro v39 ALPHA · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators · AFS {snap.get('summary',{}).get('v32_afs',0):.1f}{flip_note}")
