@@ -875,32 +875,32 @@ def _regime_left_cards(snap, s_vals):
         # Row 1: 3 cards
         f'<div style="display:flex;gap:0;margin-bottom:4px;">'
         f'<div style="flex:1;text-align:center;padding:0 4px;">'
-        f'<div style="font-size:0.5rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">STRUCTURAL</div>'
-        f'<div style="font-size:1.1rem;font-weight:800;color:{sq_c};line-height:1.2;">{sq}</div></div>'
+        f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">STRUCTURAL</div>'
+        f'<div style="font-size:1.2rem;font-weight:800;color:{sq_c};line-height:1.2;">{sq}</div></div>'
         f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
         f'<div style="flex:1;text-align:center;padding:0 4px;">'
-        f'<div style="font-size:0.5rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">MONTHLY</div>'
-        f'<div style="font-size:1.1rem;font-weight:800;color:{mq_c};line-height:1.2;">{mq}</div></div>'
+        f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">MONTHLY</div>'
+        f'<div style="font-size:1.2rem;font-weight:800;color:{mq_c};line-height:1.2;">{mq}</div></div>'
         f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
         f'<div style="flex:1;text-align:center;padding:0 4px;">'
-        f'<div style="font-size:0.5rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">MARKOV</div>'
-        f'<div style="font-size:0.9rem;font-weight:800;color:{mk_c};line-height:1.2;">{mk_next or "—"}</div></div>'
+        f'<div style="font-size:0.6rem;color:#8b949e;font-weight:600;letter-spacing:0.6px;">MARKOV</div>'
+        f'<div style="font-size:1.0rem;font-weight:800;color:{mk_c};line-height:1.2;">{mk_next or "—"}</div></div>'
         f'</div>'
         # Row 2: Conf + Kelly
-        f'<div style="font-size:0.58rem;color:#8b949e;text-align:center;margin-bottom:4px;">'
+        f'<div style="font-size:0.65rem;color:#8b949e;text-align:center;margin-bottom:4px;">'
         f'Conf {conf_pct}% · Kelly {int(mk_kelly*100)}%'
         f'</div>'
         # Row 3: Confidence bar
-        f'<div style="position:relative;height:6px;background:#21262d;border-radius:3px;overflow:hidden;margin-bottom:4px;">'
-        f'<div style="position:absolute;top:0;left:0;height:100%;width:{conf_pct}%;background:{sq_c};border-radius:3px;opacity:0.8;"></div></div>'
-        # Row 4: Mini sentiment (ganti dominance)
-        f'<div style="display:flex;height:10px;border-radius:3px;overflow:hidden;margin-bottom:2px;">'
+        f'<div style="position:relative;height:8px;background:#21262d;border-radius:4px;overflow:hidden;margin-bottom:4px;">'
+        f'<div style="position:absolute;top:0;left:0;height:100%;width:{conf_pct}%;background:{sq_c};border-radius:4px;opacity:0.8;"></div></div>'
+        # Row 4: Mini sentiment
+        f'<div style="display:flex;height:12px;border-radius:4px;overflow:hidden;margin-bottom:3px;">'
         f'<div style="width:{bp:.0f}%;background:#3FB950;"></div>'
         f'<div style="width:{np:.0f}%;background:#8B949E;"></div>'
         f'<div style="width:{bep:.0f}%;background:#F85149;"></div></div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.48rem;color:#8b949e;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.58rem;color:#8b949e;">'
         f'<span>🐂 {bull:.0f}%</span><span>⚖ {neut:.0f}%</span><span>🐻 {bear:.0f}%</span></div>'
-        f'<div style="font-size:0.48rem;color:{cs_c};margin-top:1px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
+        f'<div style="font-size:0.58rem;color:{cs_c};margin-top:2px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
         f'</div>'
     )
     return html
@@ -1106,13 +1106,13 @@ def _plotly_regime_dashboard(snap):
     ))
     fig.add_trace(go.Bar(
         y=labels, x=[v * 100 for v in f_rev], orientation="h",
-        name="<b>□</b> Forward 1M (ghost)",
-        marker={"color": "#484f58", "opacity": 0.3,
-                "line": {"width": 0}},
+        name="<b>□</b> Forward 1M (prediksi)",
+        marker={"color": label_colors, "opacity": 0.15,
+                "line": {"width": 1, "color": "#8b949e"}},
         text=[f"{v*100:.0f}%" for v in f_rev],
         textposition="outside",
-        textfont={"size": 8, "color": "#484f58"},
-        hovertemplate=[_hover(l, "Forward 1M", v) for l, v in zip(labels, f_rev)],
+        textfont={"size": 9, "color": "#8b949e"},
+        hovertemplate=[_hover(l, "Forward 1M (prediksi Markov)", v) for l, v in zip(labels, f_rev)],
         width=0.25, offsetgroup=2,
     ))
 
@@ -4739,108 +4739,98 @@ def page_dashboard():
         tq = target_q or mq
         tqc = qc.get(tq, "#8b949e")
         triggers = proj.get("triggers", [])
-        trig_html = ''.join([f'<div style="margin:1px 0;font-size:0.5rem;color:#8b949e;">• {t}</div>' for t in triggers[:3]]) if triggers else '<div style="font-size:0.5rem;color:#484f58;">Regime stabil</div>'
+        trig_html = ''.join([f'<div style="margin:2px 0;font-size:0.58rem;color:#8b949e;">• {t}</div>' for t in triggers[:3]]) if triggers else '<div style="font-size:0.58rem;color:#484f58;">Regime stabil</div>'
 
         st.markdown(
-            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:8px;padding:6px 8px;margin-top:4px;">'
-            f'<div style="font-size:0.52rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI</div>'
-            f'<div style="font-size:0.85rem;font-weight:800;color:{tqc};line-height:1.2;">{sq_current} → {tq}</div>'
-            f'<div style="font-size:0.55rem;color:#c9d1d9;margin-top:1px;">Prob: <b>{prob_val:.0%}</b> · Est: <b>{est_val}</b></div>'
-            f'<div style="font-size:0.48rem;color:#8b949e;margin-top:2px;border-top:1px solid #21262d;padding-top:2px;">'
+            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:8px;padding:8px 10px;margin-top:6px;">'
+            f'<div style="font-size:0.6rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI</div>'
+            f'<div style="font-size:0.95rem;font-weight:800;color:{tqc};line-height:1.2;">{sq_current} → {tq}</div>'
+            f'<div style="font-size:0.65rem;color:#c9d1d9;margin-top:2px;">Prob: <b>{prob_val:.0%}</b> · Est: <b>{est_val}</b></div>'
+            f'<div style="font-size:0.55rem;color:#8b949e;margin-top:3px;border-top:1px solid #21262d;padding-top:3px;">'
             f'Structural=<b>{sq_current}</b> · Monthly=<b>{mq}</b></div>'
-            f'<div style="font-size:0.5rem;color:#58A6FF;margin-top:2px;">📰 Data/News yang Bisa Trigger:</div>'
+            f'<div style="font-size:0.6rem;color:#58A6FF;margin-top:3px;">📰 Data/News yang Bisa Trigger:</div>'
             f'{trig_html}</div>', unsafe_allow_html=True)
 
-        # ── Catalyst Monitor ──
-        cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:6px 8px;margin-top:4px;">'
-        cat_html += '<div style="font-size:0.52rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:2px;">⚡ CATALYST</div>'
+        # ── Catalyst Monitor — font besar ──
+        cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 10px;margin-top:6px;">'
+        cat_html += '<div style="font-size:0.65rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:4px;">⚡ CATALYST</div>'
         for name, val, emoji, desc, impact in catalysts[:5]:
             cat_html += (
-                f'<div style="font-size:0.5rem;padding:1px 0;border-bottom:1px solid #21262d;">'
+                f'<div style="font-size:0.6rem;padding:2px 0;border-bottom:1px solid #21262d;">'
                 f'<div style="display:flex;justify-content:space-between;">'
                 f'<span style="color:#c9d1d9;">{name}</span>'
                 f'<span>{emoji} <span style="color:#8b949e;">{desc}</span></span></div>'
-                f'<div style="font-size:0.47rem;color:#484f58;padding-left:4px;">{impact}</div></div>'
+                f'<div style="font-size:0.55rem;color:#484f58;padding-left:4px;">{impact}</div></div>'
             )
         cat_html += '</div>'
         st.markdown(cat_html, unsafe_allow_html=True)
 
     with rc2:
-        st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v47")
+        st.plotly_chart(fig_regime, use_container_width=True, config={"displayModeBar": False}, key="regime_v48")
+
+        # ═══════════════════════════════════════════════════════════
+        # GAUGE: VIX · HEALTH · KELLY · ALERTS (di bawah bar!)
+        # ═══════════════════════════════════════════════════════════
+        _mk = snap.get("markov_v3")
+        markov_local = _mk if isinstance(_mk, dict) else {}
+        health = snap.get("health", {}) or {}
+        behavioral = snap.get("behavioral_macro", {}) or {}
+        health_score = float(health.get("composite_score", 50)) if isinstance(health, dict) else 50
+        kelly = float(markov_local.get("kelly_fraction", 0.25) or 0.25)
+        n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
+
+        g1, g2, g3, g4 = st.columns(4)
+        with g1:
+            vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
+            vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
+            fig_vix = _plotly_gauge(vix_now, f"<b>VIX</b><br><span style='font-size:10px;color:{vc}'>{vix_cond}</span>", max_val=40, color=vc, suffix="", height=85)
+            st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="gauge_vix_v48")
+        with g2:
+            hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
+            h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
+            fig_hlth = _plotly_gauge(health_score, f"<b>HEALTH</b><br><span style='font-size:10px;color:{hc}'>{h_cond}</span>", max_val=100, color=hc, height=85)
+            st.plotly_chart(fig_hlth, use_container_width=True, config={"displayModeBar": False}, key="gauge_health_v48")
+        with g3:
+            kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
+            k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
+            fig_kly = _plotly_gauge(kelly*100, f"<b>KELLY</b><br><span style='font-size:10px;color:{kc}'>{k_cond}</span>", max_val=100, color=kc, suffix="%", height=85)
+            st.plotly_chart(fig_kly, use_container_width=True, config={"displayModeBar": False}, key="gauge_kelly_v48")
+        with g4:
+            ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
+            a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
+            fig_a = go.Figure(go.Indicator(
+                mode="gauge+number", value=n_alerts,
+                title={"text": f"<b>ALERTS</b><br><span style='font-size:10px;color:{ac}'>{a_cond}</span>", "font": {"size": 10, "color": "#8b949e"}},
+                number={"font": {"size": 18, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
+                gauge={"axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 8, "color": "#484f58"}},
+                       "bar": {"color": ac, "thickness": 0.75}, "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
+                       "steps": [{"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
+                                 {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
+                                 {"range": [4, 10], "color": "rgba(248,81,73,0.06)"}]},
+            ))
+            fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                               font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 10},
+                               height=85, margin={"t": 5, "b": 5, "l": 5, "r": 5})
+            st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="gauge_alerts_v48")
 
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: 4 KEY GAUGES
-    # ═══════════════════════════════════════════════════════════
-    # Re-fetch markov dengan aman (fix NameError)
-    _mk = snap.get("markov_v3")
-    markov_local = _mk if isinstance(_mk, dict) else {}
-    health = snap.get("health", {}) or {}
-    behavioral = snap.get("behavioral_macro", {}) or {}
-    health_score = float(health.get("composite_score", 50)) if isinstance(health, dict) else 50
-    kelly = float(markov_local.get("kelly_fraction", 0.25) or 0.25)
-    yves = behavioral.get("yves", {}) if isinstance(behavioral, dict) else {}
-    n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
-
-    # v46: Compact gauges — height 80px, no caption, tight margin
-    g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
-        vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
-        fig_vix = _plotly_gauge(vix_now, f"VIX<br><span style='font-size:7px'>{vix_cond}</span>", max_val=40, color=vc, suffix="", height=70)
-        st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="gauge_vix")
-    with g2:
-        hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
-        h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
-        fig_hlth = _plotly_gauge(health_score, f"HEALTH<br><span style='font-size:7px'>{h_cond}</span>", max_val=100, color=hc, height=70)
-        st.plotly_chart(fig_hlth, use_container_width=True, config={"displayModeBar": False}, key="gauge_health")
-    with g3:
-        kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
-        k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
-        fig_kly = _plotly_gauge(kelly*100, f"KELLY<br><span style='font-size:7px'>{k_cond}</span>", max_val=100, color=kc, suffix="%", height=70)
-        st.plotly_chart(fig_kly, use_container_width=True, config={"displayModeBar": False}, key="gauge_kelly")
-    with g4:
-        ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
-        a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
-        fig_a = go.Figure(go.Indicator(
-            mode="gauge+number", value=n_alerts,
-            title={"text": f"ALERTS<br><span style='font-size:7px'>{a_cond}</span>", "font": {"size": 8, "color": "#8b949e"}},
-            number={"font": {"size": 14, "color": "#c9d1d9", "weight": 700}, "valueformat": ".0f"},
-            gauge={"axis": {"range": [0, 10], "tickwidth": 0, "tickfont": {"size": 6, "color": "#484f58"}},
-                   "bar": {"color": ac, "thickness": 0.75}, "bgcolor": "#21262d", "borderwidth": 1, "bordercolor": "#30363d",
-                   "steps": [{"range": [0, 2], "color": "rgba(63,185,80,0.06)"},
-                             {"range": [2, 4], "color": "rgba(210,153,34,0.06)"},
-                             {"range": [4, 10], "color": "rgba(248,81,73,0.06)"}]},
-        ))
-        fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                           font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 8},
-                           height=70, margin={"t": 4, "b": 4, "l": 4, "r": 4})
-        st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="gauge_alerts")
-
-    # ═══════════════════════════════════════════════════════════
-    # ROW 3: QUAD PROB + CRASH (kiri) | BUBBLE + ASSET + SENTIMENT (kanan)
+    # ROW 2: CRASH + ASSET (kiri) | BUBBLE (kanan)
     # ═══════════════════════════════════════════════════════════
     left, right = st.columns([1, 1])
 
     with left:
-        # Crash Meter — compact
-        st.markdown("<div style='font-size:0.65rem;color:#F85149;font-weight:700;margin:0 0 2px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin:0 0 3px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
-        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="crash_meter")
+        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="crash_meter_v48")
 
-        # Asset Pulse — tight margin
-        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:4px 0 2px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.72rem;color:#3FB950;font-weight:700;margin:6px 0 3px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
-        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="asset_pulse")
+        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="asset_pulse_v48")
 
     with right:
-        # Boom-Bust Timeline — tight margin
-        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:0 0 2px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.72rem;color:#A371F7;font-weight:700;margin:0 0 3px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-
-        # Sentiment — tight margin
-        st.markdown("<div style='font-size:0.65rem;color:#D29922;font-weight:700;margin:4px 0 2px;'>🧠 SENTIMEN INVESTOR (AAII)</div>", unsafe_allow_html=True)
-        fig_bh = _plotly_behavioral_bar(snap)
-        st.plotly_chart(fig_bh, use_container_width=True, config={"displayModeBar": False}, key="behavioral")
+        st.caption("📖 Fase pasar: Inception→Accel→Euphoria→Crisis→Auction. Survival=kuat bertahan sebelum crash.")
 
     # ═══════════════════════════════════════════════════════════
     # ROW 4: DEEP TECHNICAL (expander)
