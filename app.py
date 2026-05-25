@@ -4765,7 +4765,7 @@ def page_dashboard():
     r1_left, r1_right = st.columns([1, 1])
 
     with r1_left:
-        # Cards: Structural/Monthly/Markov + Sentiment
+        # ══ Cards: Regime + Sentiment + Proyeksi + Catalyst + Calendar ══
         st.markdown(_regime_left_cards(snap, s_vals), unsafe_allow_html=True)
 
         # ── Proyeksi Transisi (dengan 1M Forward) ──
@@ -4879,47 +4879,32 @@ def page_dashboard():
             st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v50")
             st.markdown(f"<div style='text-align:center;font-size:0.6rem;margin-top:-4px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
+        # ══ CRASH METER (di bawah gauge, isi space kanan) ══
+        st.markdown("<div style='font-size:0.65rem;color:#F85149;font-weight:700;margin:2px 0 0;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        fig_cm = _plotly_crash_meter(snap)
+        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v51")
+
     # ═══════════════════════════════════════════════════════════
-    # ROW 2: CRASH METER (kiri) | BUBBLE (kanan) — compact
+    # ROW 2: BUBBLE (kiri) | ASSET PULSE (kanan)
     # ═══════════════════════════════════════════════════════════
     r2_left, r2_right = st.columns([1, 1])
 
     with r2_left:
-        st.markdown("<div style='font-size:0.68rem;color:#F85149;font-weight:700;margin:0 0 1px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
-        fig_cm = _plotly_crash_meter(snap)
-        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v50")
-
-    with r2_right:
-        st.markdown("<div style='font-size:0.68rem;color:#A371F7;font-weight:700;margin:0 0 1px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:0 0 1px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
 
-    # ── Row 3: Asset Pulse (full width, langsung di bawah) ──
-    st.markdown("<div style='font-size:0.68rem;color:#3FB950;font-weight:700;margin:2px 0 1px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
-    fig_ap = _plotly_asset_pulse(snap, prices)
-    st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v50")
+    with r2_right:
+        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:0 0 1px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        fig_ap = _plotly_asset_pulse(snap, prices)
+        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v51")
 
-    # ═══════════════════════════════════════════════════════════
-    # ROW 4: DEEP TECHNICAL (expander)
-    # ═══════════════════════════════════════════════════════════
+    # Deep Technical expander (collapsed, ga makan space)
     with st.expander("🔬 Deep Technical", expanded=False):
         fig_dt = _plotly_deep_technical(snap)
         if fig_dt:
-            st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False}, key="deep_tech")
-            st.caption("📖 CRI=options velocity(EXTREME=market stress) · Squeeze&gt;70=short squeeze imminent · VRP tinggi=jual premium")
+            st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False}, key="deep_tech_v51")
         else:
             st.caption("Deep Technical: CRI = options velocity, Squeeze = short squeeze prob, VRP = sell premium when high")
-        engines = [
-            ("GIP v10", snap.get("gip_v10") is not None), ("Markov V3", snap.get("markov_v3") is not None),
-            ("Yves v2", snap.get("yves_v2") is not None), ("Cascade", snap.get("cascade_analysis") is not None),
-            ("VRP", snap.get("vrp_scanner") is not None), ("Squeeze", snap.get("squeeze_scanner") is not None),
-            ("Smart Money", snap.get("smart_money") is not None), ("Discovery", snap.get("discovery_brain") is not None),
-            ("Supply Chain", snap.get("supply_chain_chains") is not None), ("Front-Run", len(snap.get("front_run_candidates",[]))>0),
-            ("Crypto Whale", len(snap.get("crypto_tokens",{}))>0), ("IHSG Broker", len(snap.get("ihsg_broker_proxy",{}))>0),
-        ]
-        cols = st.columns(6)
-        for i, (name, ok) in enumerate(engines):
-            color = "#3FB950" if ok else "#F85149"
-            cols[i % 6].markdown(f"<span style='font-size:0.6rem;color:{color};'>● {name}</span>", unsafe_allow_html=True)
 
 
 # ═══════════════════════════════════════════════════════════════════
