@@ -6085,7 +6085,7 @@ if "mq_override" not in st.session_state: st.session_state.mq_override = "Auto"
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v44 ALPHA — Hedgeye 3-Layer + 63 Engines + 6 Scrapers (Barchart·DeFiLlama·CFTC·Laevitas·CME) + Real-time + IHSG Anti-Fake + Universe Expansion + Market-Specific Cards")
+    st.caption("v46 — Hedgeye 3-Layer + 61 Engines + 6 Scrapers (Barchart·DeFiLlama·CFTC·Laevitas·CME) + Real-time + IHSG Anti-Fake + Universe Expansion + Market-Specific Cards")
     st.caption("📡 Data: Yahoo Finance (delayed 15-20m) · FRED (real-time)")
     st.divider()
     page = st.radio("Navigation", [
@@ -6133,3 +6133,86 @@ with st.sidebar:
                     f'<div style="font-size:0.65rem;color:#8B949E;">{_quad_name(_sq)}</div></div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════════
+# PIPELINE EXECUTION & PAGE ROUTER
+# ═══════════════════════════════════════════════════════════════════
+
+# Auto-run pipeline on first load or when Rebuild clicked
+snap = st.session_state.snap
+
+if st.session_state.loading or snap is None:
+    with st.spinner("🔄 Building macro regime snapshot..."):
+        try:
+            from orchestrator import run_pipeline
+            snap = run_pipeline(
+                portfolio_value=st.session_state.get("portfolio_value", 100_000),
+                max_age_hours=1,
+                progress_cb=lambda msg, pct: None,
+            )
+            st.session_state.snap = snap
+            st.session_state.loading = False
+        except Exception as e:
+            st.error(f"Pipeline failed: {e}")
+            logger.error(f"Pipeline failed: {e}", exc_info=True)
+            if snap is None:
+                # Create minimal snap so UI doesn't break
+                snap = {"ok": False, "errors": [str(e)], "prices": {}, "summary": {}, "quad": "Q3"}
+                st.session_state.snap = snap
+            st.session_state.loading = False
+
+# Fallback snap for rendering
+if snap is None:
+    snap = {"ok": False, "errors": [], "prices": {}, "summary": {}, "quad": "Q3", "build_time_s": 0, "prices_loaded": 0, "fred_coverage": 0}
+
+# Extract commonly used values
+vix_now = 20.0
+prices = snap.get("prices", {}) or {}
+if prices:
+    try:
+        vix_s = prices.get("^VIX")
+        if vix_s is not None and not (isinstance(vix_s, pd.Series) and vix_s.empty):
+            vix_now = float(vix_s.iloc[-1]) if hasattr(vix_s, 'iloc') else 20.0
+    except: pass
+
+# v45: Extract prices for asset pulse
+_usd_pairs = {"EURUSD=X", "GBPUSD=X", "USDJPY=X", "AUDUSD=X", "USDCAD=X", "NZDUSD=X", "USDCHF=X"}
+_ihsg_tickers = ["ASII.JK", "BBCA.JK", "BBRI.JK", "TLKM.JK", "UNVR.JK", "BMRI.JK", "BBNI.JK", "ANTM.JK", "BRPT.JK", "ASRI.JK", "CPIN.JK", "EXCL.JK", "INDF.JK", "ITMG.JK", "KLBF.JK", "MEDC.JK", "PGAS.JK", "PTBA.JK", "SMGR.JK", "WSKT.JK"]
+_us_stocks = ["AAPL", "NVDA", "MSFT", "GOOGL", "META", "TSLA", "AMZN", "AVGO", "CRM", "NFLX"]
+_ihsg_sector_map = {
+    "ASII.JK": "AUTO", "BBCA.JK": "BANK", "BBRI.JK": "BANK", "TLKM.JK": "TELCO", "UNVR.JK": "CONS",
+    "BMRI.JK": "BANK", "BBNI.JK": "BANK", "ANTM.JK": "MINING", "BRPT.JK": "CHEM", "ASRI.JK": "PROP",
+    "CPIN.JK": "FOOD", "EXCL.JK": "TELCO", "INDF.JK": "FOOD", "ITMG.JK": "MINING", "KLBF.JK": "PHARMA",
+    "MEDC.JK": "ENERGY", "PGAS.JK": "ENERGY", "PTBA.JK": "MINING", "SMGR.JK": "CEMENT", "WSKT.JK": "CONS"
+}
+
+ar = snap.get("risk_ranges", {}).get("asset_ranges", {}) if snap else {}
+
+# ═══════════════════════════════════════════════════════════════════
+# PAGE ROUTER
+# ═══════════════════════════════════════════════════════════════════
+if page == "🏠 Dashboard":
+    page_dashboard()
+elif page == "⚡ Alpha Center":
+    page_alpha()
+elif page == "🇺🇸 US Stocks":
+    page_us_stocks()
+elif page == "💱 Forex":
+    page_forex()
+elif page == "🛢️ Commodities":
+    page_commodities()
+elif page == "₿ Crypto":
+    page_crypto()
+elif page == "🌍 Global & EM":
+    page_global()
+elif page == "📖 Themes":
+    page_themes()
+elif page == "📊 Portfolio Stress":
+    page_portfolio_stress()
+
+# ═══════════════════════════════════════════════════════════════════
+# FOOTER
+# ═══════════════════════════════════════════════════════════════════
+st.divider()
+flip_note = f" · {snap.get('summary', {}).get('v2_composite_flipped_count', 0)} flipped" if snap.get("summary", {}).get("v2_composite_flipped_count") else ""
+st.caption(f"MacroRegime Pro v44 · Built {snap.get('build_time_s', 0):.0f}s ago · {snap.get('prices_loaded', 0)} assets · {snap.get('fred_coverage', 0)} indicators · AFS {snap.get('summary',{}).get('v32_afs',0):.1f}{flip_note}")

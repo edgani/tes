@@ -626,13 +626,13 @@ except Exception as e:
         def scan_all(self, *a, **k): return {"plays": [], "summary": "DailyPlayEngine unavailable"}
 
 try:
-    from engines.ihsg_specialist_v38 import IHSGSpecialistEngine
+    from engines.ihsg_specialist_v39 import IHSGSpecialistEngine
     _V39_TIER_S["ihsg_specialist"] = True
 except Exception as e:
-    logger.error(f"Failed to import ihsg_specialist_v38: {e}")
+    logger.error(f"Failed to import ihsg_specialist_v39: {e}")
     _V39_TIER_S["ihsg_specialist"] = False
     class IHSGSpecialistEngine:
-        def analyze(self, *a, **k): return {"goreng_phases": [], "conglomerate_flows": [], "hedgeye_check": {}}
+        def analyze(self, *a, **k): return {"goreng_phases": [], "conglomerate_flows": [], "hedgeye_check": {}, "broker_flow": {"flow_signal": "UNCLEAR", "confidence": 0}}
 
 try:
     from engines.entry_decision_engine import decide_entry
@@ -1826,7 +1826,6 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         "skew_term": {},
         "reflexivity": {},
         "boom_bust": {},
-        "druckenmiller_liquidity": {},
         "druckenmiller_liquidity": {},
         "conviction_sizing": {},
         "vanna_charm_flows": {},
