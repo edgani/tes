@@ -4021,6 +4021,11 @@ def _get_markov_confidence(ticker, snap):
 
 def render_ticker_card_v4(row, expanded=False):
     """Hedgeye-style ticker card v32.9 — Compact header + rich expander."""
+    # v39.7 FIX: Unique key counter to prevent StreamlitDuplicateElementKey
+    if "_chart_counter" not in st.session_state:
+        st.session_state._chart_counter = 0
+    st.session_state._chart_counter += 1
+    _ck = st.session_state._chart_counter
     ticker = row.get("ticker", "?")
     px = row.get("price", 0)
     direction = row.get("direction", "NEUTRAL")
@@ -4621,17 +4626,17 @@ def render_ticker_card_v4(row, expanded=False):
         with viz_cols[0]:
             fig_rr = _plotly_risk_range_position(px, trade_l, trade_r, entry, stop, t1, height=140)
             if fig_rr:
-                st.plotly_chart(fig_rr, use_container_width=True, config={"displayModeBar": False}, key=f"rr_{ticker}_v54")
+                st.plotly_chart(fig_rr, use_container_width=True, config={"displayModeBar": False}, key=f"rr_{ticker}_{_ck}")
         with viz_cols[1]:
             fig_greeks = _plotly_greeks_mini(options, direction, height=140)
             if fig_greeks:
-                st.plotly_chart(fig_greeks, use_container_width=True, config={"displayModeBar": False}, key=f"gk_{ticker}_v54")
+                st.plotly_chart(fig_greeks, use_container_width=True, config={"displayModeBar": False}, key=f"gk_{ticker}_{_ck}")
             else:
                 st.caption("Greeks data not available")
         with viz_cols[2]:
             fig_em = _plotly_expected_move(px, options.get("expected_move_pct"), t1, entry, height=140)
             if fig_em:
-                st.plotly_chart(fig_em, use_container_width=True, config={"displayModeBar": False}, key=f"em_{ticker}_v54")
+                st.plotly_chart(fig_em, use_container_width=True, config={"displayModeBar": False}, key=f"em_{ticker}_{_ck}")
             else:
                 st.caption("Expected move not available")
 
