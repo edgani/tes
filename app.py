@@ -2298,7 +2298,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         min_stop_dist = px * 0.003  # US equity / IHSG: 0.3%
     confluence = {"entry": [], "target": [], "entry_cluster": None, "target_cluster": None}
 
-    def _cluster_levels(levels, threshold_pct=0.02):
+    def _cluster_levels(levels, threshold_pct=0.02, market_type="us_equity"):
         valid = [float(v) for v in levels if v is not None and v > 0 and math.isfinite(float(v))]
         if len(valid) < 2: return []
         valid.sort()
@@ -2319,7 +2319,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         if gf_down: entry_candidates.append(gf_down)
         if cot_data and cot_signal == "BULLISH":
             entry_candidates.append(trade_low - atr15 * 0.5)
-        clusters = _cluster_levels(entry_candidates, 0.02)
+        clusters = _cluster_levels(entry_candidates, 0.02, market_type)
         if clusters:
             entry = clusters[0]["center"]
             confluence["entry"] = [("Trade Low", trade_low), ("Put Wall", pw), ("Max Pain−EM", mp - expected_move * px if mp and expected_move else None), ("Gamma Flip ↓", gf_down)]
@@ -2337,7 +2337,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         tp1_candidates = [trade_top]
         if cw: tp1_candidates.append(cw)
         if mp and expected_move: tp1_candidates.append(mp + expected_move * px)
-        t_clusters = _cluster_levels(tp1_candidates, 0.02)
+        t_clusters = _cluster_levels(tp1_candidates, 0.02, market_type)
         if t_clusters:
             tp1 = t_clusters[0]["center"]
             confluence["target"] = [("Trade Top", trade_top), ("Call Wall", cw), ("Max Pain+EM", mp + expected_move * px if mp and expected_move else None)]
@@ -2397,7 +2397,7 @@ def _build_row(ticker, prices, ar, vix_now=20, gamma_data=None, greeks_data=None
         tp1_candidates = [trade_low]
         if pw: tp1_candidates.append(pw)
         if mp and expected_move: tp1_candidates.append(mp - expected_move * px)
-        t_clusters = _cluster_levels(tp1_candidates, 0.02)
+        t_clusters = _cluster_levels(tp1_candidates, 0.02, market_type)
         if t_clusters:
             tp1 = t_clusters[0]["center"]
             confluence["target"] = [("Trade Low", trade_low), ("Put Wall", pw), ("Max Pain−EM", mp - expected_move * px if mp and expected_move else None)]
@@ -3318,6 +3318,9 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     """
     AUDITED RECOMMENDATION ENGINE v32.9 — Hedgeye + Options + COT + Dark Pool + UOA + On-chain + IDHL + RC + AFS
     """
+    # v39.7 FIX: Extract market_type from row to prevent NameError in _ffm calls
+    market_type = row.get("market_type", "us_equity") if row else "us_equity"
+
     def _safe_num(v, default=0.0):
         if v is None: return default
         try:
@@ -4890,7 +4893,7 @@ def render_invalid_cards(invalid_rows):
             f'<span style="font-weight:700;font-size:0.8rem;color:#E6EDF3;min-width:55px;">{ticker}</span>'
             f'<span style="font-size:0.6rem;padding:1px 5px;border-radius:4px;background:#F8514915;color:#F85149;border:1px solid #F8514940;">{dir_} {grade}</span>'
             f'<span style="flex:1;font-size:0.68rem;color:#8B949E;">{reason[:100]}</span>'
-            f'<span style="font-size:0.65rem;color:#484F58;min-width:50px;text-align:right;">{_ffm(px, market_type)}</span>'
+            f'<span style="font-size:0.65rem;color:#484F58;min-width:50px;text-align:right;">{_ffm(px, r.get("market_type", "us_equity"))}</span>'
             f'</div>', unsafe_allow_html=True
         )
 
@@ -5350,50 +5353,6 @@ def page_alpha():
     st.markdown("## ⚡ Alpha Center")
     sim_results = snap.get("simulation_results", {}) or {}
 
-    # ── v39: Keith Signal Dashboard (Duration Aware) ──
-    ks_data = snap.get("keith_sync", {})
-    ks_summary = snap.get("keith_summary", {})
-
-    if ks_summary and ks_summary.get("total_signals", 0) > 0:
-        st.markdown("### 🎙️ Keith McCullough Signal Sync (P0 Override)")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Signals", ks_summary.get("total_signals", 0))
-        c2.metric("TRADE Bullish", ks_summary.get("trade_bullish", 0))
-        c3.metric("TRADE Bearish", ks_summary.get("trade_bearish", 0))
-        c4.metric("Duration Mismatch", ks_summary.get("duration_mismatches", 0))
-        st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}</div>", unsafe_allow_html=True)
-
-        # Keith contradictions run in background only — no visible display
-        # They are applied via keith_sync in ticker rows (AVOID override)
-        contradictions = [(t, v) for t, v in ks_data.items() if isinstance(v, dict) and v.get("override") and v.get("keith_trade") != v.get("original_direction")]
-        if contradictions:
-            # Only show count in collapsed expander, never the actual tickers
-            with st.expander(f"🎙️ Keith Sync: {len(contradictions)} background overrides applied", expanded=False):
-                st.caption("Keith BEARISH overrides are applied silently. Affected tickers are filtered to AVOID in their respective market tabs.")
-                st.caption(f"Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}")
-
-    st.divider()
-
-    # ── v39.1: Gatekeeper + Walkforward + Hedgeye (BACKGROUND ONLY) ──
-    gk_data = snap.get("alpha_gatekeeper", {})
-    wf_data = snap.get("walkforward_results", {})
-    hp_data = snap.get("hedgeye_position_sizing", {})
-
-    # v39.1 FIX: Gatekeeper runs in background — data attached to each ticker detail expander
-    # Compact summary only, no main filter
-    gk_passed = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"}
-    gk_marginal = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "MARGINAL"}
-
-    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🟢 Gatekeeper PASS", len(gk_passed))
-        c2.metric("🟡 Gatekeeper MARGINAL", len(gk_marginal))
-        c3.metric("✅ Walkforward PASS", len([t for t, r in wf_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"]))
-        if gk_passed:
-            st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Top 5 passed: " + ", ".join(list(gk_passed.keys())[:5]) + "</div>", unsafe_allow_html=True)
-        st.caption("Gatekeeper + Walkforward + Hedgeye sizing data is shown inside each ticker’s 🔍 Toggle Full Details expander below.")
-
-    st.divider()
 
     summary = snap.get("summary", {}) or {}
     k1, k2, k3, k4 = st.columns(4)
@@ -5745,6 +5704,52 @@ def page_alpha():
     st.markdown("### 🔗 Supply Chain Bottleneck Chains")
     st.markdown("<div style='font-size:0.7rem;color:#8B949E;margin-bottom:8px;'>Deep research: AI Buildout → Mideast Shock → Indonesia Resources. Stage 1-6 with tickers + bottleneck + confidence + rotation map.</div>", unsafe_allow_html=True)
     render_supply_chain_chains(snap)
+    st.divider()
+
+    # ── Background Intelligence (Moved to Bottom) ──
+    # ── v39: Keith Signal Dashboard (Duration Aware) ──
+    ks_data = snap.get("keith_sync", {})
+    ks_summary = snap.get("keith_summary", {})
+
+    if ks_summary and ks_summary.get("total_signals", 0) > 0:
+        st.markdown("### 🎙️ Keith McCullough Signal Sync (P0 Override)")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Signals", ks_summary.get("total_signals", 0))
+        c2.metric("TRADE Bullish", ks_summary.get("trade_bullish", 0))
+        c3.metric("TRADE Bearish", ks_summary.get("trade_bearish", 0))
+        c4.metric("Duration Mismatch", ks_summary.get("duration_mismatches", 0))
+        st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}</div>", unsafe_allow_html=True)
+
+        # Keith contradictions run in background only — no visible display
+        # They are applied via keith_sync in ticker rows (AVOID override)
+        contradictions = [(t, v) for t, v in ks_data.items() if isinstance(v, dict) and v.get("override") and v.get("keith_trade") != v.get("original_direction")]
+        if contradictions:
+            # Only show count in collapsed expander, never the actual tickers
+            with st.expander(f"🎙️ Keith Sync: {len(contradictions)} background overrides applied", expanded=False):
+                st.caption("Keith BEARISH overrides are applied silently. Affected tickers are filtered to AVOID in their respective market tabs.")
+                st.caption(f"Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}")
+
+    st.divider()
+
+    # ── v39.1: Gatekeeper + Walkforward + Hedgeye (BACKGROUND ONLY) ──
+    gk_data = snap.get("alpha_gatekeeper", {})
+    wf_data = snap.get("walkforward_results", {})
+    hp_data = snap.get("hedgeye_position_sizing", {})
+
+    # v39.1 FIX: Gatekeeper runs in background — data attached to each ticker detail expander
+    # Compact summary only, no main filter
+    gk_passed = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"}
+    gk_marginal = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "MARGINAL"}
+
+    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🟢 Gatekeeper PASS", len(gk_passed))
+        c2.metric("🟡 Gatekeeper MARGINAL", len(gk_marginal))
+        c3.metric("✅ Walkforward PASS", len([t for t, r in wf_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"]))
+        if gk_passed:
+            st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Top 5 passed: " + ", ".join(list(gk_passed.keys())[:5]) + "</div>", unsafe_allow_html=True)
+        st.caption("Gatekeeper + Walkforward + Hedgeye sizing data is shown inside each ticker’s 🔍 Toggle Full Details expander below.")
+
     st.divider()
     with tab2:
         st.markdown("### 🔮 Pure Front-Run Candidates")
@@ -6862,6 +6867,7 @@ def render_ihsg_broker_v2(snap):
 
 def render_ticker_detail_comprehensive(ticker, snap):
     """Comprehensive single-ticker view: all methodologies, all data sources."""
+    market_type = _classify_ticker_market(ticker)
     # ── Broker Intelligence (for IHSG tickers) ──
     if ticker.endswith(".JK"):
         broker = (snap.get("ihsg_broker_proxy", {}) or {}).get(ticker)
@@ -6889,6 +6895,7 @@ def render_ticker_detail_comprehensive(ticker, snap):
     except:
         st.error(f"Invalid price data for {ticker}")
         return
+    market_type = _classify_ticker_market(ticker)
     st.markdown(f"## 📊 {ticker} · {_ffm(px, market_type)}")
     ar = (snap.get("risk_ranges", {}) or {}).get("asset_ranges", {})
     if ticker in ar:
