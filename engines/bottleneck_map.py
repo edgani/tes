@@ -1,4 +1,4 @@
-"""bottleneck_map.py — Bottleneck Ticker Universe & Supply Chain Graph
+"""bottleneck_map.py — Bottleneck Ticker Universe & Supply Chain Graph v40.1
 Maps tickers to bottleneck layers, catalysts, and correlated assets.
 """
 
@@ -38,44 +38,71 @@ BOTTLENECK_TICKERS = [
     "BTC-USD", "ETH-USD", "SOL-USD", "MSTR", "COIN", "RIOT", "MARA",
     # Container / Logistics
     "UPS", "FDX", "CHRW", "EXPD",
+    # LNG / Europe Energy
+    "UNG", "LNG", "TELL", "GLNG", "FLNG",
+    # Taiwan / China exposure
+    "TSM", "UMC", "ASML", "QCOM", "SWKS", "QRVO", "CRWD", "PDD", "BABA", "JD", "NIO", "LI", "XPEV",
+    # China Property / Steel
+    "BHP", "VALE", "MT", "STLD", "NUE", "CLF", "X", "FCX",
+    # Fed Pivot / Rate sensitive
+    "TLT", "IEF", "SCHP", "TMF", "TBT", "KRE", "XLF", "BAC", "JPM", "C", "WFC",
+    # Water
+    "AWK", "CWT", "Xylem", "WTRG", "AQUA",
+    # Space / Satellite
+    "ASTS", "SPCE", "RKLB", "LMT", "NOC", "RTX", "IRDM", "VSAT",
+    # Biotech / GLP-1
+    "LLY", "NVO", "DHR", "TECD", "CTLT", "AMPH", "PETQ", "DXCM", "TNDM", "UNH", "CI",
 ]
 
 # Supply chain edges: upstream -> downstream
 SUPPLY_CHAIN_EDGES = {
-    # AI Compute
     "NVDA": ["TSM", "MU", "AVGO", "COHR", "MRVL"],
     "TSM": ["ASML", "LRCX", "AMAT", "KLAC"],
     "MU": ["SKHYNIX"],
     "COHR": ["NXT", "AMPH", "LITE"],
     "MRVL": ["NXT", "AMPH"],
     "NXT": ["AMPH"],
-    # Power
-    "VST": ["SCCO", "FCX"],  # power needs copper
-    "CEG": ["CCJ", "UUUU"],  # nuclear needs uranium
+    "VST": ["SCCO", "FCX"],
+    "CEG": ["CCJ", "UUUU"],
     "BE": ["GNRC", "WIRE"],
-    # Oil cascade
     "CL=F": ["FRO", "TK", "INSW", "NAT"],
     "FRO": ["VLO", "MPC", "PSX"],
     "VLO": ["NTR", "MOS", "CF"],
     "NTR": ["MOS", "CF"],
-    # Indonesia
     "NCKL.JK": ["ANTM.JK", "INCO.JK"],
     "ADRO.JK": ["ITMG.JK", "PTBA.JK"],
     "AALI.JK": ["LSIP.JK", "SMAR.JK"],
-    # Uranium
     "CCJ": ["UUUU", "UEC", "DNN"],
     "URA": ["NEE", "CEG", "VST"],
-    # Copper/Grid
     "SCCO": ["FCX", "WIRE", "GNRC"],
     "WIRE": ["CHPT", "EVGO", "BE"],
-    # Semiconductors
     "ASML": ["LRCX", "AMAT", "KLAC"],
     "ENTG": ["MKSI"],
-    # Rare Earth
     "MP": ["NEO", "MPCO"],
-    # Crypto
     "BTC-USD": ["MSTR", "COIN", "RIOT", "MARA"],
     "ETH-USD": ["COIN", "SOL-USD"],
+    "ZIM": ["MATX", "DAC"],
+    # LNG
+    "UNG": ["LNG", "TELL", "GLNG", "FLNG"],
+    "LNG": ["CEG", "VST", "NEE"],
+    # Taiwan blockade
+    "TSM": ["NVDA", "QCOM", "SWKS", "QRVO"],
+    "ASML": ["TSM", "INTC", "NVDA"],
+    # China property
+    "BHP": ["VALE", "MT", "STLD"],
+    "MT": ["STLD", "NUE", "CLF"],
+    # Fed pivot
+    "TLT": ["TMF", "SCHP", "IEF"],
+    "KRE": ["XLF", "BAC", "JPM"],
+    # Water
+    "AWK": ["CWT", "WTRG", "AQUA"],
+    # Space
+    "ASTS": ["RKLB", "IRDM", "VSAT"],
+    "SPCE": ["LMT", "NOC"],
+    # GLP-1
+    "LLY": ["NVO", "DHR", "TECD"],
+    "NVO": ["CTLT", "AMPH", "PETQ"],
+    "AMPH": ["DXCM", "TNDM"],
 }
 
 # Reverse lookup
@@ -119,10 +146,38 @@ BOTTLENECK_META = {
     "BTC-USD": {"layer": "Crypto / Store of Value", "priority": "P1", "bottleneck": "Exchange balance", "catalyst": "Halving supply squeeze + ETF flows", "thesis": "Post-halving supply shock. Exchange BTC at 5-year low. Whale accumulation.", "correlates_with": ["ETH-USD", "MSTR", "COIN"]},
     "ETH-USD": {"layer": "Crypto / Smart Contract", "priority": "P1", "bottleneck": "L2 fragmentation", "catalyst": "ETH ETF staking approval", "thesis": "Smart contract platform. ETF approval = institutional bid. Staking yield = bond proxy.", "correlates_with": ["BTC-USD", "SOL-USD", "COIN"]},
     "ZIM": {"layer": "Container Shipping", "priority": "P2", "bottleneck": "Red Sea diversion capacity", "catalyst": "Houthi escalation / ceasefire", "thesis": "Red Sea diversion = +15% fleet miles. Rate volatility extreme.", "correlates_with": ["MATX", "DAC"]},
+    # LNG
+    "UNG": {"layer": "Natural Gas", "priority": "P1", "bottleneck": "LNG export capacity", "catalyst": "Europe refill season + Freeport restart", "thesis": "US LNG export constrained by permit delays. European demand pull.", "correlates_with": ["LNG", "TELL", "CEG"]},
+    "LNG": {"layer": "LNG Shipping", "priority": "P1", "bottleneck": "FSRU availability", "catalyst": "German LNG terminal expansion", "thesis": "FSRU = floating regas. Limited fleet. Charter rates at multi-year highs.", "correlates_with": ["GLNG", "FLNG", "UNG"]},
+    # Taiwan / China
+    "QCOM": {"layer": "Mobile SoC", "priority": "P1", "bottleneck": "TSM advanced node allocation", "catalyst": "AI phone cycle 2026", "thesis": "TSM capacity allocation: AI GPU > mobile SoC. Supply tightness.", "correlates_with": ["TSM", "SWKS", "QRVO"]},
+    "SWKS": {"layer": "RF Frontend", "priority": "P2", "bottleneck": "BAW filter capacity", "catalyst": "5G mmWave adoption", "thesis": "RF content per phone increasing. BAW filter supply concentrated.", "correlates_with": ["QCOM", "QRVO"]},
+    "BABA": {"layer": "China E-commerce", "priority": "P2", "bottleneck": "Consumer confidence", "catalyst": "Ant Group restructuring", "thesis": "China stimulus + regulatory easing. Valuation discount extreme.", "correlates_with": ["JD", "PDD"]},
+    "NIO": {"layer": "China EV", "priority": "P2", "bottleneck": "Battery swap network capex", "catalyst": "EU tariff negotiation", "thesis": "Battery swap = differentiation. EU tariff risk on exports.", "correlates_with": ["LI", "XPEV", "TSLA"]},
+    # China property / steel
+    "BHP": {"layer": "Iron Ore", "priority": "P1", "bottleneck": "Pilbara grade decline", "catalyst": "China property stimulus", "thesis": "Iron ore price tied to China property floor. 60% of seaborne demand.", "correlates_with": ["VALE", "MT", "FCX"]},
+    "VALE": {"layer": "Iron Ore / Nickel", "priority": "P1", "bottleneck": "Brumadinho dam legacy", "catalyst": "S11D expansion", "thesis": "Diversified miner. Iron ore + nickel + copper. Brazil political risk.", "correlates_with": ["BHP", "MT", "NCKL.JK"]},
+    "STLD": {"layer": "Steel / Mini-mill", "priority": "P2", "bottleneck": "Scrap supply", "catalyst": "Infrastructure bill spend", "thesis": "Mini-mill = lower carbon. Scrap supply constrained by auto shredder capacity.", "correlates_with": ["NUE", "CLF", "MT"]},
+    # Fed pivot
+    "TLT": {"layer": "Long Treasury", "priority": "P0", "bottleneck": "Fed duration supply", "catalyst": "Rate cut cycle", "thesis": "Duration play on Fed pivot. Convexity + carry when cuts begin.", "correlates_with": ["IEF", "TMF", "SCHP"]},
+    "TMF": {"layer": "3x Long Treasury", "priority": "P2", "bottleneck": "Roll yield decay", "catalyst": "Bull steepener", "thesis": "Levered duration. High decay in chop. Only for tactical holds.", "correlates_with": ["TLT", "TBT"]},
+    "KRE": {"layer": "Regional Banks", "priority": "P1", "bottleneck": "CRE exposure", "catalyst": "Rate cut relief", "thesis": "Regional banks = rate sensitivity. CRE mark-to-market pain.", "correlates_with": ["XLF", "BAC", "JPM"]},
+    # Water
+    "AWK": {"layer": "Water Utility", "priority": "P1", "bottleneck": "Aging infrastructure", "catalyst": "EPA lead rule", "thesis": "Regulated utility = rate base growth. Lead pipe replacement = decade capex.", "correlates_with": ["CWT", "WTRG"]},
+    "CWT": {"layer": "Water Utility", "priority": "P2", "bottleneck": "California drought", "catalyst": "Desalination permits", "thesis": "West coast water stress. Desalination = long-term solution.", "correlates_with": ["AWK", "AQUA"]},
+    # Space
+    "ASTS": {"layer": "Satellite Direct-to-Cell", "priority": "P1", "bottleneck": "Spectrum allocation", "catalyst": "AT&T partnership launch", "thesis": "Space-based cellular = TAM expansion. Regulatory + technical risk.", "correlates_with": ["IRDM", "VSAT"]},
+    "RKLB": {"layer": "Launch / Space Systems", "priority": "P1", "bottleneck": "Neutron engine test", "catalyst": "Neutron first flight 2025", "thesis": "Reusable launch = cost curve down. Space systems = vertical integration.", "correlates_with": ["SPCE", "LMT"]},
+    "IRDM": {"layer": "Satellite IoT / Voice", "priority": "P1", "bottleneck": "Ground station capacity", "catalyst": "Iridium NEXT completion", "thesis": "Monopoly on satellite voice. IoT = growth vector.", "correlates_with": ["ASTS", "VSAT"]},
+    # GLP-1
+    "LLY": {"layer": "GLP-1 Drug", "priority": "P0", "bottleneck": "Peptide API capacity", "catalyst": "Mounjaro/Zephyr label expansion", "thesis": "Demand outstrips manufacturing 10:1. Pricing power + volume.", "correlates_with": ["NVO", "DHR", "TECD"]},
+    "NVO": {"layer": "GLP-1 Drug", "priority": "P0", "bottleneck": "Wegovy fill-finish", "catalyst": "Obesity Medicare coverage", "thesis": "Wegovy = weight loss standard. Manufacturing bottleneck = margin expansion.", "correlates_with": ["LLY", "CTLT", "AMPH"]},
+    "DXCM": {"layer": "CGM / Delivery Device", "priority": "P1", "bottleneck": "Sensor manufacturing", "catalyst": "Stelo OTC launch", "thesis": "CGM = standard of care for diabetes. OTC expansion = TAM 3x.", "correlates_with": ["TNDM", "LLY"]},
+    "UNH": {"layer": "Insurance / Coverage", "priority": "P1", "bottleneck": "Obesity classification", "catalyst": "CMS coverage decision", "thesis": "Insurance coverage = GLP-1 demand unlock. UNH = largest private payer.", "correlates_with": ["CI", "LLY", "NVO"]},
 }
 
 # ═══════════════════════════════════════════════════════════════════
-# CHAIN REACTION DEFINITIONS (v40 expanded)
+# CHAIN REACTION DEFINITIONS (v40.1 — 16 chains)
 # ═══════════════════════════════════════════════════════════════════
 CHAIN_REACTIONS = {
     "AI_COMPUTE_BUILDOUT": {
@@ -171,11 +226,11 @@ CHAIN_REACTIONS = {
         "confidence": 0.80,
         "source": "Glencore / Wood Mackenzie supply models",
         "stages": [
-            {"stage": 1, "layer": "Copper Mining", "tickers": ["SCCO", "FCX", "GLEN.L"], "bottleneck": "Grade decline + water + permit delays"},
+            {"stage": 1, "layer": "Copper Mining", "tickers": ["SCCO", "FCX", "BHP"], "bottleneck": "Grade decline + water + permit delays"},
             {"stage": 2, "layer": "Wire / Cable", "tickers": ["WIRE", "GNRC"], "bottleneck": "Grid interconnection queue + transformer shortage"},
             {"stage": 3, "layer": "Grid Infrastructure", "tickers": ["VST", "NEE", "D", "BE"], "bottleneck": "Transmission buildout + NIMBY"},
             {"stage": 4, "layer": "EV Charging", "tickers": ["CHPT", "EVGO", "BLNK"], "bottleneck": "Utilization rate + grid connection"},
-            {"stage": 5, "layer": "EV OEM", "tickers": ["TSLA", "RIVN", "LCID"], "bottleneck": "Copper motor winding + battery cost"},
+            {"stage": 5, "layer": "EV OEM", "tickers": ["TSLA", "RIVN", "LCID", "NIO"], "bottleneck": "Copper motor winding + battery cost"},
         ]
     },
     "URANIUM_NUCLEAR_RENAISSANCE": {
@@ -210,7 +265,7 @@ CHAIN_REACTIONS = {
             {"stage": 1, "layer": "Rare Earth Mining", "tickers": ["MP"], "bottleneck": "Mountain Pass throughput + separation"},
             {"stage": 2, "layer": "Separation / Magnet", "tickers": ["NEO", "MPCO"], "bottleneck": "NdFeB magnet capacity + heavy rare earth sourcing"},
             {"stage": 3, "layer": "Defense / Aerospace", "tickers": ["LMT", "NOC", "RTX", "BA"], "bottleneck": "F-35 motor + missile guidance magnet supply"},
-            {"stage": 4, "layer": "EV Motors", "tickers": ["TSLA", "GM", "F"], "bottleneck": "Permanent magnet motor vs induction switch"},
+            {"stage": 4, "layer": "EV Motors", "tickers": ["TSLA", "NIO", "GM", "F"], "bottleneck": "Permanent magnet motor vs induction switch"},
         ]
     },
     "RED_SEA_CONTAINER_CRISIS": {
@@ -249,25 +304,93 @@ CHAIN_REACTIONS = {
             {"stage": 5, "layer": "Complications / Insurance", "tickers": ["UNH", "CI"], "bottleneck": "Coverage expansion + obesity classification"},
         ]
     },
+    "LNG_EUROPE_ENERGY_CRISIS": {
+        "trigger": "Russian pipeline cutoff + winter demand = LNG scramble",
+        "confidence": 0.70,
+        "source": "IEA / ICIS LNG market report",
+        "stages": [
+            {"stage": 1, "layer": "US Natural Gas", "tickers": ["UNG", "USO"], "bottleneck": "LNG export permit delays + pipeline capacity"},
+            {"stage": 2, "layer": "LNG Shipping / FSRU", "tickers": ["LNG", "GLNG", "FLNG"], "bottleneck": "FSRU availability + charter rates"},
+            {"stage": 3, "layer": "Liquefaction", "tickers": ["TELL", "CEG"], "bottleneck": "FID + offtake agreements"},
+            {"stage": 4, "layer": "European Utilities", "tickers": ["NEE", "VST", "D"], "bottleneck": "Grid interconnection + storage fill"},
+            {"stage": 5, "layer": "Fertilizer / Chemicals", "tickers": ["NTR", "MOS", "CF"], "bottleneck": "Gas-to-ammonia cost pass-through"},
+        ]
+    },
+    "TAIWAN_STRAIT_BLOCKADE": {
+        "trigger": "China escalation / semiconductor supply chain severance",
+        "confidence": 0.55,
+        "source": "CSIS / RAND wargaming scenarios",
+        "stages": [
+            {"stage": 1, "layer": "TSMC / Foundry", "tickers": ["TSM", "UMC"], "bottleneck": "Wafer fab + EUV lithography"},
+            {"stage": 2, "layer": "Fabless Design", "tickers": ["NVDA", "QCOM", "AMD", "AVGO"], "bottleneck": "Advanced node allocation"},
+            {"stage": 3, "layer": "Equipment", "tickers": ["ASML", "LRCX", "AMAT"], "bottleneck": "Spare parts + service engineers"},
+            {"stage": 4, "layer": "Materials", "tickers": ["ENTG", "MKSI"], "bottleneck": "High-purity chemicals + gases"},
+            {"stage": 5, "layer": "US Defense / Substitution", "tickers": ["INTC", "LMT", "NOC", "RTX"], "bottleneck": "CHIPS Act fab ramp + munitions"},
+        ]
+    },
+    "CHINA_PROPERTY_COLLAPSE": {
+        "trigger": "Evergrande contagion + steel demand cliff",
+        "confidence": 0.65,
+        "source": "Nomura / China steel association",
+        "stages": [
+            {"stage": 1, "layer": "Iron Ore", "tickers": ["BHP", "VALE", "MT"], "bottleneck": "Seaborne demand 60% China"},
+            {"stage": 2, "layer": "Steel", "tickers": ["STLD", "NUE", "CLF", "MT"], "bottleneck": "Blast furnace utilization"},
+            {"stage": 3, "layer": "Copper", "tickers": ["SCCO", "FCX"], "bottleneck": "Construction wiring demand"},
+            {"stage": 4, "layer": "Cement / Aggregates", "tickers": ["CX", "SUM"], "bottleneck": "Local government financing"},
+            {"stage": 5, "layer": "China Banks", "tickers": ["BABA", "JD", "PDD"], "bottleneck": "Consumer confidence + NPLs"},
+        ]
+    },
+    "FED_PIVOT_RATE_CUT_CASCADE": {
+        "trigger": "Fed cuts 150bps + QT end = liquidity flood",
+        "confidence": 0.60,
+        "source": "Hedgeye GIP Model / Fed funds futures",
+        "stages": [
+            {"stage": 1, "layer": "Long Duration Bonds", "tickers": ["TLT", "IEF", "TMF", "SCHP"], "bottleneck": "Treasury issuance + foreign demand"},
+            {"stage": 2, "layer": "Rate-Sensitive Equity", "tickers": ["XLK", "XLY", "QQQ", "IWM"], "bottleneck": "Earnings recession vs multiple expansion"},
+            {"stage": 3, "layer": "Regional Banks", "tickers": ["KRE", "XLF", "BAC", "JPM"], "bottleneck": "CRE mark-to-market + NIM compression"},
+            {"stage": 4, "layer": "Crypto / Risk", "tickers": ["BTC-USD", "ETH-USD", "COIN"], "bottleneck": "Dollar liquidity + regulatory clarity"},
+            {"stage": 5, "layer": "EM / Commodity", "tickers": ["EEM", "XLE", "GLD"], "bottleneck": "DXY collapse + China stimulus"},
+        ]
+    },
+    "WATER_CRISIS_COLORADO_RIVER": {
+        "trigger": "Colorado River Compact renegotiation + megadrought",
+        "confidence": 0.60,
+        "source": "USBR / Arizona State water policy",
+        "stages": [
+            {"stage": 1, "layer": "Water Utilities", "tickers": ["AWK", "CWT", "WTRG"], "bottleneck": "Rate base growth + lead replacement"},
+            {"stage": 2, "layer": "Desalination / Tech", "tickers": ["AQUA"], "bottleneck": "Permit + brine disposal"},
+            {"stage": 3, "layer": "Agriculture / Fertilizer", "tickers": ["NTR", "MOS", "CF"], "bottleneck": "Water rights + irrigation cost"},
+            {"stage": 4, "layer": "Solar / Power", "tickers": ["NEE", "VST", "CEG"], "bottleneck": "Cooling water for thermal plants"},
+            {"stage": 5, "layer": "Real Estate", "tickers": ["AMT", "CCI"], "bottleneck": "Phoenix/Vegas growth constraints"},
+        ]
+    },
+    "SPACE_SATELLITE_BOTTLENECK": {
+        "trigger": "LEO congestion + direct-to-cell spectrum rush",
+        "confidence": 0.65,
+        "source": "FCC / Euroconsult satellite forecast",
+        "stages": [
+            {"stage": 1, "layer": "Launch", "tickers": ["RKLB", "SPCE"], "bottleneck": "Launch cadence + range capacity"},
+            {"stage": 2, "layer": "Satellite Manufacturing", "tickers": ["ASTS", "IRDM", "VSAT"], "bottleneck": "Bus production + solar array supply"},
+            {"stage": 3, "layer": "Ground Infrastructure", "tickers": ["AMT", "CCI"], "bottleneck": "Gateway site + backhaul fiber"},
+            {"stage": 4, "layer": "Spectrum / Regulation", "tickers": ["T", "VZ", "CMCSA"], "bottleneck": "C-band clearing + interference rules"},
+            {"stage": 5, "layer": "Defense / ISR", "tickers": ["LMT", "NOC", "RTX"], "bottleneck": "Classified payload integration"},
+        ]
+    },
 }
 
 def get_bottleneck_tickers():
-    """Return full bottleneck ticker list."""
     return BOTTLENECK_TICKERS
 
 def get_ticker_bottleneck(ticker: str):
-    """Return bottleneck metadata for a ticker."""
     return BOTTLENECK_META.get(ticker.upper(), None)
 
 def get_correlated_tickers(ticker: str):
-    """Return correlated tickers from bottleneck graph."""
     meta = get_ticker_bottleneck(ticker)
     if meta:
         return meta.get("correlates_with", [])
     return []
 
 def get_all_by_market(market_type: str = "us_equity"):
-    """Filter bottleneck tickers by market."""
     if market_type == "us_equity":
         return [t for t in BOTTLENECK_TICKERS if not t.endswith(".JK") and "=" not in t and "-USD" not in t]
     elif market_type == "commodity":
@@ -281,9 +404,7 @@ def get_all_by_market(market_type: str = "us_equity"):
     return BOTTLENECK_TICKERS
 
 def get_chain_reaction(name: str):
-    """Get a chain reaction definition by name."""
     return CHAIN_REACTIONS.get(name, None)
 
 def get_all_chain_reactions():
-    """Return all chain reaction definitions."""
     return CHAIN_REACTIONS
