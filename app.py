@@ -875,23 +875,23 @@ def _regime_left_cards(snap, s_vals):
     cs_c = "#3FB950" if cs < 30 else "#D29922" if cs < 60 else "#F85149"
 
     html = (
-        f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:6px 8px;">'
+        f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;">'
         # Row 1: 3 cards
         f'<div style="display:flex;gap:0;margin-bottom:2px;">'
         f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">STRUCTURAL</div>'
-        f'<div style="font-size:1.1rem;font-weight:800;color:{sq_c};line-height:1.1;">{sq}</div></div>'
+        f'<div style="font-size:0.65rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">STRUCTURAL</div>'
+        f'<div style="font-size:1.15rem;font-weight:800;color:{sq_c};line-height:1.1;">{sq}</div></div>'
         f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
         f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MONTHLY</div>'
-        f'<div style="font-size:1.1rem;font-weight:800;color:{mq_c};line-height:1.1;">{mq}</div></div>'
+        f'<div style="font-size:0.65rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MONTHLY</div>'
+        f'<div style="font-size:1.15rem;font-weight:800;color:{mq_c};line-height:1.1;">{mq}</div></div>'
         f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
         f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.55rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MARKOV</div>'
-        f'<div style="font-size:0.95rem;font-weight:800;color:{mk_c};line-height:1.1;">{mk_next or "—"}</div></div>'
+        f'<div style="font-size:0.65rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MARKOV</div>'
+        f'<div style="font-size:1.0rem;font-weight:800;color:{mk_c};line-height:1.1;">{mk_next or "—"}</div></div>'
         f'</div>'
         # Row 2: Conf + Kelly
-        f'<div style="font-size:0.6rem;color:#8b949e;text-align:center;margin-bottom:2px;">'
+        f'<div style="font-size:0.65rem;color:#8b949e;text-align:center;margin-bottom:2px;">'
         f'Conf {conf_pct}% · Kelly {int(mk_kelly*100)}%'
         f'</div>'
         # Row 3: Confidence bar
@@ -902,9 +902,9 @@ def _regime_left_cards(snap, s_vals):
         f'<div style="width:{bp:.0f}%;background:#3FB950;"></div>'
         f'<div style="width:{np:.0f}%;background:#8B949E;"></div>'
         f'<div style="width:{bep:.0f}%;background:#F85149;"></div></div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8b949e;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.65rem;color:#8b949e;">'
         f'<span>🐂 {bull:.0f}%</span><span>⚖ {neut:.0f}%</span><span>🐻 {bear:.0f}%</span></div>'
-        f'<div style="font-size:0.55rem;color:{cs_c};margin-top:1px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
+        f'<div style="font-size:0.65rem;color:{cs_c};margin-top:1px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
         f'</div>'
     )
     return html
@@ -1028,19 +1028,19 @@ def _economic_calendar_mini(sq="Q3", mq="Q2"):
         title = f"📰 ECONOMIC CALENDAR — Stabil {sq}"
 
     html = (
-        f'<div style="background:#161b22;border:1px solid #58A6FF30;border-radius:5px;padding:4px 6px;margin-top:2px;">'
-        f'<div style="font-size:0.52rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;margin-bottom:1px;">{title}</div>'
+        f'<div style="background:#161b22;border:1px solid #58A6FF30;border-radius:5px;padding:8px 10px;margin-top:4px;">'
+        f'<div style="font-size:0.6rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;margin-bottom:1px;">{title}</div>'
     )
     for emoji, name, date, impact in events[:3]:
         html += (
             f'<div style="display:flex;justify-content:space-between;align-items:center;'
             f'padding:1px 0;border-bottom:1px solid #21262d;">'
-            f'<div><span style="font-size:0.52rem;color:#c9d1d9;"><b>{name}</b></span>'
-            f'<span style="font-size:0.45rem;color:#8b949e;margin-left:3px;">{date}</span></div>'
-            f'<div style="font-size:0.45rem;color:#484f58;max-width:110px;text-align:right;">{impact}</div></div>'
+            f'<div><span style="font-size:0.6rem;color:#c9d1d9;"><b>{name}</b></span>'
+            f'<span style="font-size:0.52rem;color:#8b949e;margin-left:3px;">{date}</span></div>'
+            f'<div style="font-size:0.52rem;color:#484f58;max-width:110px;text-align:right;">{impact}</div></div>'
         )
     html += (
-        f'<div style="font-size:0.42rem;color:#484f58;margin-top:1px;text-align:center;">'
+        f'<div style="font-size:0.5rem;color:#484f58;margin-top:1px;text-align:center;">'
         f'📖 ForexFactory · Event bisa mengubah regime</div></div>'
     )
     return html
@@ -1233,11 +1233,11 @@ def _plotly_crash_meter(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 7},
-        margin={"t": 3, "b": 18, "l": 3, "r": 3}, height=60,
+        margin={"t": 4, "b": 24, "l": 3, "r": 3}, height=65,
         annotations=[{
             "text": f"<b>🚨 {total}/25 <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
-            "x": 0.5, "y": -0.18, "showarrow": False,
-            "font": {"size": 7, "color": "#8b949e"},
+            "x": 0.5, "y": -0.24, "showarrow": False,
+            "font": {"size": 8, "color": "#8b949e"},
         }],
     )
     return fig
@@ -1273,7 +1273,7 @@ def _plotly_asset_pulse(snap, prices):
         xaxis={"gridcolor": "#21262d", "tickfont": {"size": 7, "color": "#8b949e"},
                "zeroline": True, "zerolinecolor": "#30363d", "zerolinewidth": 1},
         yaxis={"gridcolor": "#21262d", "tickfont": {"size": 8, "color": "#c9d1d9"}},
-        showlegend=False, height=55,
+        showlegend=False, height=50,
     )
     return fig
 
@@ -1464,7 +1464,7 @@ def _boombust_timeline_html(snap):
     bar_color = "#3FB950" if score <= 3 else "#D29922" if score <= 6 else "#F85149"
 
     return (
-        f'<div style="padding:8px 10px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
+        f'<div style="padding:12px 14px;background:#161b22;border:1px solid #30363d;border-radius:8px;">'
         # Header
         f'<div style="font-size:0.55rem;color:#A371F7;font-weight:600;margin-bottom:4px;">🌀 Boom-Bust Stage</div>'
         # Timeline
@@ -4682,19 +4682,19 @@ def _render_crash_meter(snap):
 
     # Header
     html += '<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">'
-    html += '<div style="width:56px;height:56px;border-radius:50%;background:' + status_bg + ';border:2px solid ' + status_color + ';display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:' + status_color + ';">' + str(total) + '<span style="font-size:0.6rem;">/5</span></div>'
+    html += '<div style="width:56px;height:56px;border-radius:50%;background:' + status_bg + ';border:2px solid ' + status_color + ';display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:800;color:' + status_color + ';">' + str(total) + '<span style="font-size:0.65rem;">/5</span></div>'
     html += '<div><div style="font-size:1.1rem;font-weight:700;color:' + status_color + ';letter-spacing:-0.5px;">' + emoji + ' ' + status + '</div>'
-    html += '<div style="font-size:0.7rem;color:#8B949E;margin-top:2px;">' + advice + '</div></div></div>'
+    html += '<div style="font-size:0.75rem;color:#8B949E;margin-top:2px;">' + advice + '</div></div></div>'
 
     # Timeline
     html += '<div style="background:' + status_bg + ';border-left:3px solid ' + status_color + ';border-radius:6px;padding:8px 10px;margin-bottom:10px;">'
-    html += '<div style="font-size:0.6rem;color:' + status_color + ';text-transform:uppercase;font-weight:600;margin-bottom:3px;">⏱️ Timeline Estimate</div>'
+    html += '<div style="font-size:0.65rem;color:' + status_color + ';text-transform:uppercase;font-weight:600;margin-bottom:3px;">⏱️ Timeline Estimate</div>'
     html += '<div style="font-size:0.72rem;color:#E6EDF3;">' + timeline + '</div>'
-    html += '<div style="font-size:0.6rem;color:#484F58;margin-top:2px;">Update: A1/A2/B daily · CAPE monthly · Next check: tomorrow</div>'
+    html += '<div style="font-size:0.65rem;color:#484F58;margin-top:2px;">Update: A1/A2/B daily · CAPE monthly · Next check: tomorrow</div>'
     html += '</div>'
 
     # Gauge bar (5 segments)
-    html += '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:0.55rem;color:#8B949E;margin-bottom:3px;text-transform:uppercase;font-weight:600;"><span>0 Aman</span><span>1</span><span>2 Waspada</span><span>3 Exit</span><span>4</span><span>5 Critical</span></div>'
+    html += '<div style="margin-bottom:12px;"><div style="display:flex;justify-content:space-between;font-size:0.62rem;color:#8B949E;margin-bottom:3px;text-transform:uppercase;font-weight:600;"><span>0 Aman</span><span>1</span><span>2 Waspada</span><span>3 Exit</span><span>4</span><span>5 Critical</span></div>'
     html += '<div style="height:10px;background:#21262D;border-radius:5px;overflow:hidden;display:flex;">'
     html += '<div style="width:20%;height:100%;background:#3FB950;opacity:0.3;"></div>'
     html += '<div style="width:20%;height:100%;background:#3FB950;opacity:0.3;"></div>'
@@ -4711,44 +4711,44 @@ def _render_crash_meter(snap):
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📊 A1 · T10Y-3M</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;font-weight:600;">📊 A1 · T10Y-3M</span>'
     html += '<span style="font-size:0.65rem;color:' + a1_color + ';font-weight:700;">' + a1_status + '</span></div>'
-    html += '<div style="font-size:0.7rem;color:#E6EDF3;font-weight:700;">' + str(round(t10y3m, 2)) + '%</div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: >0.5% = skor 0 · Daily</div></div>'
+    html += '<div style="font-size:0.75rem;color:#E6EDF3;font-weight:700;">' + str(round(t10y3m, 2)) + '%</div>'
+    html += '<div style="font-size:0.62rem;color:#484F58;">Threshold: >0.5% = skor 0 · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">⏱️ A2 · 18Bln Window</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;font-weight:600;">⏱️ A2 · 18Bln Window</span>'
     html += '<span style="font-size:0.65rem;color:' + a2_color + ';font-weight:700;">' + a2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Last inversion: Des 2024 · Closes Jun 2026</div></div>'
+    html += '<div style="font-size:0.62rem;color:#484F58;">Last inversion: Des 2024 · Closes Jun 2026</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B1 · HY Range</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;font-weight:600;">💳 B1 · HY Range</span>'
     html += '<span style="font-size:0.65rem;color:' + b1_color + ';font-weight:700;">' + b1_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <150bps in 6mo · Daily</div></div>'
+    html += '<div style="font-size:0.62rem;color:#484F58;">Threshold: <150bps in 6mo · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">💳 B2 · HY Abs</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;font-weight:600;">💳 B2 · HY Abs</span>'
     html += '<span style="font-size:0.65rem;color:' + b2_color + ';font-weight:700;">' + b2_status + '</span></div>'
-    html += '<div style="font-size:0.55rem;color:#484F58;">Threshold: <550bps = skor 0 · Daily</div></div>'
+    html += '<div style="font-size:0.62rem;color:#484F58;">Threshold: <550bps = skor 0 · Daily</div></div>'
 
     html += '<div style="background:#0D1117;border-radius:6px;padding:6px 8px;grid-column:1 / -1;">'
     html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">'
-    html += '<span style="font-size:0.6rem;color:#8B949E;font-weight:600;">📈 C · Shiller CAPE</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;font-weight:600;">📈 C · Shiller CAPE</span>'
     html += '<span style="font-size:0.65rem;color:' + c_color + ';font-weight:700;">' + c_status + '</span></div>'
     html += '<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'
     html += '<div style="flex:1;height:6px;background:#21262D;border-radius:3px;overflow:hidden;">'
     cape_pct = min(100, cape / 50 * 100)
     html += '<div style="width:' + str(round(cape_pct, 0)) + '%;height:100%;background:' + c_color + ';border-radius:3px;"></div>'
     html += '</div>'
-    html += '<span style="font-size:0.6rem;color:#8B949E;min-width:60px;text-align:right;">Peak dotcom: 44.2</span>'
+    html += '<span style="font-size:0.65rem;color:#8B949E;min-width:60px;text-align:right;">Peak dotcom: 44.2</span>'
     html += '</div></div>'
 
     html += '</div>'
 
-    html += '<div style="font-size:0.6rem;color:#484F58;text-align:center;border-top:1px solid #21262D;padding-top:6px;">'
+    html += '<div style="font-size:0.65rem;color:#484F58;text-align:center;border-top:1px solid #21262D;padding-top:6px;">'
     html += 'Crash Meter v39 · Tomhardi Methodology · A1+A2+B1+B2+C = ' + str(total) + '/5 · CAPE=' + cape_source + ' · Live FRED · Next: tomorrow'
     html += '</div>'
 
@@ -4761,6 +4761,9 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     """Macro Dashboard v40 — Full-height two-column layout. No empty gaps."""
+    # v39.6: Build info collapsed by default — user scrolls if they want to see it
+    with st.expander("📊 MacroRegime Pro v39 ALPHA · Built info · Assets · Indicators · AFS · Flipped", expanded=False):
+        st.caption("Built info, asset count, indicator count, AFS score, and flipped signals are shown here when expanded.")
     st.markdown("## 🏠 Macro Dashboard")
 
     # Extract mq safely
@@ -4813,7 +4816,7 @@ def page_dashboard():
         trig_html = ''.join([f'<div style="margin:1px 0;font-size:0.55rem;color:#8b949e;">• {t}</div>' for t in triggers[:3]]) if triggers else '<div style="font-size:0.55rem;color:#484f58;">Regime stabil</div>'
 
         st.markdown(
-            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:5px;padding:4px 6px;margin-top:3px;">'
+            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:5px;padding:8px 10px;margin-top:6px;">'
             f'<div style="font-size:0.55rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI 1M</div>'
             f'<div style="font-size:0.8rem;font-weight:800;color:{tqc};line-height:1.1;">{sq_current} → {tq}</div>'
             f'<div style="font-size:0.55rem;color:#c9d1d9;margin-top:1px;">Prob: <b>{prob_val:.0%}</b> · Est: <b>{est_val}</b></div>'
@@ -4839,7 +4842,7 @@ def page_dashboard():
         st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
 
         # LARGE spacer to push left column toward bottom (fill vertical space)
-        st.markdown('<div style="height: 140px;"></div>', unsafe_allow_html=True)
+        st.markdown('<div style="height: 340px;"></div>', unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
     # RIGHT COLUMN: Gauges → Crash Meter → Bubble → Asset Pulse
@@ -4857,23 +4860,23 @@ def page_dashboard():
         with g1:
             vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
             vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
-            fig_vix = _plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix="", height=50)
+            fig_vix = _plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix="", height=45)
             st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="g_vix_v54")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{vc};'>{vix_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Volatilitas</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-2px;'><b style='color:{vc};'>{vix_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Volatilitas</span></div>", unsafe_allow_html=True)
         with g2:
             hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
             h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
-            fig_h = _plotly_gauge(health_score, "HEALTH", max_val=100, color=hc, height=50)
+            fig_h = _plotly_gauge(health_score, "HEALTH", max_val=100, color=hc, height=45)
             st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar": False}, key="g_h_v54")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{hc};'>{h_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Kesehatan Pasar</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-2px;'><b style='color:{hc};'>{h_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Kesehatan Pasar</span></div>", unsafe_allow_html=True)
 
         g3, g4 = st.columns(2)
         with g3:
             kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
             k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
-            fig_k = _plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%", height=50)
+            fig_k = _plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%", height=45)
             st.plotly_chart(fig_k, use_container_width=True, config={"displayModeBar": False}, key="g_k_v54")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{kc};'>{k_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Taruhan Optimal</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-2px;'><b style='color:{kc};'>{k_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Taruhan Optimal</span></div>", unsafe_allow_html=True)
         with g4:
             ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
             a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
@@ -4891,25 +4894,26 @@ def page_dashboard():
                                font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 7},
                                height=50, margin={"t": 1, "b": 1, "l": 2, "r": 2})
             st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v54")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-2px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
         # Crash Meter — with BIG spacing above so caption is readable, not sticking to gauges
-        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:14px 0 4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:18px 0 8px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
         st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v54")
-        # Extra spacing after crash meter caption so text doesn't stick to next section
-        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        # v39.6 FIX: Extra spacing so crash meter caption is readable, not sticking
+        st.markdown("<div style='height: 18px;'></div>", unsafe_allow_html=True)
 
         # BUBBLE / SURVIVAL SCORE — moved to RIGHT column
-        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:8px 0 3px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:14px 0 6px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
 
         # Asset Pulse
-        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:8px 0 3px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:14px 0 6px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v54")
 
     # Deep Technical di bawah (collapsed, tidak makan space)
+    st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
     with st.expander("🔬 Deep Technical", expanded=False):
         fig_dt = _plotly_deep_technical(snap)
         if fig_dt:
