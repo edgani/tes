@@ -1197,7 +1197,7 @@ def _plotly_regime_dashboard(snap):
 
 
 def _plotly_crash_meter(snap):
-    """Crash Meter v3 — 5 mini gauge horizontal (versi user suka). Compact 48px."""
+    """Crash Meter v3 — 5 mini gauge horizontal. Compact with caption spacing."""
     cm = snap.get("crash_meter", {}) if isinstance(snap.get("crash_meter"), dict) else {}
     inds = [
         {"name": "Yield<br>Curve", "key": "yield_curve_score"},
@@ -1233,10 +1233,10 @@ def _plotly_crash_meter(snap):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 7},
-        margin={"t": 3, "b": 3, "l": 3, "r": 3}, height=48,
+        margin={"t": 3, "b": 14, "l": 3, "r": 3}, height=55,
         annotations=[{
             "text": f"<b>🚨 {total}/25 <span style='color:{oc};'>{ol}</span></b> · 1-2=AMAN · 3=WASPADA · 4-5=KRITIS",
-            "x": 0.5, "y": -0.18, "showarrow": False,
+            "x": 0.5, "y": -0.12, "showarrow": False,
             "font": {"size": 7, "color": "#8b949e"},
         }],
     )
@@ -4760,7 +4760,7 @@ def _render_crash_meter(snap):
 # PAGE: DASHBOARD — Compact v40
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
-    """Macro Dashboard v40 — Compact single-row layout. No empty gaps."""
+    """Macro Dashboard v40 — Full-height two-column layout. No empty gaps."""
     st.markdown("## 🏠 Macro Dashboard")
 
     # Extract mq safely
@@ -4778,7 +4778,7 @@ def page_dashboard():
     r1_left, r1_right = st.columns([1, 1])
 
     # ═══════════════════════════════════════════════════════════
-    # LEFT COLUMN: Regime + Proyeksi + Catalyst + Calendar + BUBBLE
+    # LEFT COLUMN: Regime + Proyeksi + Catalyst + Calendar (stretch to bottom)
     # ═══════════════════════════════════════════════════════════
     with r1_left:
         st.markdown(_regime_left_cards(snap, s_vals), unsafe_allow_html=True)
@@ -4838,12 +4838,11 @@ def page_dashboard():
         # Economic Calendar
         st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
 
-        # BUBBLE / SURVIVAL SCORE — dipindah ke kiri untuk isi space & seimbang kanan
-        st.markdown("<div style='font-size:0.6rem;color:#A371F7;font-weight:700;margin:4px 0 2px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
-        st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
+        # Spacer to push left column toward bottom (fill vertical space)
+        st.markdown('<div style="height: 40px;"></div>', unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════
-    # RIGHT COLUMN: Gauges + Crash Meter + Asset Pulse
+    # RIGHT COLUMN: Gauges → Crash Meter → Bubble → Asset Pulse
     # ═══════════════════════════════════════════════════════════
     with r1_right:
         _mk = snap.get("markov_v3")
@@ -4853,28 +4852,28 @@ def page_dashboard():
         kelly = float(markov_local.get("kelly_fraction", 0.25) or 0.25)
         n_alerts = len((snap.get("yves_v2", {}) or {}).get("alerts", [])) if isinstance(snap.get("yves_v2"), dict) else 0
 
-        # 2x2 Gauges — compact height 45
+        # 2x2 Gauges — compact height 50
         g1, g2 = st.columns(2)
         with g1:
             vc = GREEN if vix_now < 18 else AMBER if vix_now < 25 else RED
             vix_cond = "Tenang" if vix_now < 18 else "Waspada" if vix_now < 25 else "Panik"
-            fig_vix = _plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix="", height=45)
-            st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="g_vix_v52")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-6px;'><b style='color:{vc};'>{vix_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Volatilitas</span></div>", unsafe_allow_html=True)
+            fig_vix = _plotly_gauge(vix_now, "VIX", max_val=40, color=vc, suffix="", height=50)
+            st.plotly_chart(fig_vix, use_container_width=True, config={"displayModeBar": False}, key="g_vix_v53")
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{vc};'>{vix_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Volatilitas</span></div>", unsafe_allow_html=True)
         with g2:
             hc = GREEN if health_score >= 70 else AMBER if health_score >= 50 else RED
             h_cond = "Kuat" if health_score >= 70 else "Sedang" if health_score >= 50 else "Lemah"
-            fig_h = _plotly_gauge(health_score, "HEALTH", max_val=100, color=hc, height=45)
-            st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar": False}, key="g_h_v52")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-6px;'><b style='color:{hc};'>{h_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Kesehatan Pasar</span></div>", unsafe_allow_html=True)
+            fig_h = _plotly_gauge(health_score, "HEALTH", max_val=100, color=hc, height=50)
+            st.plotly_chart(fig_h, use_container_width=True, config={"displayModeBar": False}, key="g_h_v53")
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{hc};'>{h_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Kesehatan Pasar</span></div>", unsafe_allow_html=True)
 
         g3, g4 = st.columns(2)
         with g3:
             kc = GREEN if kelly >= 0.5 else AMBER if kelly >= 0.25 else RED
             k_cond = "Aggresif" if kelly >= 0.5 else "Normal" if kelly >= 0.25 else "Konservatif"
-            fig_k = _plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%", height=45)
-            st.plotly_chart(fig_k, use_container_width=True, config={"displayModeBar": False}, key="g_k_v52")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-6px;'><b style='color:{kc};'>{k_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Taruhan Optimal</span></div>", unsafe_allow_html=True)
+            fig_k = _plotly_gauge(kelly*100, "KELLY", max_val=100, color=kc, suffix="%", height=50)
+            st.plotly_chart(fig_k, use_container_width=True, config={"displayModeBar": False}, key="g_k_v53")
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{kc};'>{k_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Taruhan Optimal</span></div>", unsafe_allow_html=True)
         with g4:
             ac = RED if n_alerts > 2 else AMBER if n_alerts > 0 else GREEN
             a_cond = "Aman" if n_alerts == 0 else "Waspada" if n_alerts <= 2 else "Bahaya"
@@ -4890,25 +4889,31 @@ def page_dashboard():
             ))
             fig_a.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                                font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 7},
-                               height=45, margin={"t": 1, "b": 1, "l": 2, "r": 2})
-            st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v52")
-            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-6px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
+                               height=50, margin={"t": 1, "b": 1, "l": 2, "r": 2})
+            st.plotly_chart(fig_a, use_container_width=True, config={"displayModeBar": False}, key="g_a_v53")
+            st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:-4px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
-        # Crash Meter — compact
-        st.markdown("<div style='font-size:0.55rem;color:#F85149;font-weight:700;margin:2px 0 0;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
+        # Crash Meter — with spacing above caption so it doesn't stick to gauges
+        st.markdown("<div style='font-size:0.55rem;color:#F85149;font-weight:700;margin:8px 0 2px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         fig_cm = _plotly_crash_meter(snap)
-        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v52")
+        st.plotly_chart(fig_cm, use_container_width=True, config={"displayModeBar": False}, key="cm_v53")
+        # Extra spacing after crash meter caption
+        st.markdown("<div style='height: 4px;'></div>", unsafe_allow_html=True)
 
-        # Asset Pulse — dipindah ke kanan atas untuk isi space kosong
-        st.markdown("<div style='font-size:0.6rem;color:#3FB950;font-weight:700;margin:3px 0 1px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
+        # BUBBLE / SURVIVAL SCORE — moved to RIGHT column
+        st.markdown("<div style='font-size:0.6rem;color:#A371F7;font-weight:700;margin:6px 0 2px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+        st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
+
+        # Asset Pulse
+        st.markdown("<div style='font-size:0.6rem;color:#3FB950;font-weight:700;margin:6px 0 2px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
-        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v52")
+        st.plotly_chart(fig_ap, use_container_width=True, config={"displayModeBar": False}, key="ap_v53")
 
     # Deep Technical di bawah (collapsed, tidak makan space)
     with st.expander("🔬 Deep Technical", expanded=False):
         fig_dt = _plotly_deep_technical(snap)
         if fig_dt:
-            st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False}, key="deep_tech_v52")
+            st.plotly_chart(fig_dt, use_container_width=True, config={"displayModeBar": False}, key="deep_tech_v53")
         else:
             st.caption("Deep Technical: CRI = options velocity, Squeeze = short squeeze prob, VRP = sell premium when high")
 
