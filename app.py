@@ -777,6 +777,113 @@ def _plotly_gauge(value, title, max_val=100, color=None, suffix="%", height=90):
     return fig
 
 
+
+def _plotly_risk_range_position(px, lrr, trr, entry, stop, target, height=140):
+    """Visual gauge showing where price sits within Risk Range."""
+    if not all(v is not None and math.isfinite(float(v)) for v in [px, lrr, trr]):
+        return None
+    px, lrr, trr = float(px), float(lrr), float(trr)
+    fig = go.Figure()
+
+    mid = entry if entry else (lrr + trr) / 2
+    tp = target if target else trr
+
+    fig.add_vrect(x0=lrr, x1=mid, fillcolor="rgba(63,185,80,0.12)", line_width=0, layer="below")
+    fig.add_vrect(x0=mid, x1=tp, fillcolor="rgba(210,153,34,0.08)", line_width=0, layer="below")
+    fig.add_vrect(x0=tp, x1=trr, fillcolor="rgba(248,81,73,0.12)", line_width=0, layer="below")
+
+    fig.add_vline(x=lrr, line_color="#3FB950", line_dash="dash", line_width=1, annotation_text="LRR", annotation_position="top", annotation_font_size=9)
+    fig.add_vline(x=trr, line_color="#F85149", line_dash="dash", line_width=1, annotation_text="TRR", annotation_position="top", annotation_font_size=9)
+    if entry:
+        fig.add_vline(x=entry, line_color="#58A6FF", line_width=2, annotation_text="Entry", annotation_position="bottom", annotation_font_size=9)
+    if stop:
+        fig.add_vline(x=stop, line_color="#F85149", line_width=2, annotation_text="SL", annotation_position="bottom", annotation_font_size=9)
+    if target:
+        fig.add_vline(x=target, line_color="#3FB950", line_width=2, annotation_text="TP1", annotation_position="bottom", annotation_font_size=9)
+
+    fig.add_trace(go.Scatter(
+        x=[px], y=[0],
+        mode="markers+text",
+        marker=dict(size=18, color="#E6EDF3", symbol="diamond", line=dict(color="#58A6FF", width=2)),
+        text=[f"{px:.2f}"], textposition="top center", textfont=dict(color="#E6EDF3", size=11),
+        showlegend=False,
+        hovertemplate=f"Price: {px:.2f}<extra></extra>",
+    ))
+
+    fig.update_layout(
+        height=height, showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#c9d1d9", size=10, family="Inter, sans-serif"),
+        margin=dict(t=25, b=20, l=30, r=30),
+        xaxis=dict(title="", showgrid=False, zeroline=False, tickfont=dict(size=9, color="#8b949e")),
+        yaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+    )
+    return fig
+
+
+
+def _plotly_greeks_mini(opts, direction="LONG", height=140):
+    """Mini bar chart for GEX, Vanna, Charm."""
+    if not opts:
+        return None
+    greeks = {"GEX": opts.get("gex"), "Vanna": opts.get("vanna"), "Charm": opts.get("charm")}
+    valid = {k: float(v) for k, v in greeks.items() if v is not None}
+    if not valid:
+        return None
+
+    colors = []
+    for k, v in valid.items():
+        if k == "GEX":
+            colors.append("#3FB950" if v > 0 else "#F85149")
+        elif k == "Vanna":
+            colors.append("#58A6FF" if v > 0 else "#D29922")
+        else:
+            colors.append("#A855F7" if v > 0 else "#F85149")
+
+    fig = go.Figure(go.Bar(
+        x=list(valid.keys()), y=list(valid.values()),
+        marker_color=colors, text=[f"{v:+.2f}" for v in valid.values()],
+        textposition="outside", textfont=dict(size=10, color="#E6EDF3"),
+    ))
+    fig.update_layout(
+        height=height, showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#c9d1d9", size=10),
+        margin=dict(t=10, b=10, l=30, r=10),
+        xaxis=dict(showgrid=False),
+        yaxis=dict(showgrid=True, gridcolor="#21262d", zeroline=True, zerolinecolor="#30363d"),
+    )
+    return fig
+
+
+
+def _plotly_expected_move(px, expected_move_pct, target, entry, height=120):
+    """Show expected move cone vs target distance."""
+    if not expected_move_pct or expected_move_pct <= 0 or not px or px <= 0:
+        return None
+    em = float(expected_move_pct)
+    fig = go.Figure()
+
+    fig.add_hrect(y0=-em*100, y1=em*100, fillcolor="rgba(210,153,34,0.12)", line_width=0, layer="below")
+    fig.add_hrect(y0=-em*200, y1=em*200, fillcolor="rgba(248,81,73,0.06)", line_width=0, layer="below")
+
+    if target and entry and entry > 0:
+        dist = (target - entry) / entry * 100
+        fig.add_hline(y=dist, line_color="#3FB950", line_dash="dash", line_width=2, annotation_text=f"Target +{dist:.1f}%", annotation_position="right")
+
+    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 0], mode="lines", line=dict(color="#E6EDF3", width=3), showlegend=False))
+
+    fig.update_layout(
+        height=height, showlegend=False,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#c9d1d9", size=10),
+        margin=dict(t=10, b=10, l=40, r=80),
+        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
+        yaxis=dict(title="% Move", showgrid=True, gridcolor="#21262d", tickfont=dict(size=9)),
+    )
+    return fig
+
+
 def _plotly_quad_probabilities(snap):
     """Buat horizontal bar chart untuk probabilitas 4 kuadran makro."""
     # Ambil probabilitas dari snap
@@ -2537,6 +2644,11 @@ def build_ticker_rows(tickers, market_type="us_equity", vix_now=20, gamma_data=N
     # Simulation runs background-only; annotate but don't filter
     if sim_results:
         rows = filter_by_simulation(rows, sim_results, threshold=50, require_pass=False)
+
+    # Compute EV+ score for every row
+    for r in rows:
+        r["ev_score"] = _compute_ev_score(r, snap)
+
     return rows
 
 
@@ -2690,7 +2802,8 @@ def filter_actionable(rows, snap=None):
             r["chase_text"] = f"⏳ MONITOR — Quality {quality_score} but not in Hedgeye playbook"
             out.append(r)
 
-    return sorted(out, key=lambda x: x.get("quality_score", 0), reverse=True)
+    # Sort by EV+ score descending (expected value = edge × speed × confirmation)
+    return sorted(out, key=lambda x: x.get("ev_score", {}).get("score", 0) if isinstance(x.get("ev_score"), dict) else x.get("quality_score", 0), reverse=True)
 
 
 def filter_high_conviction(rows, min_rr=1.5, min_sim=50, min_wf=55):
@@ -2738,7 +2851,13 @@ def filter_high_conviction(rows, min_rr=1.5, min_sim=50, min_wf=55):
             r["_quality_passed"] = True
             r["_quality_score"] = min(100, int(rr * 20 + (50 if chase == "CHASE" else 25) + (20 if grade == "A" else 10)))
             out.append(r)
-    return sorted(out, key=lambda x: x.get("_quality_score", 0), reverse=True)
+    # Sort by EV+ score (expected value = edge × speed × confirmation)
+    def _ev_key(x):
+        ev = x.get("ev_score", {})
+        if isinstance(ev, dict):
+            return ev.get("score", 0)
+        return x.get("_quality_score", 0)
+    return sorted(out, key=_ev_key, reverse=True)
 
 
 def filter_low_conviction(rows):
@@ -3473,6 +3592,64 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
         rationale += f"<br>• 🎯 <b>NEAR BOTTOM:</b> Price within 5% of Trade Low. Excellent asymmetric entry if setup valid."
     rationale += f"<br>• 🔧 Data source: <b>{source}</b> (YF=live, PROXY=calculated from price)"
 
+    # Detailed Greeks / Options timing narrative
+    if market_type != "ihsg" and opts:
+        gamma = opts.get("gamma_regime", "")
+        vanna = opts.get("vanna")
+        charm = opts.get("charm")
+        gex = opts.get("gex")
+        expected_move = opts.get("expected_move_pct")
+        iv_rank = opts.get("iv_rank")
+
+        rationale += "<br><br>📊 <b>Options / Greeks Timing:</b>"
+
+        if gamma in ("NEGATIVE", "DEEP_NEGATIVE") and direction == "LONG":
+            rationale += "<br>• 🔴 <b>Negative Gamma:</b> Dealer SHORT gamma = trend ACCELERATION on breakout. Bukan mean-reversion. Holding period: 3-7 hari (fast move). Kalau break Trade Top, target bisa lebih agresif."
+        elif gamma in ("POSITIVE", "DEEP_POSITIVE") and direction == "LONG":
+            rationale += "<br>• 🟢 <b>Positive Gamma:</b> Dealer LONG gamma = mean-reversion ke max pain. Holding period: 1-3 hari (quick fade). Sell into strength, buy dips. Range-bound behavior."
+
+        if vanna is not None:
+            try:
+                v = float(vanna)
+                if v > 0.5:
+                    rationale += "<br>• 🟢 <b>Vanna +{v:.2f}:</b> Rally = vol crush. Buy spot on dips, jangan chase di atas. Kalau price naik, IV turun = call premium murah."
+                elif v < -0.5:
+                    rationale += "<br>• 🔴 <b>Vanna {v:.2f}:</b> Rally = vol expansion. Breakout volatile — hedge dengan call spread. Kalau price naik, IV naik = call premium mahal."
+            except:
+                pass
+
+        if charm is not None:
+            try:
+                c = float(charm)
+                if c > 0.5:
+                    rationale += "<br>• 🟢 <b>Charm +{c:.2f}:</b> Put support strengthening daily. Support level naik tiap hari. Holding period bisa lebih lama (5-10 hari) karena support naik."
+                elif c < -0.5:
+                    rationale += "<br>• 🔴 <b>Charm {c:.2f}:</b> Put support eroding — downside acceleration risk. Tighten stop. Holding period pendek (1-3 hari) atau cut cepat."
+            except:
+                pass
+
+        if gex is not None:
+            try:
+                g = float(gex)
+                if abs(g) > 0.5:
+                    side_gex = "long" if g > 0 else "short"
+                    rationale += f"<br>• {'🟢' if g > 0 else '🔴'} <b>GEX {g:+.2f}:</b> {'Dealer long gamma = pin risk. Sell covered calls di resistance.' if g > 0 else 'Dealer short gamma = trend accel. Buy dips, jangan short.'}"
+            except:
+                pass
+
+        if expected_move and expected_move > 0:
+            rationale += f"<br>• 📏 <b>Expected Move:</b> ±{expected_move:.1%} until expiry. Target distance = {abs((target or 0) - (entry or 0)) / max(entry, 0.001) * 100:.1f}% vs EM. Kalau target > 3x EM = fast move expected (3-5 hari). Kalau < 2x EM = slow grind (7-14 hari)."
+
+        if iv_rank is not None:
+            try:
+                ir = float(iv_rank)
+                if ir < 35:
+                    rationale += f"<br>• 💤 <b>IV Rank {ir:.0f}%:</b> Options CHEAP. Ideal untuk buy calls/puts. Premium rendah = asymmetric payoff maksimal."
+                elif ir > 65:
+                    rationale += f"<br>• 📢 <b>IV Rank {ir:.0f}%:</b> Options EXPENSIVE. Sell premium (covered calls / straddles) atau tunggu IV turun."
+            except:
+                pass
+
     return {
         "action": final_action, "strategy": final_strategy, "rationale": rationale,
         "raw_action": best_action, "confidence": min(100, best_score),
@@ -3596,6 +3773,145 @@ def _get_ticker_behavioral_score(ticker, prices, options, snap):
 # ═══════════════════════════════════════════════════════════════════
 # VISUAL RENDERERS v4 — AUDITED (DUPLICATES REMOVED)
 # ═══════════════════════════════════════════════════════════════════
+
+def _compute_ev_score(row, snap=None):
+    """
+    Expected Value+ (EV+) scoring engine.
+    Combines all edges into a single actionable score (0-100).
+    Higher = more asymmetric, faster, better confirmed.
+    """
+    ev = 0.0
+    reasons = []
+    direction = row.get("direction", "LONG")
+    side = "long" if "LONG" in direction else "short"
+    ticker = row.get("ticker", "")
+
+    # 1. Risk/Reward (0-30 pts) — core edge
+    rr = row.get("rr", 0) or 0
+    if rr >= 3.0:
+        ev += 30; reasons.append(f"🎯 RR {rr:.1f}x")
+    elif rr >= 2.0:
+        ev += 22; reasons.append(f"🎯 RR {rr:.1f}x")
+    elif rr >= 1.5:
+        ev += 15; reasons.append(f"⚡ RR {rr:.1f}x")
+    elif rr >= 1.0:
+        ev += 8; reasons.append(f"📊 RR {rr:.1f}x")
+
+    # 2. Quality Gate (0-20 pts)
+    qs = row.get("quality_score", 0) or 0
+    ev += min(20, qs * 0.25)
+    if qs >= 80:
+        reasons.append("⭐ Quality A")
+    elif qs >= 60:
+        reasons.append("✓ Quality B")
+
+    # 3. Timing / Chase (0-15 pts)
+    if row.get("chase_status") == "CHASE":
+        ev += 15; reasons.append("🏃 CHASE")
+    elif row.get("chase_status") == "WAIT":
+        ev += 5; reasons.append("⏳ WAIT")
+
+    # 4. Options / Greeks Edge (0-20 pts)
+    opts = row.get("options", {})
+    gamma = opts.get("gamma_regime", "")
+    mm_pos = opts.get("mm_positioning", "")
+    vanna = opts.get("vanna")
+    charm = opts.get("charm")
+    gex = opts.get("gex")
+    iv_rank = opts.get("iv_rank")
+    expected_move = opts.get("expected_move_pct")
+
+    if side == "long":
+        if gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
+            ev += 8; reasons.append("🔴 NegGamma=Accel")
+        elif gamma in ("POSITIVE", "DEEP_POSITIVE"):
+            ev += 3; reasons.append("🟢 PosGamma=Pin")
+        if mm_pos == "PUT_WALL":
+            ev += 5; reasons.append("📉 PutWall")
+        if iv_rank is not None and float(iv_rank) < 35:
+            ev += 3; reasons.append("💤 IV cheap")
+    else:  # short
+        if gamma in ("POSITIVE", "DEEP_POSITIVE"):
+            ev += 8; reasons.append("🟢 PosGamma=Fade")
+        elif gamma in ("NEGATIVE", "DEEP_NEGATIVE"):
+            ev += 3; reasons.append("🔴 NegGamma=Break")
+        if mm_pos == "CALL_WALL":
+            ev += 5; reasons.append("📈 CallWall")
+        if iv_rank is not None and float(iv_rank) > 65:
+            ev += 3; reasons.append("📢 IV rich")
+
+    if vanna is not None and charm is not None:
+        try:
+            v, c = float(vanna), float(charm)
+            if abs(v) > 0.5 and abs(c) > 0.5:
+                if (v > 0 and c > 0) or (v < 0 and c < 0):
+                    ev += 4; reasons.append("⚡ Vanna+Charm sync")
+        except:
+            pass
+
+    # 5. Dark Pool Edge (0-10 pts)
+    dp = row.get("dark_pool")
+    if dp and isinstance(dp, dict):
+        div = dp.get("divergence", "")
+        if div == "HIDDEN_ACCUMULATION" and side == "long":
+            ev += 10; reasons.append("🐋 HiddenAccum")
+        elif div == "HIDDEN_DISTRIBUTION" and side == "short":
+            ev += 10; reasons.append("🐋 HiddenDist")
+        elif div == "BOTH_AGREE":
+            ev += 5; reasons.append("✅ Tape agree")
+
+    # 6. Hedgeye Playbook Alignment (0-15 pts)
+    pb = _get_hedgeye_playbook(snap) if snap else {"beli": [], "short": []}
+    if ticker in pb.get("beli", []) and side == "long":
+        ev += 15; reasons.append("📗 Hedgeye LONG")
+    elif ticker in pb.get("short", []) and side == "short":
+        ev += 15; reasons.append("📕 Hedgeye SHORT")
+    elif ticker in pb.get("short", []) and side == "long":
+        ev -= 20; reasons.append("📕 Hedgeye AVOID")
+
+    # 7. Simulation (0-10 pts)
+    sim = row.get("simulation")
+    if sim and isinstance(sim, dict):
+        sscore = sim.get("robustness_score", 0)
+        if sscore >= 80:
+            ev += 10; reasons.append("🎲 Sim strong")
+        elif sscore >= 65:
+            ev += 5; reasons.append("🎲 Sim OK")
+
+    # 8. Walkforward (0-10 pts)
+    wf = row.get("walkforward", {})
+    if wf and isinstance(wf, dict):
+        if wf.get("gate_status") == "PASS":
+            ev += 10; reasons.append("🛡️ WF pass")
+        elif wf.get("gate_status") == "MARGINAL":
+            ev += 3; reasons.append("🛡️ WF marginal")
+
+    # 9. Expected Move vs Target distance = speed bonus (0-10 pts)
+    entry = row.get("entry")
+    target = row.get("target_1")
+    if expected_move and expected_move > 0 and entry and target and entry > 0:
+        move_to_target = abs(target - entry) / entry
+        if move_to_target > expected_move * 3:
+            ev += 10; reasons.append(f"🚀 {move_to_target:.1%} vs EM {expected_move:.1%}")
+        elif move_to_target > expected_move * 2:
+            ev += 6; reasons.append(f"⚡ Fast target")
+        elif move_to_target > expected_move:
+            ev += 3; reasons.append(f"🏎️ >EM")
+
+    # 10. Breakout/Breakdown acceleration bonus
+    if row.get("breakout_mode") or row.get("breakdown_mode"):
+        ev += 5; reasons.append("🔥 Breakout accel")
+
+    # 11. Formation strength
+    formation = row.get("formation", "")
+    if formation in ("BULLISH", "BEARISH"):
+        ev += 5; reasons.append("💪 Strong formation")
+
+    ev = max(0, min(100, ev))
+    grade = "S" if ev >= 85 else "A" if ev >= 70 else "B" if ev >= 50 else "C" if ev >= 30 else "D"
+    return {"score": round(ev, 1), "reasons": reasons, "grade": grade, "ticker": ticker}
+
+
 def _interpret_gamma(gamma_regime, px, max_pain):
     if not gamma_regime: return ""
     mp_dist = ((px - max_pain) / max_pain * 100) if max_pain else 0
@@ -3754,6 +4070,14 @@ def render_ticker_card_v4(row, expanded=False):
     if not setup_valid:
         badges += _badge_html("🚫 INVALID", "short")
 
+    # EV+ score badge (primary sort key)
+    ev_data = row.get("ev_score", {})
+    if isinstance(ev_data, dict):
+        ev_score = ev_data.get("score", 0)
+        ev_grade = ev_data.get("grade", "D")
+        ev_color = {"S": "#FFD700", "A": "#3FB950", "B": "#58A6FF", "C": "#D29922", "D": "#F85149"}.get(ev_grade, "#8B949E")
+        badges += f'<span style="background:{ev_color}18;color:{ev_color};padding:1px 5px;border-radius:10px;font-size:0.6rem;font-weight:800;border:1px solid {ev_color}50;">🔥 EV+ {ev_score:.0f} {ev_grade}</span>'
+
     # Quality score badge
     qscore = row.get("quality_score", 0)
     if qscore >= 80:
@@ -3897,6 +4221,12 @@ def render_ticker_card_v4(row, expanded=False):
 
     # ── Meta row ──
     meta_parts = []
+    ev_data = row.get("ev_score", {})
+    if isinstance(ev_data, dict):
+        ev_score = ev_data.get("score", 0)
+        ev_grade = ev_data.get("grade", "")
+        ev_color = {"S": "#FFD700", "A": "#3FB950", "B": "#58A6FF", "C": "#D29922", "D": "#F85149"}.get(ev_grade, "#8B949E")
+        meta_parts.append(f'<span style="color:{ev_color};font-weight:800;">🔥 EV+ {ev_score:.0f} {ev_grade}</span>')
     if entry is not None:
         meta_parts.append(f'Entry <b>{_ffm(entry, market_type)}</b>')
     if t1 is not None:
@@ -3937,7 +4267,9 @@ def render_ticker_card_v4(row, expanded=False):
     st.markdown(card_html, unsafe_allow_html=True)
 
     # ── Trade Setup Expander ──
-    expander_label = "🔍 Essential Details" if market_type != "ihsg" else "🔍 Essential Details"
+    ev_data = row.get("ev_score", {})
+    ev_label = f"🔍 {ticker} — EV+ {ev_data.get('score', 0):.0f} {ev_data.get('grade', '')}" if isinstance(ev_data, dict) and ev_data.get("score", 0) > 0 else "🔍 Essential Details"
+    expander_label = ev_label if market_type != "ihsg" else f"🔍 {ticker} — Broker Signal"
     with st.expander(expander_label, expanded=expanded):
         # Alpha thesis
         alpha_thesis = row.get("alpha_thesis", "")
@@ -4276,9 +4608,44 @@ def render_ticker_card_v4(row, expanded=False):
         rec_html += f'</div>'
         st.markdown(rec_html, unsafe_allow_html=True)
 
+        # ═══════════════════════════════════════════════════════════
+        # VISUAL ANALYTICS — Risk Range + Greeks + Expected Move
+        # ═══════════════════════════════════════════════════════════
+        viz_cols = st.columns([1.2, 1, 1])
+        with viz_cols[0]:
+            fig_rr = _plotly_risk_range_position(px, trade_l, trade_r, entry, stop, t1, height=140)
+            if fig_rr:
+                st.plotly_chart(fig_rr, use_container_width=True, config={"displayModeBar": False}, key=f"rr_{ticker}_v54")
+        with viz_cols[1]:
+            fig_greeks = _plotly_greeks_mini(options, direction, height=140)
+            if fig_greeks:
+                st.plotly_chart(fig_greeks, use_container_width=True, config={"displayModeBar": False}, key=f"gk_{ticker}_v54")
+            else:
+                st.caption("Greeks data not available")
+        with viz_cols[2]:
+            fig_em = _plotly_expected_move(px, options.get("expected_move_pct"), t1, entry, height=140)
+            if fig_em:
+                st.plotly_chart(fig_em, use_container_width=True, config={"displayModeBar": False}, key=f"em_{ticker}_v54")
+            else:
+                st.caption("Expected move not available")
+
         # ── 🎯 WHY THIS POSITION — Synthesized Narrative ──
         why_html = f'<div class="ts-panel" style="border-color: #58A6FF40; margin-bottom: 8px;">'
         why_html += f'<div class="ts-panel-title">🎯 Why Take This Position</div>'
+
+        # EV+ score banner
+        ev_data = row.get("ev_score", {})
+        if isinstance(ev_data, dict) and ev_data.get("score", 0) > 0:
+            ev_score = ev_data.get("score", 0)
+            ev_grade = ev_data.get("grade", "")
+            ev_color = {"S": "#FFD700", "A": "#3FB950", "B": "#58A6FF", "C": "#D29922", "D": "#F85149"}.get(ev_grade, "#8B949E")
+            ev_reasons = ev_data.get("reasons", [])
+            why_html += f'<div style="background:{ev_color}15;border:1px solid {ev_color}50;border-radius:6px;padding:6px 10px;margin-bottom:8px;">'
+            why_html += f'<div style="font-size:0.8rem;color:{ev_color};font-weight:800;">🔥 EV+ Score: {ev_score:.0f}/100 — Grade {ev_grade}</div>'
+            why_html += f'<div style="font-size:0.65rem;color:#8B949E;margin-top:2px;">{" · ".join(ev_reasons[:6])}</div>'
+            why_html += f'</div>'
+
+        # Market-specific edge explanation'
 
         reasons = []
 
@@ -4425,6 +4792,59 @@ def render_ticker_card_v4(row, expanded=False):
                     reasons.append(f"⚠️ <b>Crossing Detected:</b> High volume tapi price flat — possible wash trading. <b>TUNGGU.</b>")
                 elif broker.get("cornering_supply"):
                     reasons.append(f"🎯 <b>Cornering Supply:</b> Volume drying up then spike. Possible accumulation before breakout. Watch closely.")
+            # IHSG sector momentum
+            snap_local = st.session_state.get("snap")
+            if snap_local:
+                sector_mom = (snap_local.get("ihsg_sector_momentum") or {}).get(IHSG_SECTOR_MAP.get(ticker, "Other"), {})
+                if sector_mom:
+                    reasons.append(f"📊 <b>Sector Momentum:</b> {sector_mom.get('bias', 'Neutral')} — avg 1M {sector_mom.get('avg_1m', 0):+.1%} · strength {sector_mom.get('strength', 0):.0f}")
+
+        # 10. FOREX-specific: COT + DXY correlation
+        if market_type == "forex":
+            cot = _get_cot_proxy(ticker)
+            if cot and cot.get("signal") != "NEUTRAL":
+                reasons.append(f"🏛️ <b>COT:</b> Non-Commercial net {cot.get('net_noncom', 0):+,} ({cot.get('signal')}) — institutional positioning edge.")
+            snap_local = st.session_state.get("snap")
+            if snap_local:
+                dxy_corr = snap_local.get("dxy_correlation", {})
+                pos_corr = [x for x in dxy_corr.get("strongest_positive_corr", []) if x[0] == ticker]
+                neg_corr = [x for x in dxy_corr.get("strongest_negative_corr", []) if x[0] == ticker]
+                if pos_corr:
+                    reasons.append(f"📈 <b>DXY+ Corr:</b> {pos_corr[0][1].get('correlation', 0):.2f} — rises with dollar strength. Watch DXY trend.")
+                if neg_corr:
+                    reasons.append(f"📉 <b>DXY- Corr:</b> {neg_corr[0][1].get('correlation', 0):.2f} — falls when DXY rallies. Inverse play.")
+
+        # 11. COMMODITY-specific: COT + supply chain
+        if market_type == "commodity":
+            cot = _get_cot_proxy(ticker)
+            if cot and cot.get("signal") != "NEUTRAL":
+                reasons.append(f"🏛️ <b>COT:</b> Non-Commercial net {cot.get('net_noncom', 0):+,} ({cot.get('signal')}) — speculator positioning.")
+            snap_local = st.session_state.get("snap")
+            if snap_local:
+                chains = snap_local.get("supply_chain_chains", [])
+                for chain in chains:
+                    if isinstance(chain, dict):
+                        for stage in chain.get("stages", []):
+                            if ticker in stage.get("tickers", []):
+                                reasons.append(f"🔗 <b>Supply Chain:</b> {chain['name']} Stage {stage['stage']} — {stage['bottleneck']} bottleneck. {chain.get('trigger', '')}.")
+
+        # 12. CRYPTO-specific: On-chain + funding + whale
+        if market_type == "crypto":
+            snap_local = st.session_state.get("snap")
+            if snap_local:
+                cc_tokens = snap_local.get("crypto_tokens", {})
+                cc_data = cc_tokens.get(ticker, {}) if isinstance(cc_tokens, dict) else {}
+                if cc_data and isinstance(cc_data, dict):
+                    whale = cc_data.get("whale_signal", "NEUTRAL")
+                    funding = cc_data.get("funding_proxy", 0)
+                    if whale == "ACCUMULATING":
+                        reasons.append(f"🐋 <b>Whale Accumulating:</b> R7D {cc_data.get('r7d', 0):+.1%} dengan low vol expansion = organic buying. Bukan FOMO retail.")
+                    elif whale == "DISTRIBUTING":
+                        reasons.append(f"🐋 <b>Whale Distributing:</b> R7D {cc_data.get('r7d', 0):+.1%} dengan vol spike = smart money exit. <b>HATI-HATI.</b>")
+                    if abs(funding) > 0.0005:
+                        reasons.append(f"⛓️ <b>Funding Extreme:</b> {funding:.6f} — leverage excess detected. Possible squeeze/correction.")
+                    if cc_data.get("large_orders_detected"):
+                        reasons.append(f"🚨 <b>Large Orders:</b> OI proxy {cc_data.get('oi_proxy', 0):.1f}x = institutional size detected.")
 
         # 10. Entry quality
         entry = row.get("entry")
@@ -4938,33 +5358,14 @@ def page_alpha():
         c4.metric("Duration Mismatch", ks_summary.get("duration_mismatches", 0))
         st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}</div>", unsafe_allow_html=True)
 
-        # Show tickers with Keith contradictions
+        # Keith contradictions run in background only — no visible display
+        # They are applied via keith_sync in ticker rows (AVOID override)
         contradictions = [(t, v) for t, v in ks_data.items() if isinstance(v, dict) and v.get("override") and v.get("keith_trade") != v.get("original_direction")]
         if contradictions:
-            st.markdown(f"<div style='font-size:0.75rem;color:#F85149;font-weight:700;margin:8px 0;'>⚠️ {len(contradictions)} Keith Contradictions Detected</div>", unsafe_allow_html=True)
-            for t, v in contradictions[:10]:
-                orig = v.get("original_direction", "—")
-                ktrade = v.get("keith_trade", "—")
-                ktrend = v.get("keith_trend", "—")
-                final = v.get("direction", "—")
-                basis = v.get("basis", "")[:100]
-
-                # Duration badge colors
-                trade_c = "#3FB950" if ktrade == "BULLISH" else "#F85149" if ktrade == "BEARISH" else "#8B949E"
-                trend_c = "#3FB950" if ktrend == "BULLISH" else "#F85149" if ktrend == "BEARISH" else "#8B949E"
-                final_c = "#3FB950" if final == "LONG" else "#F85149" if final == "SHORT" or final == "AVOID" else "#D29922"
-
-                st.markdown(
-                    f'<div style="background:#161B22;border:1px solid #F8514940;border-radius:8px;padding:8px 12px;margin:4px 0;">'
-                    f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">'
-                    f'<span style="font-weight:800;font-size:1rem;color:#E6EDF3;min-width:70px;">{t}</span>'
-                    f'<span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:{trade_c}22;color:{trade_c};font-weight:700;">🎙️ TRADE: {ktrade}</span>'
-                    f'<span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;background:{trend_c}22;color:{trend_c};font-weight:700;">📈 TREND: {ktrend}</span>'
-                    f'<span style="font-size:0.75rem;color:{final_c};font-weight:700;margin-left:auto;">→ {final}</span>'
-                    f'</div>'
-                    f'<div style="font-size:0.7rem;color:#8B949E;">Dashboard said <b>{orig}</b> · Keith TRADE = <b style="color:{trade_c};">{ktrade}</b> → Override to <b style="color:{final_c};">{final}</b></div>'
-                    f'<div style="font-size:0.65rem;color:#484F58;margin-top:2px;">{basis}</div>'
-                    f'</div>', unsafe_allow_html=True)
+            # Only show count in collapsed expander, never the actual tickers
+            with st.expander(f"🎙️ Keith Sync: {len(contradictions)} background overrides applied", expanded=False):
+                st.caption("Keith BEARISH overrides are applied silently. Affected tickers are filtered to AVOID in their respective market tabs.")
+                st.caption(f"Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}")
 
     st.divider()
 
@@ -5554,7 +5955,7 @@ def page_us_stocks():
     mon_longs, mon_shorts = split_long_short(monitor)
 
     st.markdown(
-        f"**{len(high_conv)} high conviction** · "
+        f"**{len(high_conv)} high conviction** · Sorted by EV+ (edge × speed × confirmation) · "
         f"🟢 {len(hc_longs)} Long · 🔴 {len(hc_shorts)} Short · "
         f"🟡 {len(monitor)} monitor · ⚠️ {len(invalid)} filtered"
     )
@@ -5607,7 +6008,7 @@ def page_forex():
     monitor = [r for r in actionable if r.get("ticker") not in hc_tickers]
 
     st.markdown(
-        f"**{len(high_conv)} high conviction** · "
+        f"**{len(high_conv)} high conviction** · Sorted by EV+ (edge × speed × confirmation) · "
         f"🟢 {len(hc_longs)} Long · 🔴 {len(hc_shorts)} Short · "
         f"🟡 {len(monitor)} monitor · ⚠️ {len(invalid)} filtered"
     )
@@ -5658,7 +6059,7 @@ def page_commodities():
     monitor = [r for r in actionable if r.get("ticker") not in hc_tickers]
 
     st.markdown(
-        f"**{len(high_conv)} high conviction** · "
+        f"**{len(high_conv)} high conviction** · Sorted by EV+ (edge × speed × confirmation) · "
         f"🟢 {len(hc_longs)} Long · 🔴 {len(hc_shorts)} Short · "
         f"🟡 {len(monitor)} monitor · ⚠️ {len(invalid)} filtered"
     )
@@ -5732,7 +6133,7 @@ def page_crypto():
     monitor = [r for r in actionable if r.get("ticker") not in hc_tickers]
 
     st.markdown(
-        f"**{len(high_conv)} high conviction** · "
+        f"**{len(high_conv)} high conviction** · Sorted by EV+ (edge × speed × confirmation) · "
         f"🟢 {len(hc_longs)} Long · 🔴 {len(hc_shorts)} Short · "
         f"🟡 {len(monitor)} monitor · ⚠️ {len(invalid)} filtered"
     )
