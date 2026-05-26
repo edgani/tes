@@ -3338,6 +3338,9 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     charm = _safe_num(options.get("charm"), 0)
     gex = _safe_num(options.get("gex"), 0)
     expected_move = _safe_num(options.get("expected_move_pct"), 0)
+    # v39.7 FIX: Extract entry/target from row to prevent NameError in f-strings
+    entry = row.get("entry") if row else None
+    target = row.get("target_1") if row else None
     put_wall = _safe_num(options.get("put_wall"), 0)
     call_wall = _safe_num(options.get("call_wall"), 0)
     oi_call = options.get("oi_call", 0) or 0
