@@ -2733,7 +2733,7 @@ def filter_actionable(rows, snap=None):
 
         opts = r.get("options", {})
         market_type = r.get("market_type", "us_equity")
-        if market_type != "ihsg" and opts:
+        if market_type != "ihsg" and options:
             gamma = opts.get("gamma_regime", "")
             if gamma and gamma != "TRANSITION":
                 quality_score += 10; reasons.append("Gamma signal")
@@ -3593,7 +3593,7 @@ def _get_single_recommendation(options, direction="LONG", market_type="us_equity
     rationale += f"<br>• 🔧 Data source: <b>{source}</b> (YF=live, PROXY=calculated from price)"
 
     # Detailed Greeks / Options timing narrative
-    if market_type != "ihsg" and opts:
+    if market_type != "ihsg" and options:
         gamma = opts.get("gamma_regime", "")
         vanna = opts.get("vanna")
         charm = opts.get("charm")
@@ -5181,9 +5181,6 @@ def _render_crash_meter(snap):
 # ═══════════════════════════════════════════════════════════════════
 def page_dashboard():
     """Macro Dashboard v40 — Full-height two-column layout. No empty gaps."""
-    # v39.6: Build info collapsed by default — user scrolls if they want to see it
-    with st.expander("📊 MacroRegime Pro v39 ALPHA · Built info · Assets · Indicators · AFS · Flipped", expanded=False):
-        st.caption("Built info, asset count, indicator count, AFS score, and flipped signals are shown here when expanded.")
     st.markdown("## 🏠 Macro Dashboard")
 
     # Extract mq safely
@@ -5338,6 +5335,11 @@ def page_dashboard():
         else:
             st.caption("Deep Technical: CRI = options velocity, Squeeze = short squeeze prob, VRP = sell premium when high")
 
+    # v39.6: Build info moved to bottom per user request
+    with st.expander("📊 MacroRegime Pro v39 ALPHA · Built info · Assets · Indicators · AFS · Flipped", expanded=False):
+        st.caption("Built info, asset count, indicator count, AFS score, and flipped signals are shown here when expanded.")
+
+
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: ALPHA CENTER
 # ═══════════════════════════════════════════════════════════════════
@@ -5345,50 +5347,7 @@ def page_alpha():
     st.markdown("## ⚡ Alpha Center")
     sim_results = snap.get("simulation_results", {}) or {}
 
-    # ── v39: Keith Signal Dashboard (Duration Aware) ──
-    ks_data = snap.get("keith_sync", {})
-    ks_summary = snap.get("keith_summary", {})
 
-    if ks_summary and ks_summary.get("total_signals", 0) > 0:
-        st.markdown("### 🎙️ Keith McCullough Signal Sync (P0 Override)")
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Signals", ks_summary.get("total_signals", 0))
-        c2.metric("TRADE Bullish", ks_summary.get("trade_bullish", 0))
-        c3.metric("TRADE Bearish", ks_summary.get("trade_bearish", 0))
-        c4.metric("Duration Mismatch", ks_summary.get("duration_mismatches", 0))
-        st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}</div>", unsafe_allow_html=True)
-
-        # Keith contradictions run in background only — no visible display
-        # They are applied via keith_sync in ticker rows (AVOID override)
-        contradictions = [(t, v) for t, v in ks_data.items() if isinstance(v, dict) and v.get("override") and v.get("keith_trade") != v.get("original_direction")]
-        if contradictions:
-            # Only show count in collapsed expander, never the actual tickers
-            with st.expander(f"🎙️ Keith Sync: {len(contradictions)} background overrides applied", expanded=False):
-                st.caption("Keith BEARISH overrides are applied silently. Affected tickers are filtered to AVOID in their respective market tabs.")
-                st.caption(f"Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}")
-
-    st.divider()
-
-    # ── v39.1: Gatekeeper + Walkforward + Hedgeye (BACKGROUND ONLY) ──
-    gk_data = snap.get("alpha_gatekeeper", {})
-    wf_data = snap.get("walkforward_results", {})
-    hp_data = snap.get("hedgeye_position_sizing", {})
-
-    # v39.1 FIX: Gatekeeper runs in background — data attached to each ticker detail expander
-    # Compact summary only, no main filter
-    gk_passed = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"}
-    gk_marginal = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "MARGINAL"}
-
-    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("🟢 Gatekeeper PASS", len(gk_passed))
-        c2.metric("🟡 Gatekeeper MARGINAL", len(gk_marginal))
-        c3.metric("✅ Walkforward PASS", len([t for t, r in wf_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"]))
-        if gk_passed:
-            st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Top 5 passed: " + ", ".join(list(gk_passed.keys())[:5]) + "</div>", unsafe_allow_html=True)
-        st.caption("Gatekeeper + Walkforward + Hedgeye sizing data is shown inside each ticker’s 🔍 Toggle Full Details expander below.")
-
-    st.divider()
 
     summary = snap.get("summary", {}) or {}
     k1, k2, k3, k4 = st.columns(4)
@@ -5891,6 +5850,52 @@ def page_alpha():
                             f'<span style="color:#E6EDF3;">{p.get("ticker","—")}</span>'
                             f'<span style="color:#8B949E;">{p.get("conviction","—")} · {p.get("size_pct",0):.1f}%</span></div>', unsafe_allow_html=True)
 
+    st.divider()
+    st.markdown("### 📡 Background Intelligence (Moved to Bottom)")
+    # ── v39.1: Gatekeeper + Walkforward + Hedgeye (BACKGROUND ONLY) ──
+    gk_data = snap.get("alpha_gatekeeper", {})
+    wf_data = snap.get("walkforward_results", {})
+    hp_data = snap.get("hedgeye_position_sizing", {})
+
+    # v39.1 FIX: Gatekeeper runs in background — data attached to each ticker detail expander
+    # Compact summary only, no main filter
+    gk_passed = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"}
+    gk_marginal = {t: r for t, r in gk_data.items() if isinstance(r, dict) and r.get("gate_status") == "MARGINAL"}
+
+    with st.expander(f"🛡️ Background Engine Status (Gatekeeper · Walkforward · Hedgeye)", expanded=False):
+        c1, c2, c3 = st.columns(3)
+        c1.metric("🟢 Gatekeeper PASS", len(gk_passed))
+        c2.metric("🟡 Gatekeeper MARGINAL", len(gk_marginal))
+        c3.metric("✅ Walkforward PASS", len([t for t, r in wf_data.items() if isinstance(r, dict) and r.get("gate_status") == "PASS"]))
+        if gk_passed:
+            st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Top 5 passed: " + ", ".join(list(gk_passed.keys())[:5]) + "</div>", unsafe_allow_html=True)
+        st.caption("Gatekeeper + Walkforward + Hedgeye sizing data is shown inside each ticker’s 🔍 Toggle Full Details expander below.")
+
+    st.divider()
+    # ── v39: Keith Signal Dashboard (Duration Aware) ──
+    ks_data = snap.get("keith_sync", {})
+    ks_summary = snap.get("keith_summary", {})
+
+    if ks_summary and ks_summary.get("total_signals", 0) > 0:
+        st.markdown("### 🎙️ Keith McCullough Signal Sync (P0 Override)")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Signals", ks_summary.get("total_signals", 0))
+        c2.metric("TRADE Bullish", ks_summary.get("trade_bullish", 0))
+        c3.metric("TRADE Bearish", ks_summary.get("trade_bearish", 0))
+        c4.metric("Duration Mismatch", ks_summary.get("duration_mismatches", 0))
+        st.markdown(f"<div style='font-size:0.65rem;color:#484F58;'>Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}</div>", unsafe_allow_html=True)
+
+        # Keith contradictions run in background only — no visible display
+        # They are applied via keith_sync in ticker rows (AVOID override)
+        contradictions = [(t, v) for t, v in ks_data.items() if isinstance(v, dict) and v.get("override") and v.get("keith_trade") != v.get("original_direction")]
+        if contradictions:
+            # Only show count in collapsed expander, never the actual tickers
+            with st.expander(f"🎙️ Keith Sync: {len(contradictions)} background overrides applied", expanded=False):
+                st.caption("Keith BEARISH overrides are applied silently. Affected tickers are filtered to AVOID in their respective market tabs.")
+                st.caption(f"Last updated: {ks_summary.get('last_updated', '—')} · Sources: {', '.join(ks_summary.get('sources', ['Hedgeye'])[:2])}")
+
+    st.divider()
+
 # ═══════════════════════════════════════════════════════════════════
 # PAGE: US STOCKS
 # ═══════════════════════════════════════════════════════════════════
@@ -5904,14 +5909,17 @@ def page_us_stocks():
     st.markdown("## 🇺🇸 US Stocks")
 
     pb = _get_hedgeye_playbook(snap)
+    # v39.7 FIX: Filter to US equity only — remove forex, commodities, crypto, futures
+    us_beli = [t for t in pb["beli"] if _classify_ticker_market(t) == "us_equity"]
+    us_short = [t for t in pb["short"] if _classify_ticker_market(t) == "us_equity"]
 
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Overweight</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["beli"][:10]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(us_beli[:10]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Underweight</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"][:8]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(us_short[:8]) + "</div>", unsafe_allow_html=True)
 
     st.divider()
     st.markdown("### 📊 Index / ETF Setups (SPY · QQQ · IWM · GLD · TLT)")
@@ -5985,20 +5993,24 @@ def page_forex():
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
 
     st.markdown("## 💱 Forex")
-    pb = _get_hedgeye_playbook(snap)
+    # v39.7 FIX: Show forex pairs with computed directional bias, not US stocks
+    fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
+    sim_results_fx = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
+    fx_rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results_fx)
+    fx_longs = [r["ticker"] for r in fx_rows if "LONG" in r.get("direction", "")]
+    fx_shorts = [r["ticker"] for r in fx_rows if "SHORT" in r.get("direction", "")]
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(fx_longs[:15]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["short"]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(fx_shorts[:15]) + "</div>", unsafe_allow_html=True)
     dxy_corr = snap.get("dxy_correlation", {}) or {}
     if isinstance(dxy_corr, dict) and (dxy_corr.get("strongest_positive_corr") or dxy_corr.get("strongest_negative_corr")):
         st.divider()
-    fx_tickers = list(FOREX_PAIRS.keys()) if FOREX_PAIRS else FALLBACK_FX
-    sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
-    rows = build_ticker_rows(fx_tickers, "forex", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
+    # v39.7: Reuse fx_rows already built at top of page
+    rows = fx_rows
     actionable = filter_actionable(rows, snap=snap)
     invalid = filter_invalid(rows)
 
@@ -6038,18 +6050,22 @@ def page_commodities():
             render_ticker_detail_comprehensive(q_ticker.upper().strip(), snap)
 
     st.markdown("## 🛢️ Commodities")
-    pb = _get_hedgeye_playbook(snap)
+    # v39.7 FIX: Show commodity tickers with computed directional bias, not US stocks
+    comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
+    sim_results_comm = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
+    comm_rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results_comm)
+    comm_longs = [r["ticker"] for r in comm_rows if "LONG" in r.get("direction", "")]
+    comm_shorts = [r["ticker"] for r in comm_rows if "SHORT" in r.get("direction", "")]
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(comm_longs[:15]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(comm_shorts[:15]) if comm_shorts else "—") + "</div>", unsafe_allow_html=True)
     st.divider()
-    comm_tickers = list(COMMODITIES.keys()) if COMMODITIES else FALLBACK_COMM
-    sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
-    rows = build_ticker_rows(comm_tickers, "commodity", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
+    # v39.7: Reuse comm_rows already built at top of page
+    rows = comm_rows
     actionable = filter_actionable(rows, snap=snap)
     invalid = filter_invalid(rows)
 
@@ -6093,14 +6109,19 @@ def page_crypto():
     # Whale signal moved to ticker detail expander (v39.2)
     st.divider()
 
-    pb = _get_hedgeye_playbook(snap)
+    # v39.7 FIX: Show crypto tickers with computed directional bias, not US stocks
+    crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
+    sim_results_crypto = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
+    crypto_rows = build_ticker_rows(crypto_tickers, "crypto", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results_crypto)
+    crypto_longs = [r["ticker"] for r in crypto_rows if "LONG" in r.get("direction", "")]
+    crypto_shorts = [r["ticker"] for r in crypto_rows if "SHORT" in r.get("direction", "")]
     c1, c2 = st.columns(2)
     with c1:
         st.markdown("<div style='font-size:0.68rem; color:#3FB950; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Buy</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(pb["beli"]) + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + " · ".join(crypto_longs[:15]) + "</div>", unsafe_allow_html=True)
     with c2:
         st.markdown("<div style='font-size:0.68rem; color:#F85149; text-transform:uppercase; font-weight:600; margin-bottom:3px;'>Short</div>", unsafe_allow_html=True)
-        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(pb["short"]) if pb["short"] else "—") + "</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.8rem; line-height:1.5;'>" + (" · ".join(crypto_shorts[:15]) if crypto_shorts else "—") + "</div>", unsafe_allow_html=True)
     cc = snap.get("crypto_center", {}) or {}
     if isinstance(cc, dict) and (cc.get("capital_flows") or cc.get("market_structure")):
         st.divider()
@@ -6121,9 +6142,8 @@ def page_crypto():
             fg = narrative_crypto.get("fear_greed", {})
             st.markdown(f'<div style="margin-top:6px;font-size:0.78rem;color:#8B949E;">Fear & Greed: <span style="color:#E6EDF3;font-weight:700;">{fg.get("value",50)}</span> ({fg.get("label","Neutral")})</div>', unsafe_allow_html=True)
     st.divider()
-    crypto_tickers = list(CRYPTO.keys()) if CRYPTO else FALLBACK_CRYPTO
-    sim_results = snap.get("simulation_results", {}) if isinstance(snap.get("simulation_results"), dict) else {}
-    rows = build_ticker_rows(crypto_tickers, "crypto", vix_now, snap.get("gamma_data"), snap.get("greeks_data"), snap.get("news_narratives"), prices=prices, ar=ar, snap=snap, sim_results=sim_results)
+    # v39.7: Reuse crypto_rows already built at top of page
+    rows = crypto_rows
     actionable = filter_actionable(rows, snap=snap)
     invalid = filter_invalid(rows)
 
