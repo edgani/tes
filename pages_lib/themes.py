@@ -16,10 +16,15 @@ def render(snap):
         except Exception:
             scenarios = []
     
+    # Normalize: handle dict-form ({active_scenarios:[...]}) and direct list
+    if isinstance(scenarios, dict):
+        scenarios = scenarios.get("active_scenarios", []) or scenarios.get("all_scenarios", [])
+    scenarios = [s for s in (scenarios or []) if isinstance(s, dict)]
+
     if not scenarios:
         st.info("No scenarios available.")
         return
-    
+
     # Theme cards
     for sc in scenarios:
         prob = sc.get("probability", 0)

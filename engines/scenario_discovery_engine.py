@@ -17,7 +17,16 @@ SCENARIOS = {
 }
 
 def run_scenario_discovery(gip_result=None, current_quad="Q3"):
-    quad = (gip_result or {}).get("current_quad", current_quad)
+    # Accept GIPResult object OR dict
+    if gip_result is None:
+        quad = current_quad
+    elif isinstance(gip_result, dict):
+        quad = gip_result.get("current_quad") or gip_result.get("monthly_quad") or gip_result.get("structural_quad") or current_quad
+    else:
+        # GIPResult dataclass / object
+        quad = getattr(gip_result, "monthly_quad", None) or getattr(gip_result, "current_quad", None) or getattr(gip_result, "structural_quad", None) or current_quad
+    if not isinstance(quad, str) or not quad.startswith("Q"):
+        quad = current_quad
     active = []
     for name, data in SCENARIOS.items():
         score = 0.85 if data["quad"] == quad else 0.40

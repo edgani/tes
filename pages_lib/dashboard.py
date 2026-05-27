@@ -50,7 +50,16 @@ def render(snap: dict):
     
     # ── Active Scenarios ────────────────────────────────────────────────
     st.subheader("🌐 Active Macro Scenarios")
-    scenarios = snap.get("scenarios", []) or snap.get("active_scenarios", [])
+    raw_scen = snap.get("scenarios", []) or snap.get("active_scenarios", [])
+    # Handle both dict-form ({active_scenarios:[...]}) and direct list
+    if isinstance(raw_scen, dict):
+        scenarios = raw_scen.get("active_scenarios", []) or raw_scen.get("all_scenarios", [])
+    elif isinstance(raw_scen, list):
+        scenarios = raw_scen
+    else:
+        scenarios = []
+    # Filter out non-dict entries (defensive)
+    scenarios = [s for s in scenarios if isinstance(s, dict)]
     if scenarios:
         for sc in scenarios[:5]:
             if isinstance(sc, dict):

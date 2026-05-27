@@ -3530,12 +3530,14 @@ def build_snapshot_v40(
         logger.error(f"v40: legacy build_snapshot failed: {e}")
         snap = {"ok": False, "error": str(e)}
 
-    # Determine quad
+    # Determine quad — handle GIPResult dataclass OR dict
     gip = snap.get("gip", {}) if isinstance(snap, dict) else {}
     if isinstance(gip, dict):
-        current_quad = quad_override or gip.get("monthly_quad") or gip.get("structural_quad") or "Q3"
+        current_quad = (quad_override or gip.get("monthly_quad") or
+                       gip.get("structural_quad") or gip.get("current_quad") or "Q3")
     else:
-        current_quad = quad_override or getattr(gip, "monthly_quad", "Q3")
+        current_quad = (quad_override or getattr(gip, "monthly_quad", None) or
+                       getattr(gip, "structural_quad", None) or "Q3")
     if not isinstance(current_quad, str) or not current_quad.startswith("Q"):
         current_quad = "Q3"
 
@@ -3630,19 +3632,9 @@ def build_snapshot_v40(
         logger.error(f"v40: sizing failed: {e}")
         snap["sizing"] = {"positions": [], "error": str(e)}
 
-    # ── V40 ENGINE: WALKFORWARD BATCH GATE ───────────────────────────────
-    _cb("v40: Walkforward gate test…", 85)
-    try:
-        from engines.walkforward_backtest import batch_gatekeeper
-        # Only test passed alpha center candidates to save time
-        passed_tickers = [p["ticker"] for p in snap.get("alpha_center", {}).get("passed", [])]
-        prices_subset = {t: prices[t] for t in passed_tickers if t in prices}
-        if prices_subset:
-            wf = batch_gatekeeper(prices_subset, min_score=55.0)
-            snap["walkforward_results_v40"] = wf
-    except Exception as e:
-        logger.error(f"v40: walkforward failed: {e}")
-        snap["walkforward_results_v40"] = {"error": str(e)}
+    # ── V40 ENGINE: WALKFORWARD BATCH GATE (skipped — too slow, broken on small histories) ───────
+    _cb("v40: Skipping walkforward gate (use Portfolio Stress page for on-demand)", 85)
+    snap["walkforward_results_v40"] = {"skipped": True, "reason": "Run on-demand from Portfolio Stress page"}
 
     # ── V40 ENGINE: SCENARIO DISCOVERY (real) ────────────────────────────
     _cb("v40: Scenario discovery…", 92)

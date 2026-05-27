@@ -138,11 +138,31 @@ def _render_picks_tab(rows, snap, market_key, show_options, show_cot, show_oncha
     selected_actions = st.multiselect("Action", actions, default=actions, key=f"actions_picks_{market_key}")
     rows_filtered = [r for r in rows_sorted if r["action"] in selected_actions]
     
+    # IHSG-only rule: cannot short retail. Convert SHORT actions to WATCH.
+    is_ihsg = market_key == "ihsg"
+    if is_ihsg:
+        for r in rows_filtered:
+            if r["action"] in ("SHORT_RIP", "COVER"):
+                r["action"] = "WATCH"
+
     # Sub-tabs: longs / shorts / monitor
     longs = [r for r in rows_filtered if r["action"] in ("BUY_DIP", "ADD")]
-    shorts = [r for r in rows_filtered if r["action"] in ("SHORT_RIP", "COVER")]
+    shorts = [] if is_ihsg else [r for r in rows_filtered if r["action"] in ("SHORT_RIP", "COVER")]
     monitor = [r for r in rows_filtered if r["action"] in ("TRIM", "TRIM_RIP", "WATCH", "HOLD")]
-    
+
+    if is_ihsg:
+        # IHSG: only Long + Monitor (no Short tab)
+        sub1, sub3 = st.tabs([f"🟢 Long ({len(longs)})", f"🟡 Monitor ({len(monitor)})"])
+        with sub1:
+            for row in longs[:30]:
+                _render_ticker_with_overlays(row, snap, market_key, show_options, show_cot, show_onchain, show_bandar,
+                                              options_map, cot_map, onchain_map, bandar_map)
+        with sub3:
+            for row in monitor[:30]:
+                _render_ticker_with_overlays(row, snap, market_key, show_options, show_cot, show_onchain, show_bandar,
+                                              options_map, cot_map, onchain_map, bandar_map)
+        return
+
     sub1, sub2, sub3 = st.tabs([f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})", f"🟡 Monitor ({len(monitor)})"])
     
     with sub1:

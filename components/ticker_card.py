@@ -50,6 +50,10 @@ def render_ticker_card(row: dict, expanded: bool = False, show_options: bool = T
     """Main ticker card renderer. Pass row dict from risk_setup_engine.build_ticker_rows."""
     ticker = row.get("ticker", "?")
     px = row.get("px")
+    try:
+        px_str = f"{float(px):.2f}" if px not in (None, "", 0) else "—"
+    except (TypeError, ValueError):
+        px_str = "—"
     action = row.get("action", "HOLD")
     quality = row.get("quality", "C")
     phase = row.get("phase", "NEUTRAL")
@@ -78,7 +82,7 @@ def render_ticker_card(row: dict, expanded: bool = False, show_options: bool = T
 <div style="background:#161B22;border:1px solid #30363D;border-radius:10px;margin:6px 0;overflow:hidden;">
   <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #21262D;">
     <span style="font-weight:800;font-size:1.0rem;color:#E6EDF3;min-width:80px;">{ticker}</span>
-    <span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:60px;">{px:.2f if px else 0}</span>
+    <span style="font-weight:700;font-size:0.85rem;color:#E6EDF3;min-width:60px;">{px_str}</span>
     <span style="background:rgba(34,197,94,0.12);color:{action_color};border:1px solid {action_color};padding:2px 8px;border-radius:12px;font-size:0.65rem;font-weight:700;">{action}</span>
     <span style="color:{quality_color};font-weight:700;font-size:0.7rem;">{quality}</span>
     <span style="color:{phase_color};font-weight:600;font-size:0.7rem;">{phase}</span>
