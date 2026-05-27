@@ -54,6 +54,11 @@ def render_ticker_card(row: dict, expanded: bool = False, show_options: bool = T
         px_str = f"{float(px):.2f}" if px not in (None, "", 0) else "—"
     except (TypeError, ValueError):
         px_str = "—"
+    rec_pct = row.get("recommended_pct")
+    try:
+        rec_pct_str = f"{float(rec_pct):.2f}%" if rec_pct not in (None, "") else "—"
+    except (TypeError, ValueError):
+        rec_pct_str = "—"
     action = row.get("action", "HOLD")
     quality = row.get("quality", "C")
     phase = row.get("phase", "NEUTRAL")
@@ -94,9 +99,9 @@ def render_ticker_card(row: dict, expanded: bool = False, show_options: bool = T
                           "tail": {"lrr": row.get("tail_lrr"), "trr": row.get("tail_trr")}})}
   </div>
   <div style="display:flex;gap:10px;padding:4px 12px 8px;font-size:0.68rem;color:#8B949E;">
-    <span>TRADE: <b style="color:#E6EDF3;">{row.get('trade_lrr', 0):.2f} - {row.get('trade_trr', 0):.2f}</b></span>
-    <span>R/R: <b style="color:#E6EDF3;">{row.get('rr_ratio', 0):.2f}</b></span>
-    <span>Size: <b style="color:#E6EDF3;">{row.get('recommended_pct', 0):.2f}%</b></span>
+    <span>TRADE: <b style="color:#E6EDF3;">{(row.get('trade_lrr') or 0):.2f} - {(row.get('trade_trr') or 0):.2f}</b></span>
+    <span>R/R: <b style="color:#E6EDF3;">{(row.get('rr_ratio') or 0):.2f}</b></span>
+    <span>Size: <b style="color:#E6EDF3;">{rec_pct_str}</b></span>
     <span>Quad: <b style="color:#E6EDF3;">{row.get('quad_fit', '?')}</b></span>
   </div>
 </div>
@@ -108,17 +113,17 @@ def render_ticker_card(row: dict, expanded: bool = False, show_options: bool = T
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**TRADE (3w)**")
-                st.metric("LRR", f"{row.get('trade_lrr', 0):.2f}")
-                st.metric("TRR", f"{row.get('trade_trr', 0):.2f}")
+                st.metric("LRR", f"{(row.get('trade_lrr') or 0):.2f}")
+                st.metric("TRR", f"{(row.get('trade_trr') or 0):.2f}")
             with c2:
                 st.markdown("**TREND (3m)**")
-                st.metric("LRR", f"{row.get('trend_lrr', 0):.2f}")
-                st.metric("TRR", f"{row.get('trend_trr', 0):.2f}")
+                st.metric("LRR", f"{(row.get('trend_lrr') or 0):.2f}")
+                st.metric("TRR", f"{(row.get('trend_trr') or 0):.2f}")
             with c3:
                 st.markdown("**TAIL (3y)**")
                 if row.get("tail_lrr"):
-                    st.metric("LRR", f"{row.get('tail_lrr', 0):.2f}")
-                    st.metric("TRR", f"{row.get('tail_trr', 0):.2f}")
+                    st.metric("LRR", f"{(row.get('tail_lrr') or 0):.2f}")
+                    st.metric("TRR", f"{(row.get('tail_trr') or 0):.2f}")
                 else:
                     st.caption("Need full history")
 

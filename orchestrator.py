@@ -1344,12 +1344,19 @@ def _extract_bottleneck_tickers() -> List[str]:
     return clean
 
 def _all_tickers() -> List[str]:
+    # Pull Alpha Center curated list to ensure RR data is computed for them
+    try:
+        from engines.alpha_center_curator import ALPHA_CENTER_CANDIDATES
+        alpha_tickers = list(ALPHA_CENTER_CANDIDATES.keys())
+    except Exception:
+        alpha_tickers = []
     pools = [
         list(US_SECTORS.keys()), list(US_FACTORS.keys()),
         list(FOREX_PAIRS.keys()), list(COMMODITIES.keys()),
         list(CRYPTO.keys()), list(BONDS.keys()),
         list(IHSG_UNIVERSE.keys()), list(MACRO_PROXIES.keys()),
         ["^VIX", "UUP", "EEM", "VWO", "^GSPC", "^IXIC", "VVIX"],
+        alpha_tickers,  # ← Alpha Center surge candidates always loaded
         _extract_bottleneck_tickers(),
     ]
     seen = set()

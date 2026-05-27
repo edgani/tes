@@ -113,12 +113,33 @@ def render(snap: dict):
 
     filtered = [e for e in filtered if _stage_ok(e)]
 
-    # Sort: stars desc, then tail_pos asc (early first)
+    # Surge Potential filter — Edward's rule: "yang punya potensi surging, bukan yang udah surging"
+    min_upside_filter = st.select_slider(
+        "Min upside to TAIL TRR (% — kalau di bawah ini = udah late stage, hide)",
+        options=["No filter", "20%", "50%", "100%", "200%"],
+        value="50%",
+        help="Edward's rule: Alpha Center = surge potential, bukan udah surging. >100% = real surge candidate.",
+    )
+    min_upside_map = {"No filter": -100, "20%": 20, "50%": 50, "100%": 100, "200%": 200}
+    min_upside = min_upside_map[min_upside_filter]
+
+    if min_upside > -100:
+        filtered_pre = filtered
+        filtered = []
+        for e in filtered_pre:
+            rr = rr_data.get(e["ticker"], {})
+            um = _calc_upside_metrics(rr, e["ticker"])
+            tail_upside = um.get("upside_to_tail_trr_pct")
+            # Keep if no data (might not be loaded), or upside above threshold
+            if tail_upside is None or tail_upside >= min_upside:
+                filtered.append(e)
+
+    # Sort: highest TAIL upside DESC (most surge potential first), then stars
     def _sort_key(e):
         rr = rr_data.get(e["ticker"], {})
         um = _calc_upside_metrics(rr, e["ticker"])
-        tp = um.get("tail_position_pct") or 50
-        return (-e["candidate"].get("stars", 0), tp)
+        upside = um.get("upside_to_tail_trr_pct") or 0
+        return (-upside, -e["candidate"].get("stars", 0))
     filtered.sort(key=_sort_key)
 
     st.caption(f"Showing **{len(filtered)}** candidates (sorted by stars desc, then earliest thesis stage first)")
@@ -151,8 +172,14 @@ def render(snap: dict):
             if ma in ("HIGH", "MEDIUM", "TARGET"):
                 hc1.markdown(f"🎯 **M&A {ma}**")
 
-            hc2.metric("Price", f"${rr.get('px', 0):.2f}" if rr else "—")
+            hc2.metric("Price", f"${(rr.get('px') or 0):.2f}" if rr else "—")
             hc2.caption(f"{action_emoji} **{action}**")
+            # 🚀 SURGE badge if TAIL upside > 100%
+            tail_upside_val = upside.get("upside_to_tail_trr_pct") or 0
+            if tail_upside_val >= 100:
+                hc2.markdown("🚀 **SURGE CANDIDATE**")
+            elif tail_upside_val >= 50:
+                hc2.markdown("📈 **High upside**")
 
             # UPSIDE METRICS — answers Edward's "MU masih jalan ga?" question
             if upside:
@@ -184,9 +211,9 @@ def render(snap: dict):
                         t = rr.get("trade", {})
                         tr = rr.get("trend", {})
                         tl = rr.get("tail", {})
-                        st.caption(f"TRADE: ${t.get('lrr', 0):.2f} → ${t.get('trr', 0):.2f}")
-                        st.caption(f"TREND: ${tr.get('lrr', 0):.2f} → ${tr.get('trr', 0):.2f}")
-                        st.caption(f"TAIL:  ${tl.get('lrr', 0):.2f} → ${tl.get('trr', 0):.2f}")
+                        st.caption(f"TRADE: ${(t.get('lrr') or 0):.2f} → ${(t.get('trr') or 0):.2f}")
+                        st.caption(f"TREND: ${(tr.get('lrr') or 0):.2f} → ${(tr.get('trr') or 0):.2f}")
+                        st.caption(f"TAIL:  ${(tl.get('lrr') or 0):.2f} → ${(tl.get('trr') or 0):.2f}")
                         sig = rr.get("signals", {})
                         st.caption(f"💡 {sig.get('reason', '')}")
                     if cand.get("risk_notes"):

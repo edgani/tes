@@ -75,7 +75,7 @@ def render_options_layer(ticker: str, options_data: dict = None):
     if od.get("call_wall") and od.get("put_wall"):
         cw, pw = od["call_wall"], od["put_wall"]
         st.caption(f"📊 **MM Positioning:** Range bound between Put Wall ${pw:.2f} (support) and Call Wall ${cw:.2f} (resistance). "
-                   f"Above Vol Trigger ${od.get('vol_trigger', 0):.2f} = stable regime.")
+                   f"Above Vol Trigger ${(od.get('vol_trigger') or 0):.2f} = stable regime.")
 
 
 def render_oi_heatmap(strikes_data: list):
@@ -90,7 +90,7 @@ def render_oi_heatmap(strikes_data: list):
         side = s.get("type", "C")
         color = "#3FB950" if side == "C" else "#F85149"
         st.markdown(f"""<div style='display:flex;gap:6px;align-items:center;margin:2px 0;'>
-            <span style='font-size:0.65rem;width:65px;color:#8B949E;font-weight:600;'>${s.get('strike', 0):.0f} {side}</span>
+            <span style='font-size:0.65rem;width:65px;color:#8B949E;font-weight:600;'>${(s.get('strike') or 0):.0f} {side}</span>
             <div style='flex:1;height:10px;background:#21262D;border-radius:2px;overflow:hidden;'>
                 <div style='height:100%;width:{pct}%;background:{color};opacity:0.8;'></div>
             </div>
