@@ -3496,3 +3496,180 @@ def build_snapshot(
 if __name__ == "__main__":
     out = run_orchestrator()
     print(json.dumps(out.get("summary", {}), indent=2, default=str))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# V40 SNAPSHOT BUILDER — wires new engines (TRR v20.3b, chain reactions, alpha center)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def build_snapshot_v40(
+    portfolio_value: float = 100000,
+    quad_override: str = None,
+    progress_cb=None,
+    **kwargs,
+) -> dict:
+    """V40 entry point — wires the new engines into the snapshot dict.
+
+    Falls back to legacy build_snapshot for prices/GIP/news/Keith,
+    then OVERWRITES risk_range, chain reactions, alpha center, sizing, walkforward
+    with v40 engines.
+    """
+    def _cb(msg, pct):
+        try:
+            if progress_cb:
+                progress_cb(msg, pct)
+        except Exception:
+            pass
+
+    _cb("v40: Building base snapshot from legacy orchestrator…", 5)
+
+    # Run legacy build_snapshot to get prices, GIP, news, Keith signals
+    try:
+        snap = build_snapshot(progress_cb=progress_cb, **kwargs)
+    except Exception as e:
+        logger.error(f"v40: legacy build_snapshot failed: {e}")
+        snap = {"ok": False, "error": str(e)}
+
+    # Determine quad
+    gip = snap.get("gip", {}) if isinstance(snap, dict) else {}
+    if isinstance(gip, dict):
+        current_quad = quad_override or gip.get("monthly_quad") or gip.get("structural_quad") or "Q3"
+    else:
+        current_quad = quad_override or getattr(gip, "monthly_quad", "Q3")
+    if not isinstance(current_quad, str) or not current_quad.startswith("Q"):
+        current_quad = "Q3"
+
+    prices = snap.get("prices", {}) if isinstance(snap, dict) else {}
+    vix = snap.get("vix", 20.0)
+    if vix is None or vix == 0:
+        vix = 20.0
+
+    # ── V40 ENGINE: TRR/LRR v20.3b ──────────────────────────────────────
+    _cb("v40: Computing TRR/LRR v20.3b with auto-tune…", 30)
+    try:
+        from engines.risk_range_v20 import calculate_for_universe
+        iv_dict = {"^VIX": vix}
+        # Add IV symbols from prices if present
+        for iv_sym in ["^VXN", "^RVX", "^OVX", "^GVZ", "^CVIX"]:
+            if iv_sym in prices:
+                try:
+                    iv_dict[iv_sym] = float(prices[iv_sym].iloc[-1])
+                except Exception:
+                    pass
+        rr_v40 = calculate_for_universe(prices, current_quad=current_quad, iv_dict=iv_dict)
+        snap["risk_range"] = rr_v40
+        snap["risk_range_version"] = "v20.3b"
+        logger.info(f"v40: TRR/LRR computed for {rr_v40.get('summary', {}).get('total', 0)} tickers")
+    except Exception as e:
+        logger.error(f"v40: TRR/LRR failed: {e}")
+        snap["risk_range"] = {"asset_ranges": {}, "error": str(e)}
+
+    # ── V40 ENGINE: CHAIN REACTIONS v2 ──────────────────────────────────
+    _cb("v40: Computing chain reactions…", 50)
+    try:
+        from engines.chain_reaction_v2 import get_chain_engine
+        chain_engine = get_chain_engine()
+        snap["chain_reactions_catalog"] = chain_engine.get_all_chains()
+        # Active transmissions
+        active_transmissions = []
+        for ticker, series in list(prices.items())[:200]:
+            try:
+                s = series.dropna()
+                if len(s) < 5: continue
+                d1 = (float(s.iloc[-1]) / float(s.iloc[-2]) - 1) * 100
+                if abs(d1) >= 2.0:
+                    chains_for_ticker = chain_engine.get_chain_for_parent(ticker)
+                    if chains_for_ticker:
+                        cascade = chain_engine.calculate_cascade(ticker, d1, current_quad)
+                        active_transmissions.append({
+                            "shock_ticker": ticker,
+                            "shock_pct": round(d1, 2),
+                            "cascade": cascade,
+                        })
+            except Exception:
+                continue
+        snap["transmissions"] = {"active_transmissions": active_transmissions,
+                                 "shock_count": len(active_transmissions)}
+    except Exception as e:
+        logger.error(f"v40: chain reactions failed: {e}")
+        snap["chain_reactions_catalog"] = {}
+        snap["transmissions"] = {"active_transmissions": [], "error": str(e)}
+
+    # ── V40 ENGINE: ALPHA CENTER CURATOR ─────────────────────────────────
+    _cb("v40: Running Alpha Center 5-layer filter…", 65)
+    try:
+        from engines.alpha_center_curator import get_curator
+        curator = get_curator(bottleneck_ref_path="bottleneck_reference.json")
+        keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
+        wf_results = snap.get("walkforward_results", {})
+        ac_result = curator.filter_universe(
+            keith_signals=keith_signals,
+            wf_results=wf_results,
+            current_quad=current_quad,
+        )
+        snap["alpha_center"] = ac_result
+    except Exception as e:
+        logger.error(f"v40: alpha center failed: {e}")
+        snap["alpha_center"] = {"passed": [], "rejected": [], "error": str(e)}
+
+    # ── V40 ENGINE: HEDGEYE POSITION SIZING ──────────────────────────────
+    _cb("v40: Computing Hedgeye position sizing…", 75)
+    try:
+        from engines.hedgeye_position_sizing import run_sizing as run_v40_sizing
+        passed = snap.get("alpha_center", {}).get("passed", [])
+        candidates = [{"ticker": p["ticker"],
+                      "conviction": min(10, max(3, p["candidate"].get("stars", 3) * 2)),
+                      "is_breakout": False}
+                     for p in passed]
+        rr_for_sizing = snap.get("risk_range", {}).get("asset_ranges", {})
+        sizing = run_v40_sizing(candidates, current_quad, vix,
+                                keith_signals=snap.get("keith_signals"),
+                                rr_data=rr_for_sizing)
+        snap["sizing"] = sizing
+    except Exception as e:
+        logger.error(f"v40: sizing failed: {e}")
+        snap["sizing"] = {"positions": [], "error": str(e)}
+
+    # ── V40 ENGINE: WALKFORWARD BATCH GATE ───────────────────────────────
+    _cb("v40: Walkforward gate test…", 85)
+    try:
+        from engines.walkforward_backtest import batch_gatekeeper
+        # Only test passed alpha center candidates to save time
+        passed_tickers = [p["ticker"] for p in snap.get("alpha_center", {}).get("passed", [])]
+        prices_subset = {t: prices[t] for t in passed_tickers if t in prices}
+        if prices_subset:
+            wf = batch_gatekeeper(prices_subset, min_score=55.0)
+            snap["walkforward_results_v40"] = wf
+    except Exception as e:
+        logger.error(f"v40: walkforward failed: {e}")
+        snap["walkforward_results_v40"] = {"error": str(e)}
+
+    # ── V40 ENGINE: SCENARIO DISCOVERY (real) ────────────────────────────
+    _cb("v40: Scenario discovery…", 92)
+    try:
+        from engines.scenario_discovery_engine import run_scenario_discovery
+        scen = run_scenario_discovery(gip_result=gip, current_quad=current_quad)
+        snap["scenarios"] = scen
+    except Exception as e:
+        logger.error(f"v40: scenario discovery failed: {e}")
+        snap["scenarios"] = {"active_scenarios": [], "error": str(e)}
+
+    # ── V40 ENGINE: REGIME TRANSITION ────────────────────────────────────
+    try:
+        from engines.regime_transition_engine import run_regime_transition
+        snap["regime_transition"] = run_regime_transition(gip)
+    except Exception as e:
+        snap["regime_transition"] = {"transitioning": False, "error": str(e)}
+
+    # ── V40 ENGINE: MARKET HEALTH ────────────────────────────────────────
+    try:
+        from engines.market_health_engine import run_market_health
+        snap["market_health"] = run_market_health(prices, vix=vix, dxy=snap.get("dxy"))
+    except Exception as e:
+        snap["market_health"] = {"score": 50, "label": "ERROR", "error": str(e)}
+
+    _cb("v40: Snapshot complete", 100)
+    snap["ok"] = True
+    snap["v40"] = True
+    snap["current_quad"] = current_quad
+    return snap
