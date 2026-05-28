@@ -155,7 +155,13 @@ def render(snap: dict):
                 -e["candidate"].get("stars", 0), e["ticker"])
     filtered.sort(key=_sort_key)
 
-    st.caption(f"📊 **{len(filtered)}** candidates ditampilkan (sorted: highest upside first, then stars)")
+    # Split into HAS_DATA and NO_DATA — hide NO_DATA from main list (Edward fix)
+    has_data = [e for e in filtered if rr_data.get(e["ticker"], {}).get("px")]
+    no_data = [e for e in filtered if not rr_data.get(e["ticker"], {}).get("px")]
+    filtered = has_data
+
+    st.caption(f"📊 **{len(filtered)}** candidates dengan price data (sorted: highest upside first)"
+               + (f" · ⚠️ {len(no_data)} pending (no price data — di bawah)" if no_data else ""))
     st.divider()
 
     # ── RENDER CARDS — native Streamlit (no HTML escape issues) ──────────
