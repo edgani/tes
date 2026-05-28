@@ -26,10 +26,10 @@ def render_market_page(
     rr_data = snap.get("risk_range", {}).get("asset_ranges", {})
     sizing_data = snap.get("sizing", {})
     keith_signals = snap.get("keith_signals", {})
-    options_map = snap.get("options_data", {})
-    cot_map = snap.get("cot_data", {})
-    onchain_map = snap.get("onchain_data", {})
-    bandar_map = snap.get("ihsg_broker_data", {})
+    options_map = snap.get("yfinance_options", {}) or snap.get("options_data", {})
+    cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {})
+    onchain_map = snap.get("crypto_tokens", {}) or snap.get("onchain_data", {})
+    bandar_map = snap.get("ihsg_broker_proxy", {}) or snap.get("ihsg_broker_data", {})
     
     def _market_match(ticker: str) -> bool:
         t = ticker.upper()

@@ -1,36 +1,41 @@
-"""alpha_center.py — Curated surge candidates (5-layer filter) + Upside metrics"""
+"""alpha_center.py — Bottleneck + Surge Potential UI v40.2
+
+Renders Edward's enriched curator (alpha_center_curator.py) with full thesis details:
+  • Ticker, current price (if available), thesis, bottleneck_reason
+  • Correlations (NVDA↔AMKR, AVGO↔CoWoS etc.)
+  • Potential upside (multi-bag indicator)
+  • Risk + Source attribution
+  • Sortable, filterable by tier, market, upside potential
+"""
 import streamlit as st
 
 
-def _calc_upside_metrics(rr: dict, ticker: str) -> dict:
-    """Compute thesis-progress metrics: TAIL position, distance to TRR, etc."""
+def _calc_upside_metrics(rr: dict) -> dict:
+    """Compute thesis-progress metrics: TAIL position, distance to TRR."""
     if not rr or not isinstance(rr, dict):
         return {}
-    px = rr.get("px", 0)
-    trade = rr.get("trade", {})
-    trend = rr.get("trend", {})
-    tail = rr.get("tail", {})
-    # Position in TAIL (0% = at LRR/early, 100% = at TRR/late thesis)
-    tail_lrr = tail.get("lrr", 0)
-    tail_trr = tail.get("trr", 0)
+    px = rr.get("px", 0) or 0
+    trade = rr.get("trade", {}) or {}
+    trend = rr.get("trend", {}) or {}
+    tail = rr.get("tail", {}) or {}
+    tail_lrr = tail.get("lrr", 0) or 0
+    tail_trr = tail.get("trr", 0) or 0
     tail_pos = None
-    if tail_trr > tail_lrr > 0:
+    if tail_trr > tail_lrr > 0 and px > 0:
         tail_pos = max(0, min(100, (px - tail_lrr) / (tail_trr - tail_lrr) * 100))
-    # Upside to TRR
     upside_trade = ((trade.get("trr", px) - px) / px * 100) if px > 0 else 0
     upside_trend = ((trend.get("trr", px) - px) / px * 100) if px > 0 else 0
     upside_tail = ((tail_trr - px) / px * 100) if px > 0 and tail_trr > 0 else 0
-    # Interpretation
     if tail_pos is None:
         thesis_stage = "—"
     elif tail_pos < 25:
-        thesis_stage = "🟢 EARLY (banyak ruang naik)"
+        thesis_stage = "🟢 EARLY (banyak ruang surge)"
     elif tail_pos < 50:
         thesis_stage = "🟡 MID (masih ada upside)"
     elif tail_pos < 75:
         thesis_stage = "🟠 LATE-MID (hati-hati)"
     else:
-        thesis_stage = "🔴 LATE (sebagian besar move sudah jalan)"
+        thesis_stage = "🔴 LATE (sebagian besar move udah jalan)"
     return {
         "tail_position_pct": tail_pos,
         "upside_to_trade_trr_pct": round(upside_trade, 2),
@@ -40,9 +45,14 @@ def _calc_upside_metrics(rr: dict, ticker: str) -> dict:
     }
 
 
+def _stars_html(n: int) -> str:
+    return "⭐" * int(n or 0)
+
+
 def render(snap: dict):
     st.title("⚡ Alpha Center")
-    st.caption("Curated bottleneck + surge candidates. Action = current TRADE signal. Thesis stage = where in long-term move.")
+    st.caption("**Bottleneck + Surge Potential** — tickers yang punya potensi surging (bukan yang udah). "
+               "Filter strict: monopoly/near-monopoly OR potensi multi-bag (>100% upside).")
 
     try:
         from engines.alpha_center_curator import get_curator
@@ -54,36 +64,53 @@ def render(snap: dict):
     keith_signals = snap.get("keith_signals", {}) or {}
     wf_results = snap.get("walkforward_results", {}) or snap.get("walkforward_results_v40", {}) or {}
     gip = snap.get("gip", {})
-    current_quad = gip.get("structural_quad", "Q3") if isinstance(gip, dict) else "Q3"
+    if isinstance(gip, dict):
+        current_quad = gip.get("monthly_quad") or gip.get("structural_quad") or "Q3"
+    else:
+        current_quad = getattr(gip, "monthly_quad", None) or getattr(gip, "structural_quad", None) or "Q3"
 
     result = curator.filter_universe(
-        keith_signals=keith_signals,
-        wf_results=wf_results,
-        current_quad=current_quad,
-        min_stars=1,
+        keith_signals=keith_signals, wf_results=wf_results,
+        current_quad=current_quad, min_stars=1,
     )
-
     passed = result["passed"]
     rejected = result["rejected"]
 
-    # ── KPIs ─────────────────────────────────────────────────────────────
+    # ── TOP KPIs ─────────────────────────────────────────────────────────
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Passed", len(passed))
-    c2.metric("Rejected", len(rejected))
-    ma_count = sum(1 for p in passed if p["candidate"].get("ma_potential") in ("HIGH", "MEDIUM", "TARGET"))
-    c3.metric("M&A Targets", ma_count)
+    multi_bag = sum(1 for p in passed if "MULTI-BAG" in p["candidate"].get("tags", []))
+    c2.metric("🚀 Multi-bag candidates", multi_bag)
+    ma_targets = sum(1 for p in passed if "M&A-Target" in p["candidate"].get("tags", []))
+    c3.metric("🎯 M&A targets", ma_targets)
     c4.metric("Current Quad", current_quad)
 
     st.divider()
 
-    # ── Filters ──────────────────────────────────────────────────────────
-    tier_filter = st.radio("Tier filter", ["All", "5★", "4★+", "3★+", "1-2★ (HRHR)"], horizontal=True)
-    market_filter = st.multiselect("Market filter",
-                                   ["us_equity", "ihsg", "crypto", "forex", "commodity"],
-                                   default=["us_equity", "ihsg", "crypto"])
-    stage_filter = st.radio("Thesis stage filter",
-                            ["All", "🟢 Early only", "🟢🟡 Early-Mid", "Late not OK"],
-                            horizontal=True)
+    # ── FILTERS ──────────────────────────────────────────────────────────
+    f1, f2, f3 = st.columns([1, 1.4, 1])
+    with f1:
+        tier_filter = st.radio("Tier", ["All", "5★", "4★+", "3★+", "1-2★ (HRHR)"], horizontal=False)
+    with f2:
+        market_filter = st.multiselect(
+            "Market", ["us_equity", "ihsg", "crypto", "forex", "commodity"],
+            default=["us_equity", "ihsg", "crypto"],
+        )
+    with f3:
+        tag_filter = st.multiselect(
+            "Tag focus",
+            ["Bottleneck", "MULTI-BAG", "M&A-Target", "AI", "Citrini", "Energy",
+             "Materials", "Crypto", "IHSG", "Bandar", "Optical", "Memory",
+             "Power", "Storage", "SMR", "Speculative"],
+        )
+
+    min_upside_str = st.select_slider(
+        "Min upside ke TAIL TRR (% — di bawah ini = late stage, hide)",
+        options=["No filter", "0%", "20%", "50%", "100%", "200%"],
+        value="0%",
+        help="Edward's rule: Alpha Center = potensi surging, BUKAN udah surging. >100% = true multi-bag.",
+    )
+    min_upside = {"No filter": -1e9, "0%": 0, "20%": 20, "50%": 50, "100%": 100, "200%": 200}[min_upside_str]
 
     def _tier_ok(c):
         s = c["candidate"].get("stars", 0)
@@ -94,117 +121,111 @@ def render(snap: dict):
         if tier_filter == "1-2★ (HRHR)": return s <= 2
         return True
 
+    def _tag_ok(c):
+        if not tag_filter: return True
+        tags = c["candidate"].get("tags", [])
+        return any(t in tags for t in tag_filter)
+
     filtered = [c for c in passed
-                if _tier_ok(c) and c["candidate"].get("market") in market_filter]
+                if _tier_ok(c) and _tag_ok(c)
+                and c["candidate"].get("market") in market_filter]
 
-    # Apply stage filter using RR data
-    rr_data = snap.get("risk_range", {}).get("asset_ranges", {})
+    # Upside filter (if RR data available)
+    rr_data = snap.get("risk_range", {}).get("asset_ranges", {}) if isinstance(snap.get("risk_range"), dict) else {}
 
-    def _stage_ok(entry):
-        if stage_filter == "All": return True
-        rr = rr_data.get(entry["ticker"], {})
-        um = _calc_upside_metrics(rr, entry["ticker"])
-        tp = um.get("tail_position_pct")
-        if tp is None: return True  # no data, allow
-        if stage_filter == "🟢 Early only": return tp < 25
-        if stage_filter == "🟢🟡 Early-Mid": return tp < 50
-        if stage_filter == "Late not OK": return tp < 75
-        return True
-
-    filtered = [e for e in filtered if _stage_ok(e)]
-
-    # Surge Potential filter — Edward's rule: "yang punya potensi surging, bukan yang udah surging"
-    min_upside_filter = st.select_slider(
-        "Min upside to TAIL TRR (% — kalau di bawah ini = udah late stage, hide)",
-        options=["No filter", "20%", "50%", "100%", "200%"],
-        value="50%",
-        help="Edward's rule: Alpha Center = surge potential, bukan udah surging. >100% = real surge candidate.",
-    )
-    min_upside_map = {"No filter": -100, "20%": 20, "50%": 50, "100%": 100, "200%": 200}
-    min_upside = min_upside_map[min_upside_filter]
-
-    if min_upside > -100:
+    if min_upside > -1e9:
         filtered_pre = filtered
         filtered = []
         for e in filtered_pre:
             rr = rr_data.get(e["ticker"], {})
-            um = _calc_upside_metrics(rr, e["ticker"])
-            tail_upside = um.get("upside_to_tail_trr_pct")
-            # Keep if no data (might not be loaded), or upside above threshold
-            if tail_upside is None or tail_upside >= min_upside:
+            if not rr:
+                # No RR data — keep (don't punish for missing data)
+                filtered.append(e)
+                continue
+            um = _calc_upside_metrics(rr)
+            tu = um.get("upside_to_tail_trr_pct")
+            if tu is None or tu >= min_upside:
                 filtered.append(e)
 
-    # Sort: highest TAIL upside DESC (most surge potential first), then stars
+    # Sort: TAIL upside DESC (highest surge first), then stars DESC, then ticker
     def _sort_key(e):
         rr = rr_data.get(e["ticker"], {})
-        um = _calc_upside_metrics(rr, e["ticker"])
-        upside = um.get("upside_to_tail_trr_pct") or 0
-        return (-upside, -e["candidate"].get("stars", 0))
+        um = _calc_upside_metrics(rr)
+        return (-(um.get("upside_to_tail_trr_pct") or 0),
+                -e["candidate"].get("stars", 0), e["ticker"])
     filtered.sort(key=_sort_key)
 
-    st.caption(f"Showing **{len(filtered)}** candidates (sorted by stars desc, then earliest thesis stage first)")
+    st.caption(f"📊 **{len(filtered)}** candidates ditampilkan (sorted: highest upside first, then stars)")
     st.divider()
 
-    # ── RENDER cards — NATIVE STREAMLIT (no HTML escaping issues) ───────
+    # ── RENDER CARDS — native Streamlit (no HTML escape issues) ──────────
     for entry in filtered:
         ticker = entry["ticker"]
         cand = entry["candidate"]
-        stars = "⭐" * cand.get("stars", 0)
+        stars = _stars_html(cand.get("stars", 0))
         market = cand.get("market", "?").upper()
+        tags = cand.get("tags", [])
         rr = rr_data.get(ticker, {})
-        upside = _calc_upside_metrics(rr, ticker)
+        upside = _calc_upside_metrics(rr)
 
-        # IHSG: don't show SHORT actions (Edward rule: IHSG can only buy)
+        # IHSG no-short
         action = rr.get("signals", {}).get("action", "WATCH") if rr else "NO_DATA"
         if market == "IHSG" and action in ("SHORT_RIP", "COVER"):
             action = "WATCH"
-
         action_emoji = {"BUY_DIP": "🟢", "ADD": "🟢", "HOLD": "⚪", "WATCH": "⚪",
                         "TRIM": "🟡", "TRIM_RIP": "🟠", "SHORT_RIP": "🔴",
                         "COVER": "🟣", "NO_DATA": "⚫"}.get(action, "⚪")
 
+        # Compute SURGE flags
+        tail_upside_val = upside.get("upside_to_tail_trr_pct") or 0
+        is_multi_bag = "MULTI-BAG" in tags
+        is_ma_target = "M&A-Target" in tags
+
         with st.container(border=True):
-            # Header row
-            hc1, hc2, hc3, hc4 = st.columns([2.2, 1.2, 1.2, 1.4])
-            hc1.markdown(f"### {ticker} &nbsp;{stars}")
-            hc1.caption(f"{market} · {cand.get('bottleneck_layer', '—')}")
-            ma = cand.get("ma_potential", "")
-            if ma in ("HIGH", "MEDIUM", "TARGET"):
-                hc1.markdown(f"🎯 **M&A {ma}**")
+            # ── Header row ───────────────────────────────────────────────
+            hc1, hc2, hc3 = st.columns([2.4, 1.2, 1.4])
+            with hc1:
+                tickline = f"### {ticker} &nbsp;{stars}"
+                if is_multi_bag: tickline += " &nbsp;🚀"
+                if is_ma_target: tickline += " &nbsp;🎯 M&A"
+                st.markdown(tickline)
+                st.caption(f"{market} · {cand.get('monopoly_strength', '—')}")
+                st.caption(f"💼 Sources: {', '.join(cand.get('sources', [])[:4])}")
+            with hc2:
+                px_str = f"${(rr.get('px') or 0):.2f}" if rr.get('px') else "—"
+                st.metric("Price", px_str)
+                st.caption(f"{action_emoji} **{action}**")
+            with hc3:
+                if upside:
+                    st.metric("Upside → TAIL TRR",
+                             f"{upside['upside_to_tail_trr_pct']:+.1f}%" if upside.get('upside_to_tail_trr_pct') else "—")
+                    st.caption(f"🎯 {upside.get('thesis_stage', '—')}")
+                pot = cand.get("potential_upside", "")
+                if pot:
+                    st.caption(f"📈 **{pot}**")
 
-            hc2.metric("Price", f"${(rr.get('px') or 0):.2f}" if rr else "—")
-            hc2.caption(f"{action_emoji} **{action}**")
-            # 🚀 SURGE badge if TAIL upside > 100%
-            tail_upside_val = upside.get("upside_to_tail_trr_pct") or 0
-            if tail_upside_val >= 100:
-                hc2.markdown("🚀 **SURGE CANDIDATE**")
-            elif tail_upside_val >= 50:
-                hc2.markdown("📈 **High upside**")
+            # ── Thesis ───────────────────────────────────────────────────
+            st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
 
-            # UPSIDE METRICS — answers Edward's "MU masih jalan ga?" question
-            if upside:
-                hc3.metric("To TRADE TRR",
-                          f"{upside['upside_to_trade_trr_pct']:+.1f}%" if upside.get('upside_to_trade_trr_pct') else "—")
-                hc3.caption(f"TAIL TRR: {upside['upside_to_tail_trr_pct']:+.1f}%")
+            # ── Bottleneck reason ────────────────────────────────────────
+            br = cand.get("bottleneck_reason")
+            if br:
+                st.info(f"🔒 **Why bottleneck:** {br}")
 
-                hc4.markdown(f"**Thesis Stage:**")
-                hc4.markdown(f"{upside['thesis_stage']}")
-                if upside.get("tail_position_pct") is not None:
-                    hc4.caption(f"TAIL pos: {upside['tail_position_pct']:.0f}%")
-
-            # Thesis
-            st.markdown(f"**Thesis:** {cand.get('thesis', '')}")
-
-            # Bottom: catalysts + correlations (compact)
-            with st.expander("🔍 Detail — catalysts, correlations, RR, filter pass"):
+            # ── Correlations + Catalysts + Risk ──────────────────────────
+            with st.expander("🔍 Detail — correlations, catalysts, RR, filters"):
                 dc1, dc2 = st.columns(2)
                 with dc1:
-                    st.markdown("**📌 Catalysts 2026**")
-                    for cat in cand.get("catalysts_2026", []):
-                        st.caption(f"• {cat}")
-                    st.markdown("**🔗 Correlations (β)**")
-                    for parent, beta in cand.get("correlations", {}).items():
-                        st.caption(f"  {parent}: β={beta}")
+                    corr = cand.get("correlations", {})
+                    if corr:
+                        st.markdown("**🔗 Correlations**")
+                        for parent, val in corr.items():
+                            st.caption(f"  • **{parent}** — β/note: {val}")
+                    cats = cand.get("catalysts_2026", [])
+                    if cats:
+                        st.markdown("**📌 Catalysts 2026**")
+                        for cat in cats:
+                            st.caption(f"  • {cat}")
                 with dc2:
                     if rr:
                         st.markdown("**📊 TRR/LRR v20.3b**")
@@ -215,18 +236,26 @@ def render(snap: dict):
                         st.caption(f"TREND: ${(tr.get('lrr') or 0):.2f} → ${(tr.get('trr') or 0):.2f}")
                         st.caption(f"TAIL:  ${(tl.get('lrr') or 0):.2f} → ${(tl.get('trr') or 0):.2f}")
                         sig = rr.get("signals", {})
-                        st.caption(f"💡 {sig.get('reason', '')}")
-                    if cand.get("risk_notes"):
-                        st.warning(f"⚠️ {cand['risk_notes']}")
-                st.markdown("**✅ 5-Layer Filter:**")
+                        if sig.get("reason"):
+                            st.caption(f"💡 {sig['reason']}")
+                    risk = cand.get("risk")
+                    if risk:
+                        st.warning(f"⚠️ **Risk:** {risk}")
+                    rn = cand.get("risk_notes")
+                    if rn:
+                        st.warning(f"⚠️ {rn}")
+                st.markdown("**✅ 5-Layer Filter Pass:**")
                 for layer_name, check in entry["checks"].items():
                     icon = "✅" if check["pass"] else "❌"
                     st.caption(f"{icon} {layer_name}: {check['msg']}")
 
-    # ── Rejected list ───────────────────────────────────────────────────
+    if not filtered:
+        st.info("No candidates match current filters. Loosen the filter to see more.")
+
+    # ── Rejected list (compact) ──────────────────────────────────────────
     if rejected:
         with st.expander(f"❌ Rejected ({len(rejected)})"):
             for entry in rejected:
-                fail_reasons = [f"{ln}: {ch['msg']}"
+                fail_reasons = [f"{ln.replace('L', 'Layer ').replace('_', ': ')}: {ch['msg']}"
                                 for ln, ch in entry["checks"].items() if not ch["pass"]]
-                st.caption(f"**{entry['ticker']}** — {'; '.join(fail_reasons)}")
+                st.caption(f"**{entry['ticker']}** — {' · '.join(fail_reasons)}")

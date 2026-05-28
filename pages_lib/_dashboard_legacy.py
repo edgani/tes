@@ -27,6 +27,84 @@ PLOTLY_TEMPLATE = {
     "font": {"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 12},
 }
 
+import math
+
+# ═══════════════════════════════════════════════════════════════════
+# HELPERS FROM tes.zip ORIGINAL (required by dashboard functions)
+# ═══════════════════════════════════════════════════════════════════
+class _GipProxy:
+    def __init__(self, data):
+        self._is_dict = isinstance(data, dict)
+        if self._is_dict: self._d = data
+        else: self._obj = data
+    def __getattr__(self, name):
+        if self._is_dict: return self._d.get(name)
+        return getattr(self._obj, name, None)
+
+
+def _safe_float(v):
+    if v is None: return None
+    try:
+        if isinstance(v, pd.Series): v = v.iloc[0] if len(v) > 0 else None
+        if v is None: return None
+        f = float(v)
+        return f if math.isfinite(f) else None
+    except: return None
+
+
+def fp(v):
+    try: return f"{float(v):.1%}" if v is not None and math.isfinite(float(v)) else "-"
+    except: return "-"
+
+
+def ff(v, d=2):
+    try: return f"{float(v):,.{d}f}" if v is not None and math.isfinite(float(v)) else "-"
+    except: return "-"
+
+
+def sf(v, fmt=".2f"):
+    try:
+        if v is None: return "—"
+        f = float(v)
+        if not math.isfinite(f): return "—"
+        return format(f, fmt)
+    except:
+        return "—"
+
+
+def _price_ret(ticker, prices, days=21):
+    if not prices: return None
+    s = prices.get(ticker)
+    if s is None: return None
+    try:
+        s = pd.to_numeric(pd.Series(s), errors="coerce").dropna()
+    except: return None
+    if len(s) < days + 1: return None
+    try: return float(s.iloc[-1] / s.iloc[-(days+1)] - 1)
+    except: return None
+
+
+def _quad_color(q):
+    return {"Q1":"#3FB950","Q2":"#D29922","Q3":"#F85149","Q4":"#A371F7"}.get(q, "#8B949E")
+
+
+def _quad_name(q):
+    return {"Q1":"Goldilocks","Q2":"Reflation","Q3":"Stagflation","Q4":"Deflation"}.get(q, q)
+
+
+def _ret_color(r):
+    if r is None: return "#8B949E"
+    r = float(r)
+    if r > 0.03: return "#3FB950"
+    if r > 0: return "#2EA043"
+    if r > -0.03: return "#F85149"
+    return "#DA3633"
+
+
+def _sparkline_html(series, width=80, height=24, bars=18):
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════════
 
 def _plotly_gauge(value, title, max_val=100, color=None, suffix="%", height=90):
