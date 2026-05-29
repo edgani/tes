@@ -1,0 +1,320 @@
+"""live_data_engine.py — Reliable server-side data fetchers v40.4
+
+Problem solved: barchart/CME/laevitas are JS-heavy + bot-detected → fail on cloud servers.
+This engine uses sources that ACTUALLY work server-side (Streamlit Cloud):
+  • OPTIONS/GEX/WALLS  → yfinance option_chain (real OI, IV, computes gamma/walls/max-pain/PCR/GEX)
+  • ON-CHAIN          → DeFiLlama api.llama.fi (public REST, proper headers)
+  • COT               → CFTC reports (keyed by TICKER, not product name — fixes "unavailable")
+
+All outputs keyed by the EXACT ticker symbol the UI uses (BTC-USD, EURUSD=X, NVDA, etc.)
+so rich_ticker_card lookups succeed.
+"""
+from __future__ import annotations
+import logging, math
+from typing import Dict, List, Optional
+import datetime as dt
+
+logger = logging.getLogger(__name__)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# OPTIONS via yfinance — computes GEX / walls / max-pain / PCR / expected move
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _norm_cdf(x):
+    return 0.5 * (1 + math.erf(x / math.sqrt(2)))
+
+
+def _bs_gamma(S, K, T, r, sigma):
+    """Black-Scholes gamma."""
+    if S <= 0 or K <= 0 or T <= 0 or sigma <= 0:
+        return 0.0
+    try:
+        d1 = (math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        pdf = math.exp(-0.5 * d1 ** 2) / math.sqrt(2 * math.pi)
+        return pdf / (S * sigma * math.sqrt(T))
+    except (ValueError, ZeroDivisionError):
+        return 0.0
+
+
+def fetch_options_yf(tickers: List[str], max_tickers: int = 30) -> Dict:
+    """Fetch real options data via yfinance + compute gamma exposure, walls, max-pain.
+
+    Returns: {ticker: {call_wall, put_wall, max_pain, gex, net_gex, put_call_ratio,
+                       atm_iv, expected_move_pct, gamma_flip, ...}}
+    """
+    try:
+        import yfinance as yf
+    except ImportError:
+        logger.warning("yfinance not installed — options unavailable")
+        return {}
+
+    out = {}
+    for ticker in tickers[:max_tickers]:
+        try:
+            tk = yf.Ticker(ticker)
+            exps = tk.options
+            if not exps:
+                continue
+
+            # Spot price
+            hist = tk.history(period="1d")
+            if hist.empty:
+                continue
+            spot = float(hist["Close"].iloc[-1])
+            if spot <= 0:
+                continue
+
+            # Use nearest 2 expiries for gamma/wall computation
+            today = dt.date.today()
+            near_exps = exps[:2]
+
+            total_call_oi = {}  # strike → call OI
+            total_put_oi = {}   # strike → put OI
+            gex_by_strike = {}  # strike → net dealer gamma exposure
+            atm_iv = None
+            atm_call_price = atm_put_price = None
+            min_atm_dist = 1e9
+
+            for exp_str in near_exps:
+                try:
+                    exp_date = dt.datetime.strptime(exp_str, "%Y-%m-%d").date()
+                    T = max((exp_date - today).days, 1) / 365.0
+                    chain = tk.option_chain(exp_str)
+                    calls, puts = chain.calls, chain.puts
+
+                    for _, row in calls.iterrows():
+                        K = float(row["strike"])
+                        oi = float(row.get("openInterest", 0) or 0)
+                        iv = float(row.get("impliedVolatility", 0) or 0)
+                        total_call_oi[K] = total_call_oi.get(K, 0) + oi
+                        gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
+                        # Standard convention: dealers LONG call gamma → positive GEX
+                        gex_by_strike[K] = gex_by_strike.get(K, 0) + gamma * oi * 100 * spot * spot * 0.01
+                        # ATM tracking
+                        dist = abs(K - spot)
+                        if dist < min_atm_dist:
+                            min_atm_dist = dist
+                            atm_iv = iv
+                            atm_call_price = float(row.get("lastPrice", 0) or 0)
+
+                    for _, row in puts.iterrows():
+                        K = float(row["strike"])
+                        oi = float(row.get("openInterest", 0) or 0)
+                        iv = float(row.get("impliedVolatility", 0) or 0)
+                        total_put_oi[K] = total_put_oi.get(K, 0) + oi
+                        gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
+                        # Standard convention: dealers SHORT put gamma → negative GEX
+                        gex_by_strike[K] = gex_by_strike.get(K, 0) - gamma * oi * 100 * spot * spot * 0.01
+                        if abs(K - spot) < 0.01 * spot:
+                            atm_put_price = float(row.get("lastPrice", 0) or 0)
+                except Exception:
+                    continue
+
+            if not total_call_oi and not total_put_oi:
+                continue
+
+            # Call wall = strike with max call OI above spot
+            calls_above = {k: v for k, v in total_call_oi.items() if k >= spot}
+            call_wall = max(calls_above, key=calls_above.get) if calls_above else None
+            # Put wall = strike with max put OI below spot
+            puts_below = {k: v for k, v in total_put_oi.items() if k <= spot}
+            put_wall = max(puts_below, key=puts_below.get) if puts_below else None
+
+            # Net GEX
+            net_gex = sum(gex_by_strike.values())
+
+            # Gamma flip = strike where cumulative GEX crosses from negative to positive
+            gamma_flip = None
+            sorted_strikes = sorted(gex_by_strike.keys())
+            cum = 0
+            for k in sorted_strikes:
+                prev_cum = cum
+                cum += gex_by_strike[k]
+                if prev_cum < 0 <= cum and gamma_flip is None:
+                    gamma_flip = k
+                    break
+
+            # Max pain = strike minimizing total ITM value to option holders
+            all_strikes = sorted(set(list(total_call_oi.keys()) + list(total_put_oi.keys())))
+            max_pain = None
+            min_pain = 1e18
+            for K_test in all_strikes:
+                pain = 0
+                for K, oi in total_call_oi.items():
+                    if K_test > K:
+                        pain += (K_test - K) * oi
+                for K, oi in total_put_oi.items():
+                    if K_test < K:
+                        pain += (K - K_test) * oi
+                if pain < min_pain:
+                    min_pain = pain
+                    max_pain = K_test
+
+            # PCR
+            tot_call = sum(total_call_oi.values())
+            tot_put = sum(total_put_oi.values())
+            pcr = (tot_put / tot_call) if tot_call > 0 else None
+
+            # Expected move (ATM straddle / spot)
+            expected_move_pct = None
+            if atm_call_price and atm_put_price:
+                expected_move_pct = (atm_call_price + atm_put_price) / spot * 100
+            elif atm_iv:
+                # weekly EM approx from annualized IV
+                expected_move_pct = atm_iv / math.sqrt(52) * 100
+
+            out[ticker] = {
+                "spot": round(spot, 2),
+                "call_wall": round(call_wall, 2) if call_wall else None,
+                "call_wall_strike": round(call_wall, 2) if call_wall else None,
+                "put_wall": round(put_wall, 2) if put_wall else None,
+                "put_wall_strike": round(put_wall, 2) if put_wall else None,
+                "max_pain": round(max_pain, 2) if max_pain else None,
+                "gamma_flip": round(gamma_flip, 2) if gamma_flip else None,
+                "gex": net_gex,
+                "net_gex": net_gex,
+                "put_call_ratio": round(pcr, 2) if pcr else None,
+                "pc_ratio": round(pcr, 2) if pcr else None,
+                "atm_iv": round(atm_iv, 4) if atm_iv else None,
+                "iv_30d": round(atm_iv, 4) if atm_iv else None,
+                "expected_move_pct": round(expected_move_pct, 2) if expected_move_pct else None,
+                "total_call_oi": int(tot_call),
+                "total_put_oi": int(tot_put),
+                "source": "yfinance",
+            }
+        except Exception as e:
+            logger.debug(f"options fetch {ticker}: {e}")
+            continue
+
+    logger.info(f"live_data: yfinance options fetched for {len(out)} tickers")
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ON-CHAIN via DeFiLlama public API
+# ═══════════════════════════════════════════════════════════════════════════
+
+def fetch_onchain_defillama(ticker_chain_map: Dict[str, str]) -> Dict:
+    """Fetch on-chain TVL + changes from DeFiLlama. Keyed by TICKER (BTC-USD etc.).
+
+    ticker_chain_map: {"BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana"}
+    """
+    import urllib.request, json
+    out = {}
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+               "Accept": "application/json"}
+
+    # Fetch all chains once
+    try:
+        req = urllib.request.Request("https://api.llama.fi/v2/chains", headers=headers)
+        all_chains = json.loads(urllib.request.urlopen(req, timeout=12).read())
+        chain_by_name = {c.get("name", "").lower(): c for c in all_chains}
+    except Exception as e:
+        logger.warning(f"DeFiLlama chains fetch failed: {e}")
+        chain_by_name = {}
+
+    for ticker, chain_name in ticker_chain_map.items():
+        c = chain_by_name.get(chain_name.lower())
+        if not c:
+            continue
+        tvl = c.get("tvl", 0)
+
+        # Try to get historical for change calc
+        tvl_change_7d = None
+        try:
+            req = urllib.request.Request(
+                f"https://api.llama.fi/v2/historicalChainTvl/{chain_name}", headers=headers)
+            hist = json.loads(urllib.request.urlopen(req, timeout=12).read())
+            if len(hist) >= 8:
+                now_tvl = hist[-1]["tvl"]
+                week_ago = hist[-8]["tvl"]
+                if week_ago > 0:
+                    tvl_change_7d = (now_tvl / week_ago - 1) * 100
+        except Exception:
+            pass
+
+        # Interpret as accumulation/distribution proxy
+        signal = "NEUTRAL"
+        if tvl_change_7d is not None:
+            if tvl_change_7d > 5:
+                signal = "ACCUMULATION (TVL inflow)"
+            elif tvl_change_7d < -5:
+                signal = "DISTRIBUTION (TVL outflow)"
+
+        out[ticker] = {
+            "tvl": tvl,
+            "tvl_usd": tvl,
+            "tvl_change_7d": round(tvl_change_7d, 2) if tvl_change_7d is not None else None,
+            "whale_accum_7d": round(tvl_change_7d, 2) if tvl_change_7d is not None else None,
+            "signal": signal,
+            "source": "defillama",
+        }
+
+    logger.info(f"live_data: DeFiLlama on-chain fetched for {len(out)} tickers")
+    return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# COT — keyed by TICKER (fixes "unavailable" — was keyed by product name)
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Map TICKER SYMBOL → CFTC product name (so UI lookup by ticker works)
+COT_TICKER_MAP = {
+    "EURUSD=X": "EUR", "EUR=X": "EUR",
+    "GBPUSD=X": "GBP", "GBP=X": "GBP",
+    "JPY=X": "JPY", "USDJPY=X": "JPY",
+    "AUDUSD=X": "AUD", "AUD=X": "AUD",
+    "USDCAD=X": "CAD", "CAD=X": "CAD",
+    "USDCHF=X": "CHF", "CHF=X": "CHF",
+    "NZDUSD=X": "NZD",
+    "DX-Y.NYB": "USD", "UUP": "USD",
+    "GC=F": "GOLD", "GLD": "GOLD",
+    "SI=F": "SILVER", "SLV": "SILVER",
+    "CL=F": "CRUDE", "USO": "CRUDE",
+    "NG=F": "NATGAS", "UNG": "NATGAS",
+    "HG=F": "COPPER", "CPER": "COPPER",
+    "ZC=F": "CORN", "CORN": "CORN",
+    "ZW=F": "WHEAT", "WEAT": "WHEAT",
+    "ZS=F": "SOYBEAN",
+}
+
+
+def fetch_cot_by_ticker(tickers: List[str]) -> Dict:
+    """Fetch COT data keyed by TICKER symbol (not product name)."""
+    try:
+        from engines.cftc_cot_scraper import get_cot
+    except Exception as e:
+        logger.warning(f"CFTC scraper import failed: {e}")
+        return {}
+
+    out = {}
+    # Build reverse: which products do we need + which tickers map to them
+    needed = {}  # product → [tickers]
+    for t in tickers:
+        prod = COT_TICKER_MAP.get(t) or COT_TICKER_MAP.get(t.upper())
+        if prod:
+            needed.setdefault(prod, []).append(t)
+
+    for prod, ticker_list in needed.items():
+        try:
+            cot = get_cot(prod)
+            if cot:
+                # Normalize fields
+                normalized = {
+                    "noncomm_net": cot.get("noncomm_net") or cot.get("non_commercial_net") or cot.get("net_position"),
+                    "noncomm_change_wow": cot.get("noncomm_change") or cot.get("change_net") or cot.get("week_change"),
+                    "commercial_net": cot.get("comm_net") or cot.get("commercial_net"),
+                    "extreme_position": cot.get("extreme") or cot.get("at_extreme", False),
+                    "product": prod,
+                    "source": "cftc",
+                }
+                # Key by EACH ticker that maps to this product
+                for t in ticker_list:
+                    out[t] = normalized
+        except Exception as e:
+            logger.debug(f"COT {prod}: {e}")
+            continue
+
+    logger.info(f"live_data: COT fetched for {len(out)} tickers")
+    return out

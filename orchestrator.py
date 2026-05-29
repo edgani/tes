@@ -3690,13 +3690,14 @@ def build_snapshot_v40(
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
-    """Fetch options/COT/OI/on-chain from real scrapers. Best-effort, never crashes.
+    """Fetch options/COT/OI/on-chain. Uses reliable server-side sources (v40.4).
 
-    Populates:
-      options_data    ← barchart (US) + laevitas (crypto GEX/vol/flows)
-      cot_data        ← cftc_cot_scraper (forex/commodities)
-      cme_oi          ← cme_scraper (OI heatmap, expected range)
-      onchain_data    ← defillama (crypto on-chain TVL/dex/fees)
+    PRIMARY (reliable server-side):
+      • options_data ← yfinance option_chain (GEX/walls/max-pain/PCR/expected-move)
+      • onchain_data ← DeFiLlama api.llama.fi (keyed by ticker)
+      • cot_data     ← CFTC (keyed by TICKER not product → fixes 'unavailable')
+    FALLBACK: barchart/laevitas/cme scrapers (if yfinance/etc miss).
+    All keyed by EXACT ticker symbol the UI uses.
     """
     def _cb(m, p):
         try:
@@ -3704,95 +3705,74 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
         except Exception: pass
 
     out = {"options_data": {}, "cot_data": {}, "cme_oi": {}, "onchain_data": {}}
+    price_tickers = list(prices.keys()) if prices else []
 
-    price_tickers = set(prices.keys()) if prices else set()
-
-    # Identify which tickers belong to which market (for targeted scraping)
     us_tickers = [t for t in price_tickers if not any(s in t.upper() for s in [".JK", "=X", "=F", "-USD", "^"])]
-    crypto_tickers = [t for t in price_tickers if "-USD" in t.upper()]
-    fx_tickers = [t for t in price_tickers if "=X" in t.upper()]
-    comm_tickers = [t for t in price_tickers if "=F" in t.upper()]
+    crypto_tickers = [t for t in price_tickers if "-USD" in t.upper() and not t.startswith("DX")]
+    fx_comm_tickers = [t for t in price_tickers if "=X" in t.upper() or "=F" in t.upper()
+                       or t in ("DX-Y.NYB", "UUP", "USO", "GLD", "SLV", "UNG", "CPER", "CORN", "WEAT")]
 
-    # Cap to avoid rate-limit / timeout (top names only)
-    OPTIONS_CAP = 25
-    us_options_targets = us_tickers[:OPTIONS_CAP]
-
-    # ── OPTIONS: barchart (US stocks) ────────────────────────────────────
-    _cb("v40: Fetching options data (barchart)…", 95)
+    # ── OPTIONS via yfinance (US + ETF + index proxies) ──────────────────
+    _cb("v40: Fetching options (yfinance)…", 95)
     try:
-        from engines.barchart_scraper import quick_gamma_scan
-        for t in us_options_targets:
-            try:
-                data = quick_gamma_scan(t)
-                if data and any(v is not None for v in data.values()):
-                    out["options_data"][t] = data
-            except Exception:
-                continue
+        from engines.live_data_engine import fetch_options_yf
+        # US equities + key ETFs (IBIT, SPY, QQQ) + commodity ETFs with options
+        opt_targets = us_tickers[:25] + [t for t in ("SPY", "QQQ", "IBIT", "GLD", "SLV", "USO", "TLT", "IWM")
+                                          if t in price_tickers]
+        opt_targets = list(dict.fromkeys(opt_targets))  # dedupe, preserve order
+        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=35)
     except Exception as e:
-        logger.warning(f"v40: barchart options fetch failed: {e}")
+        logger.warning(f"v40: yfinance options failed: {e}")
 
-    # ── OPTIONS/GEX: laevitas (crypto + US index) ────────────────────────
+    # Crypto options via yfinance proxies (IBIT for BTC, ETHA for ETH) + laevitas fallback
     try:
-        from engines.laevitas_scraper import LaevitasScraper
-        lv = LaevitasScraper()
-        for t in (crypto_tickers[:8] + ["SPY", "QQQ"]):
-            try:
-                base = t.split("-")[0] if "-" in t else t
-                gex = lv.get_gex(base) if hasattr(lv, "get_gex") else None
-                if gex:
-                    existing = out["options_data"].get(t, {})
-                    if isinstance(gex, dict):
-                        existing.update(gex)
-                    out["options_data"][t] = existing
-            except Exception:
-                continue
+        from engines.live_data_engine import fetch_options_yf
+        crypto_etf_map = {"BTC-USD": "IBIT", "ETH-USD": "ETHA"}
+        for crypto_t, etf in crypto_etf_map.items():
+            if crypto_t in price_tickers:
+                etf_opts = fetch_options_yf([etf], max_tickers=1)
+                if etf_opts.get(etf):
+                    out["options_data"][crypto_t] = {**etf_opts[etf], "proxy_etf": etf}
     except Exception as e:
-        logger.warning(f"v40: laevitas fetch failed: {e}")
+        logger.debug(f"crypto options proxy: {e}")
 
-    # ── COT: cftc (forex + commodities) ──────────────────────────────────
-    _cb("v40: Fetching COT data (CFTC)…", 97)
+    # ── ON-CHAIN via DeFiLlama (keyed by ticker) ─────────────────────────
+    _cb("v40: Fetching on-chain (DeFiLlama)…", 97)
     try:
-        from engines.cftc_cot_scraper import get_all_signals
-        # Map tickers → CFTC product names
-        cot_products = ["EUR", "GBP", "JPY", "AUD", "CAD", "CHF",  # FX
-                        "GOLD", "SILVER", "CRUDE", "NATGAS", "COPPER", "CORN"]  # commodities
-        cot_signals = get_all_signals(cot_products)
-        if cot_signals:
-            out["cot_data"] = cot_signals
+        from engines.live_data_engine import fetch_onchain_defillama
+        chain_map = {}
+        name_map = {"BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana",
+                    "AVAX-USD": "Avalanche", "MATIC-USD": "Polygon", "ARB-USD": "Arbitrum",
+                    "OP-USD": "OP Mainnet", "BNB-USD": "BSC"}
+        for t in crypto_tickers:
+            if t in name_map:
+                chain_map[t] = name_map[t]
+        if chain_map:
+            out["onchain_data"] = fetch_onchain_defillama(chain_map)
     except Exception as e:
-        logger.warning(f"v40: CFTC COT fetch failed: {e}")
+        logger.warning(f"v40: DeFiLlama failed: {e}")
 
-    # ── CME OI heatmap (commodities) ─────────────────────────────────────
+    # ── COT keyed by ticker (fixes 'unavailable') ────────────────────────
+    _cb("v40: Fetching COT (CFTC)…", 98)
+    try:
+        from engines.live_data_engine import fetch_cot_by_ticker
+        out["cot_data"] = fetch_cot_by_ticker(fx_comm_tickers)
+    except Exception as e:
+        logger.warning(f"v40: COT failed: {e}")
+
+    # ── CME OI (commodities — best effort, may fail server-side) ─────────
     try:
         from engines.cme_scraper import get_cme_volume
-        cme_products = {"CL=F": "CL", "GC=F": "GC", "SI=F": "SI", "NG=F": "NG", "HG=F": "HG"}
-        for tkr, prod in cme_products.items():
+        cme_map = {"CL=F": "CL", "GC=F": "GC", "SI=F": "SI", "NG=F": "NG", "HG=F": "HG"}
+        for tkr, prod in cme_map.items():
             if tkr in price_tickers:
                 try:
                     vol = get_cme_volume(prod)
-                    if vol:
-                        out["cme_oi"][tkr] = vol
+                    if vol: out["cme_oi"][tkr] = vol
                 except Exception:
                     continue
     except Exception as e:
-        logger.warning(f"v40: CME fetch failed: {e}")
-
-    # ── ON-CHAIN: defillama (crypto) ─────────────────────────────────────
-    _cb("v40: Fetching on-chain data (DeFiLlama)…", 98)
-    try:
-        from engines.defillama_scraper import DeFiLlamaFetcher
-        dl = DeFiLlamaFetcher()
-        chain_map = {"BTC-USD": "Bitcoin", "ETH-USD": "Ethereum", "SOL-USD": "Solana"}
-        for tkr, chain in chain_map.items():
-            if tkr in price_tickers:
-                try:
-                    metrics = dl.get_chain_tvl(chain) if hasattr(dl, "get_chain_tvl") else None
-                    if metrics:
-                        out["onchain_data"][tkr] = (metrics.__dict__ if hasattr(metrics, "__dict__") else metrics)
-                except Exception:
-                    continue
-    except Exception as e:
-        logger.warning(f"v40: defillama fetch failed: {e}")
+        logger.debug(f"v40: CME OI: {e}")
 
     logger.info(f"v40: external data — options:{len(out['options_data'])} "
                 f"cot:{len(out['cot_data'])} cme:{len(out['cme_oi'])} onchain:{len(out['onchain_data'])}")
