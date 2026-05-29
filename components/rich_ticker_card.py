@@ -393,8 +393,50 @@ def _bandar_narrative(b: dict, ticker: str) -> str:
     return "\n".join(parts)
 
 
+def _render_targets(rr: dict, px: float, market_key: str):
+    """Render explicit nearest/mid/farthest target prices from TRR/LRR.
+
+    Edward's request: di US stocks tab + front-run, kasih target terdekat + terjauh.
+    Computed from TRR/LRR (TRADE/TREND/TAIL) — these ARE the system targets.
+    """
+    import streamlit as st
+    if not rr: return
+    trade = rr.get("trade", {})
+    trend = rr.get("trend", {})
+    tail = rr.get("tail", {})
+    phase = rr.get("phase", "NEUTRAL")
+
+    # For BULL/sideways: targets are upper TRR. For BEAR: targets are lower LRR.
+    if phase == "BEAR":
+        nearest = trade.get("lrr") or 0
+        mid = trend.get("lrr") or 0
+        farthest = tail.get("lrr") or 0
+        label_n, label_m, label_f = "Target Terdekat (TRADE LRR)", "Target Mid (TREND LRR)", "Target Terjauh (TAIL LRR)"
+        direction = "↓"
+    else:
+        nearest = trade.get("trr") or 0
+        mid = trend.get("trr") or 0
+        farthest = tail.get("trr") or 0
+        label_n, label_m, label_f = "Target Terdekat (TRADE TRR)", "Target Mid (TREND TRR)", "Target Terjauh (TAIL TRR)"
+        direction = "↑"
+
+    is_fx = market_key == "forex"
+    fmt = ".4f" if is_fx else ",.2f"
+    cur_sym = "" if is_fx else "$"
+
+    if nearest and px:
+        d_near = (nearest/px - 1) * 100
+        d_mid = (mid/px - 1) * 100 if mid else 0
+        d_far = (farthest/px - 1) * 100 if farthest else 0
+        st.markdown(
+            f"**🎯 Target Prices** ({direction}): "
+            f"Near **{cur_sym}{format(nearest, fmt)}** ({d_near:+.1f}%) · "
+            f"Mid **{cur_sym}{format(mid, fmt)}** ({d_mid:+.1f}%) · "
+            f"Far **{cur_sym}{format(farthest, fmt)}** ({d_far:+.1f}%)"
+        )
+
+
 def _broker_codes_explained(brokers: list, side="buy") -> str:
-    """Indonesian broker code classifications."""
     # Common IHSG broker codes — classify foreign vs domestic + behavior
     FOREIGN_BROKERS = {"CS", "KZ", "MS", "AK", "BK", "DB", "GS", "ML", "DX", "RG", "UU"}  # CIMB Securities, Kim Eng (Maybank), Macquarie, etc.
     LOCAL_BANDAR_BROKERS = {"BR", "BNI", "DR", "FZ", "LG", "MQ", "MU", "NI", "RX", "PD", "PG", "YP", "YU", "YJ", "ZP", "BK"}  # local market makers
@@ -489,10 +531,12 @@ def render_rich_ticker(
             lag = frontrun_info.get("lag_days", 0)
             thesis = frontrun_info.get("thesis", "")
             chain = frontrun_info.get("chain", "")
+            readiness = frontrun_info.get("readiness", "")
+            readiness_line = f"\n\n**Status: {readiness}**" if readiness else ""
             st.info(
                 f"🔮 **Front-Run Setup:** Driver **{driver}** moved **{shock:+.2f}%** → "
                 f"expected impact pada {ticker}: **{expected:+.2f}% within {lag} days**. "
-                f"Chain: {chain}. {thesis}"
+                f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
         # ── TRR/LRR ───────────────────────────────────────────────────────
@@ -516,6 +560,9 @@ def render_rich_ticker(
 
         # ── PHASE NARRATIVE ───────────────────────────────────────────────
         st.markdown(f"**🧭 Fase saat ini:** {_phase_narrative(rr)}")
+
+        # ── TARGET PRICES (nearest + farthest, Edward request) ────────────
+        _render_targets(rr, px, market_key)
 
         # ── ENTRY NARRATIVE ───────────────────────────────────────────────
         entry_text = _entry_narrative(rr)

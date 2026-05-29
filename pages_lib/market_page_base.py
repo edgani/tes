@@ -16,19 +16,31 @@ import streamlit as st
 from components.rich_ticker_card import render_rich_ticker
 
 
+COMMODITY_ETFS = {"USO", "GLD", "SLV", "UNG", "CPER", "DBC", "XOP", "OIH", "GDX", "GDXJ",
+                  "USL", "BNO", "UGA", "DBA", "CORN", "WEAT", "PALL", "PPLT", "IAU", "SIVR"}
+FOREX_PROXIES = {"DX-Y.NYB", "UUP", "FXE", "FXY", "FXB", "UDN", "FXA", "FXC", "FXF", "CYB"}
+
+
 def _market_match(ticker: str, market_key: str) -> bool:
-    """Filter tickers belonging to this market."""
+    """Filter tickers belonging to this market. Specific markets checked before us_equity."""
     t = ticker.upper()
-    if market_key == "us_equity":
-        return not any(s in t for s in [".JK", "=X", "=F", "-USD", "^"])
-    elif market_key == "forex":
-        return "=X" in t or t in ("DX-Y.NYB", "UUP", "FXE", "FXY", "FXB", "UDN")
+    is_jk = ".JK" in t or t in ("^JKSE", "EIDO")
+    is_fx = "=X" in t or t in FOREX_PROXIES
+    is_comm = "=F" in t or t in COMMODITY_ETFS
+    is_crypto = "-USD" in t and t.split("-")[0] not in ("DX",)
+    is_index = t.startswith("^") and t not in ("^JKSE",)
+
+    if market_key == "forex":
+        return is_fx
     elif market_key == "commodity":
-        return "=F" in t or t in ("USO", "GLD", "SLV", "UNG", "CPER", "DBC", "XOP", "OIH", "GDX", "GDXJ")
+        return is_comm
     elif market_key == "crypto":
-        return "-USD" in t and t.split("-")[0] not in ("DX",)
+        return is_crypto
     elif market_key == "ihsg":
-        return ".JK" in t or t in ("^JKSE", "EIDO")
+        return is_jk
+    elif market_key == "us_equity":
+        # us_equity = NOT any other market, and not a raw index symbol
+        return not (is_jk or is_fx or is_comm or is_crypto or is_index)
     return False
 
 
@@ -256,6 +268,16 @@ def _render_frontrun_tab(market_rrs, snap, market_key, show_options, show_cot, s
                 continue
             seen.add(fr["ticker"])
             rr = market_rrs.get(fr["ticker"], {})
+            # Readiness: "udah siap" if price near entry zone, "siap-siap" if still forming
+            sig = rr.get("signals", {}) if rr else {}
+            trade_pos = sig.get("trade_position_pct", 50)
+            action = sig.get("action", "")
+            if action in ("BUY_DIP", "ADD") or trade_pos < 30:
+                fr["readiness"] = "🟢 UDAH SIAP (entry zone aktif)"
+            elif abs(fr.get("expected_pct", 0)) > 3 and fr.get("lag_days", 0) <= 2:
+                fr["readiness"] = "🟡 SIAP-SIAP (driver baru gerak, impact incoming)"
+            else:
+                fr["readiness"] = "⚪ SEDANG DISIAPKAN (watch, belum entry)"
             render_rich_ticker(
                 fr["ticker"], rr, snap, market_key,
                 show_options=show_options, show_cot=show_cot,

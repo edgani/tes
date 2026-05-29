@@ -11,7 +11,7 @@ import streamlit as st
 
 
 def _calc_upside_metrics(rr: dict) -> dict:
-    """Compute thesis-progress metrics: TAIL position, distance to TRR."""
+    """Compute thesis-progress metrics: TAIL position, distance to TRR, TARGET PRICES."""
     if not rr or not isinstance(rr, dict):
         return {}
     px = rr.get("px", 0) or 0
@@ -20,11 +20,13 @@ def _calc_upside_metrics(rr: dict) -> dict:
     tail = rr.get("tail", {}) or {}
     tail_lrr = tail.get("lrr", 0) or 0
     tail_trr = tail.get("trr", 0) or 0
+    trade_trr = trade.get("trr", 0) or 0
+    trend_trr = trend.get("trr", 0) or 0
     tail_pos = None
     if tail_trr > tail_lrr > 0 and px > 0:
         tail_pos = max(0, min(100, (px - tail_lrr) / (tail_trr - tail_lrr) * 100))
-    upside_trade = ((trade.get("trr", px) - px) / px * 100) if px > 0 else 0
-    upside_trend = ((trend.get("trr", px) - px) / px * 100) if px > 0 else 0
+    upside_trade = ((trade_trr - px) / px * 100) if px > 0 else 0
+    upside_trend = ((trend_trr - px) / px * 100) if px > 0 else 0
     upside_tail = ((tail_trr - px) / px * 100) if px > 0 and tail_trr > 0 else 0
     if tail_pos is None:
         thesis_stage = "—"
@@ -42,6 +44,11 @@ def _calc_upside_metrics(rr: dict) -> dict:
         "upside_to_trend_trr_pct": round(upside_trend, 2),
         "upside_to_tail_trr_pct": round(upside_tail, 2),
         "thesis_stage": thesis_stage,
+        # TARGET PRICES (Edward request: bukan cuma %)
+        "target_near": round(trade_trr, 2),     # nearest target = TRADE TRR
+        "target_mid": round(trend_trr, 2),       # mid target = TREND TRR
+        "target_far": round(tail_trr, 2),        # farthest target = TAIL TRR
+        "current_px": round(px, 2),
     }
 
 
@@ -209,6 +216,18 @@ def render(snap: dict):
                 pot = cand.get("potential_upside", "")
                 if pot:
                     st.caption(f"📈 **{pot}**")
+
+            # ── TARGET PRICES (Edward: target harga bukan cuma %) ─────────
+            if upside and upside.get("target_near"):
+                tn = upside["target_near"]; tm = upside["target_mid"]; tf = upside["target_far"]
+                cur = upside["current_px"]
+                st.markdown(
+                    f"**🎯 Target Prices** (from TRR/LRR): "
+                    f"Near **${tn:,.2f}** ({((tn/cur-1)*100):+.1f}%) · "
+                    f"Mid **${tm:,.2f}** ({((tm/cur-1)*100):+.1f}%) · "
+                    f"Far **${tf:,.2f}** ({((tf/cur-1)*100):+.1f}%)"
+                    if cur else ""
+                )
 
             # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
