@@ -1,13 +1,24 @@
-"""alpha_center.py — Bottleneck + Surge Potential UI v40.2
+"""alpha_center.py — Alpha Center UI v2.0
 
-Renders Edward's enriched curator (alpha_center_curator.py) with full thesis details:
-  • Ticker, current price (if available), thesis, bottleneck_reason
-  • Correlations (NVDA↔AMKR, AVGO↔CoWoS etc.)
-  • Potential upside (multi-bag indicator)
-  • Risk + Source attribution
-  • Sortable, filterable by tier, market, upside potential
+Renders:
+ • High Asymmetry Picks (100-1000% upside) — Bottleneck stage + Market cap + Revenue growth + TAM + Keith
+ • Short-term Swing (legacy R:R 2:1) — Entry/stop/target/grade
+ • Keith Fractal Breadth Meter — "X of 37 signals bullish"
+ • Backward compatible dengan alpha_center_curator v1 (get_curator) dan v2 (AlphaCenterCurator)
 """
 import streamlit as st
+
+
+def _stars_html(n: int) -> str:
+    return "⭐" * int(n or 0)
+
+
+def _conviction_badge(conviction: str) -> str:
+    return {"A": "🟢", "B": "🟡", "C": "🟠", "D": "🔴"}.get(conviction, "⚪")
+
+
+def _upside_badge(potential: str) -> str:
+    return {"MOON": "🚀🚀🚀", "HIGH": "🚀🚀", "MEDIUM": "🚀", "LOW": "📈"}.get(potential, "—")
 
 
 def _calc_upside_metrics(rr: dict) -> dict:
@@ -44,19 +55,130 @@ def _calc_upside_metrics(rr: dict) -> dict:
         "upside_to_trend_trr_pct": round(upside_trend, 2),
         "upside_to_tail_trr_pct": round(upside_tail, 2),
         "thesis_stage": thesis_stage,
-        # TARGET PRICES (Edward request: bukan cuma %)
-        "target_near": round(trade_trr, 2),     # nearest target = TRADE TRR
-        "target_mid": round(trend_trr, 2),       # mid target = TREND TRR
-        "target_far": round(tail_trr, 2),        # farthest target = TAIL TRR
+        "target_near": round(trade_trr, 2),
+        "target_mid": round(trend_trr, 2),
+        "target_far": round(tail_trr, 2),
         "current_px": round(px, 2),
     }
 
 
-def _stars_html(n: int) -> str:
-    return "⭐" * int(n or 0)
+def _render_v2(snap: dict):
+    """Render Alpha Center v2 (AlphaCenterCurator v2)."""
+    st.title("⚡ Alpha Center v2")
+
+    # ── KEITH BREADTH METER ──────────────────────────────────────────────
+    keith_breadth = snap.get("keith_breadth", {})
+    if keith_breadth and keith_breadth.get("total_signals", 0) > 0:
+        total = keith_breadth["total_signals"]
+        bullish = keith_breadth.get("bullish", 0)
+        bearish = keith_breadth.get("bearish", 0)
+        neutral = keith_breadth.get("neutral", 0)
+        bullish_pct = keith_breadth.get("bullish_pct", 0)
+
+        st.markdown("### 🔥 Keith Fractal Breadth Meter")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Signals", total)
+        c2.metric("🟢 Bullish", bullish, f"{bullish_pct}%")
+        c3.metric("🔴 Bearish", bearish)
+        c4.metric("⚪ Neutral", neutral)
+
+        st.progress(bullish_pct / 100)
+        st.caption(f"Keith: 'Only {bearish} of the {total} Risk Range™ Signals signaling Bearish TREND'")
+
+        if bullish_pct > 60:
+            st.success(f"📈 BULLISH BREADTH — {bullish_pct}% of Keith's 37 signals are bullish. Slim pickings on short side.")
+        elif bearish > (total * 0.4):
+            st.error(f"📉 BEARISH BREADTH — {bearish}/{total} signals bearish. Defensive posture.")
+        else:
+            st.info(f"⚖️ NEUTRAL BREADTH — Mixed signals. Curation required.")
+        st.divider()
+
+    # ── HIGH ASYMMETRY PICKS (100-1000% upside) ─────────────────────────
+    ac = snap.get("alpha_center", {})
+    high_asym = ac.get("high_asymmetry", {}) if isinstance(ac, dict) else {}
+    passed = high_asym.get("passed", []) if isinstance(high_asym, dict) else []
+    meta = high_asym.get("meta", {}) if isinstance(high_asym, dict) else {}
+
+    st.markdown("### 🚀 High Asymmetry Picks (100-1000% upside potential)")
+    st.caption(f"Quad: {meta.get('quad', '—')} | Candidates: {meta.get('total_candidates', 0)} | Passed: {meta.get('passed_count', 0)}")
+
+    if not passed:
+        st.info("No high-asymmetry candidates match current filters. Check Keith breadth or loosen filters.")
+    else:
+        for pick in passed:
+            ticker = pick.get("ticker", "—")
+            layer = pick.get("layer", "—")
+            stage = pick.get("stage", 0)
+            mcap_b = pick.get("mcap_b")
+            rev_growth = pick.get("revenue_growth")
+            tam_b = pick.get("tam_b", 0)
+            moat = pick.get("moat", "—")
+            keith = pick.get("keith_signal", "NEUTRAL")
+            composite = pick.get("composite_signal", "NEUTRAL")
+            score = pick.get("asymmetry_score", 0)
+            upside = pick.get("upside_potential", "—")
+            conviction = pick.get("conviction", "C")
+            catalyst = pick.get("catalyst", "")
+
+            with st.container(border=True):
+                hc1, hc2, hc3, hc4 = st.columns([2, 1, 1, 1])
+                with hc1:
+                    st.markdown(f"### {ticker}  {_upside_badge(upside)}")
+                    st.caption(f"{layer} · Stage {stage} · TAM: ${tam_b}B · Moat: {moat}")
+                    if catalyst:
+                        st.caption(f"📌 {catalyst}")
+                with hc2:
+                    st.metric("Asymmetry Score", score)
+                    st.caption(f"Conviction: {_conviction_badge(conviction)} {conviction}")
+                with hc3:
+                    if mcap_b:
+                        st.metric("Market Cap", f"${mcap_b}B")
+                    if rev_growth is not None:
+                        st.caption(f"Revenue Growth: {rev_growth*100:.0f}%")
+                with hc4:
+                    st.metric("Keith", keith)
+                    st.metric("Composite", composite)
+                st.progress(min(score / 100, 1.0))
+    st.divider()
+
+    # ── SHORT-TERM SWING (Legacy) ──────────────────────────────────────
+    short_term = ac.get("short_term", {}) if isinstance(ac, dict) else {}
+    st_swings = short_term.get("passed", []) if isinstance(short_term, dict) else []
+
+    st.markdown("### ⚡ Short-Term Swing Setups (R:R 2:1+)")
+    if not st_swings:
+        st.info("No short-term setups available.")
+    else:
+        for swing in st_swings:
+            t = swing.get("ticker", "—")
+            entry = swing.get("entry")
+            stop = swing.get("stop")
+            target = swing.get("target")
+            rr = swing.get("r_r", 0)
+            grade = swing.get("grade", "C")
+            keith = swing.get("keith", "NEUTRAL")
+
+            with st.container(border=True):
+                c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                with c1:
+                    st.markdown(f"**{t}** — Grade {grade}")
+                    if entry and stop and target:
+                        st.caption(f"Entry: ${entry:.2f} → Stop: ${stop:.2f} → Target: ${target:.2f}")
+                with c2:
+                    st.metric("R:R", rr)
+                with c3:
+                    st.metric("Keith", keith)
+                with c4:
+                    st.caption(f"Direction: {swing.get('type', '—')}")
+
+    # ── REJECTED / META ────────────────────────────────────────────────
+    if meta and meta.get("rejected_count", 0) > 0:
+        with st.expander(f"❌ Rejected ({meta.get('rejected_count', 0)} candidates)"):
+            st.caption("Filtered out due to Keith BEARISH, low conviction, or missing fundamentals.")
 
 
-def render(snap: dict):
+def _render_v1(snap: dict):
+    """Render Alpha Center v1 (legacy get_curator)."""
     st.title("⚡ Alpha Center")
     st.caption("**Bottleneck + Surge Potential** — tickers yang punya potensi surging (bukan yang udah). "
                "Filter strict: monopoly/near-monopoly OR potensi multi-bag (>100% upside).")
@@ -91,7 +213,6 @@ def render(snap: dict):
     ma_targets = sum(1 for p in passed if "M&A-Target" in p["candidate"].get("tags", []))
     c3.metric("🎯 M&A targets", ma_targets)
     c4.metric("Current Quad", current_quad)
-
     st.divider()
 
     # ── FILTERS ──────────────────────────────────────────────────────────
@@ -137,7 +258,6 @@ def render(snap: dict):
                 if _tier_ok(c) and _tag_ok(c)
                 and c["candidate"].get("market") in market_filter]
 
-    # Upside filter (if RR data available)
     rr_data = snap.get("risk_range", {}).get("asset_ranges", {}) if isinstance(snap.get("risk_range"), dict) else {}
 
     if min_upside > -1e9:
@@ -146,7 +266,6 @@ def render(snap: dict):
         for e in filtered_pre:
             rr = rr_data.get(e["ticker"], {})
             if not rr:
-                # No RR data — keep (don't punish for missing data)
                 filtered.append(e)
                 continue
             um = _calc_upside_metrics(rr)
@@ -154,7 +273,6 @@ def render(snap: dict):
             if tu is None or tu >= min_upside:
                 filtered.append(e)
 
-    # Sort: TAIL upside DESC (highest surge first), then stars DESC, then ticker
     def _sort_key(e):
         rr = rr_data.get(e["ticker"], {})
         um = _calc_upside_metrics(rr)
@@ -162,7 +280,6 @@ def render(snap: dict):
                 -e["candidate"].get("stars", 0), e["ticker"])
     filtered.sort(key=_sort_key)
 
-    # Split into HAS_DATA and NO_DATA — hide NO_DATA from main list (Edward fix)
     has_data = [e for e in filtered if rr_data.get(e["ticker"], {}).get("px")]
     no_data = [e for e in filtered if not rr_data.get(e["ticker"], {}).get("px")]
     filtered = has_data
@@ -171,7 +288,6 @@ def render(snap: dict):
                + (f" · ⚠️ {len(no_data)} pending (no price data — di bawah)" if no_data else ""))
     st.divider()
 
-    # ── RENDER CARDS — native Streamlit (no HTML escape issues) ──────────
     for entry in filtered:
         ticker = entry["ticker"]
         cand = entry["candidate"]
@@ -181,7 +297,6 @@ def render(snap: dict):
         rr = rr_data.get(ticker, {})
         upside = _calc_upside_metrics(rr)
 
-        # IHSG no-short
         action = rr.get("signals", {}).get("action", "WATCH") if rr else "NO_DATA"
         if market == "IHSG" and action in ("SHORT_RIP", "COVER"):
             action = "WATCH"
@@ -189,13 +304,11 @@ def render(snap: dict):
                         "TRIM": "🟡", "TRIM_RIP": "🟠", "SHORT_RIP": "🔴",
                         "COVER": "🟣", "NO_DATA": "⚫"}.get(action, "⚪")
 
-        # Compute SURGE flags
         tail_upside_val = upside.get("upside_to_tail_trr_pct") or 0
         is_multi_bag = "MULTI-BAG" in tags
         is_ma_target = "M&A-Target" in tags
 
         with st.container(border=True):
-            # ── Header row ───────────────────────────────────────────────
             hc1, hc2, hc3 = st.columns([2.4, 1.2, 1.4])
             with hc1:
                 tickline = f"### {ticker} &nbsp;{stars}"
@@ -217,7 +330,6 @@ def render(snap: dict):
                 if pot:
                     st.caption(f"📈 **{pot}**")
 
-            # ── TARGET PRICES (Edward: target harga bukan cuma %) ─────────
             if upside and upside.get("target_near"):
                 tn = upside["target_near"]; tm = upside["target_mid"]; tf = upside["target_far"]
                 cur = upside["current_px"]
@@ -229,7 +341,6 @@ def render(snap: dict):
                     if cur else ""
                 )
 
-            # ── OPTIMAL ENTRY (uses TRR/LRR + options if available) ───────
             rr_for_entry = snap.get("risk_range", {}).get("asset_ranges", {}).get(ticker, {}) if isinstance(snap.get("risk_range"), dict) else {}
             if rr_for_entry:
                 try:
@@ -238,20 +349,16 @@ def render(snap: dict):
                     oe = compute_optimal_entry(rr_for_entry, snap, mkt, ticker)
                     if oe and oe.get("lines"):
                         st.markdown(f"**🎯 Optimal Entry — {oe['direction']}**")
-                        for ln in oe["lines"][:3]:  # top 3 lines, keep compact
+                        for ln in oe["lines"][:3]:
                             st.caption(ln)
                 except Exception:
                     pass
 
-            # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
-
-            # ── Bottleneck reason ────────────────────────────────────────
             br = cand.get("bottleneck_reason")
             if br:
                 st.info(f"🔒 **Why bottleneck:** {br}")
 
-            # ── Correlations + Catalysts + Risk ──────────────────────────
             with st.expander("🔍 Detail — correlations, catalysts, RR, filters"):
                 dc1, dc2 = st.columns(2)
                 with dc1:
@@ -291,10 +398,41 @@ def render(snap: dict):
     if not filtered:
         st.info("No candidates match current filters. Loosen the filter to see more.")
 
-    # ── Rejected list (compact) ──────────────────────────────────────────
     if rejected:
         with st.expander(f"❌ Rejected ({len(rejected)})"):
             for entry in rejected:
                 fail_reasons = [f"{ln.replace('L', 'Layer ').replace('_', ': ')}: {ch['msg']}"
                                 for ln, ch in entry["checks"].items() if not ch["pass"]]
                 st.caption(f"**{entry['ticker']}** — {' · '.join(fail_reasons)}")
+
+
+def render(snap: dict):
+    """Auto-detect v1 vs v2 alpha_center structure dan render yang cocok."""
+    ac = snap.get("alpha_center", {})
+
+    # v2 detection: punya key "high_asymmetry" atau "short_term"
+    if isinstance(ac, dict) and ("high_asymmetry" in ac or "short_term" in ac):
+        _render_v2(snap)
+        return
+
+    # v1 detection: punya key "all" (list) atau "passed" (list dari curator v1)
+    if isinstance(ac, dict) and ("all" in ac or "passed" in ac):
+        _render_v1(snap)
+        return
+
+    # Fallback: coba v2 dulu (kalau AlphaCenterCurator v2 ada)
+    try:
+        from engines.alpha_center_curator import AlphaCenterCurator
+        _render_v2(snap)
+        return
+    except Exception:
+        pass
+
+    # Fallback: coba v1
+    try:
+        from engines.alpha_center_curator import get_curator
+        _render_v1(snap)
+        return
+    except Exception as e:
+        st.error(f"Alpha Center unavailable: {e}")
+        return

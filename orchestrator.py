@@ -3187,8 +3187,10 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             "sources": ["Dynamic Hedgeye Risk Range Resolver v39.5"]
         }
 
-        for item in result["alpha_center"].get("all", []):
-            t = item.get("ticker", "")
+        # v40.6 FIX: Keith sync ke SEMUA ticker yang punya Risk Range data (276+ tickers)
+        # Bukan cuma alpha_center["all"] (18 tickers). Ini yang bikin "5 of 37" jadi valid.
+        rr_tickers = list(result.get("risk_ranges", {}).get("asset_ranges", {}).keys())
+        for t in rr_tickers:
             ks = _resolve_keith_signal(t, result.get("risk_ranges", {}), prices)
             if not ks:
                 continue

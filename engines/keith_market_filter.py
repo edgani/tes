@@ -1,55 +1,77 @@
-"""engines/keith_market_filter.py — Keith Fractal Market Filter v1.0
+"""engines/keith_market_filter.py — Keith Fractal Market Filter v2.0
 
-Taro di folder engines/, lalu di orchestrator.py import:
-    from engines.keith_market_filter import apply_keith_market_filter, get_favored_sectors
+REDESIGN 2026-05-29:
+- Define Keith's 37 Risk Range™ Signals universe (research-backed)
+- keith_breadth_summary ONLY counts tickers in KEITH_UNIVERSE_37
+- apply_keith_market_filter works for ANY ticker list (full universe or curated)
 """
 
 import logging
-from typing import Dict, List, Set
+from typing import Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
 
-# Quad → favored sectors/assets (dynamic, bukan hardcode Q2)
+# ═══════════════════════════════════════════════════════════════════════
+# KEITH'S 37 RISK RANGE™ SIGNALS — Representative Universe
+# Source: Mark Bunting Substack (Hedgeye subscriber) + Keith podcast
+# "37 bonds, global stock indices, currencies, commodities, major tech, Bitcoin"
+# ═══════════════════════════════════════════════════════════════════════
+KEITH_UNIVERSE_37 = {
+    # US Equity Indices (5)
+    "SPY", "QQQ", "IWM", "DIA", "VIX",
+    # US Sectors (8)
+    "XLK", "XLF", "XLE", "XLI", "XLB", "XLU", "XLP", "XLY",
+    # Bonds / Rates (5)
+    "TLT", "IEF", "HYG", "LQD", "SHY",
+    # FX / DXY (5)
+    "DX-Y.NYB", "UUP", "EURUSD=X", "GBPUSD=X", "JPY=X",
+    # Commodities (6)
+    "GLD", "SLV", "CL=F", "GC=F", "SI=F", "NG=F",
+    # Major Tech / Individual Names (6)
+    "AAPL", "MSFT", "NVDA", "TSLA", "META", "GOOGL",
+    # Crypto (1)
+    "BTC-USD",
+    # Global / EM (1)
+    "EEM",
+}
+
+# Quad → favored sectors/assets (dynamic)
 QUAD_SECTOR_MAP = {
     "Q1": {
-        "favored": ["XLK", "XLY", "XLF", "XLC", "BTC-USD", "ETH-USD", "IBIT", "QQQ", "SPY"],
-        "avoid": ["XLU", "XLP", "TLT", "GLD", "DXY", "UUP"],
+        "favored": ["XLK", "XLY", "XLF", "XLC", "BTC-USD", "QQQ", "SPY", "IWM", "AAPL", "MSFT", "NVDA"],
+        "avoid": ["XLU", "XLP", "TLT", "GLD", "DX-Y.NYB", "UUP"],
         "theme": "Goldilocks — growth + low volatility",
     },
     "Q2": {
-        "favored": ["XLE", "XLI", "XLB", "KRE", "IWM", "CL=F", "GC=F", "HG=F", "SI=F", "UNG", "USO"],
-        "avoid": ["TLT", "IEF", "XLK", "QQQ"],  # tech suffers in reflation early
+        "favored": ["XLE", "XLI", "XLB", "XLF", "IWM", "CL=F", "GC=F", "SI=F", "NG=F", "GLD", "SLV"],
+        "avoid": ["TLT", "IEF", "XLK", "QQQ", "BTC-USD"],
         "theme": "Reflation — commodity breakout, value over growth",
     },
     "Q3": {
-        "favored": ["GLD", "SLV", "XLP", "XLU", "TLT", "IEF", "VZ", "T"],
-        "avoid": ["XLY", "XLK", "KRE", "IWM", "XLE", "CL=F"],
+        "favored": ["GLD", "SLV", "XLP", "XLU", "TLT", "IEF", "DX-Y.NYB", "UUP"],
+        "avoid": ["XLY", "XLK", "IWM", "XLE", "CL=F", "BTC-USD"],
         "theme": "Stagflation — defensive + real assets + duration",
     },
     "Q4": {
-        "favored": ["TLT", "IEF", "XLU", "XLP", "GLD", "BIL", "SHY"],
-        "avoid": ["XLE", "XLI", "XLB", "KRE", "IWM", "BTC-USD", "ETH-USD"],
+        "favored": ["TLT", "IEF", "XLU", "XLP", "GLD", "SHY", "DX-Y.NYB"],
+        "avoid": ["XLE", "XLI", "XLB", "IWM", "BTC-USD", "QQQ", "XLK"],
         "theme": "Deflation — duration + quality + cash proxies",
     },
 }
 
-# Ticker → sector mapping (simplified, expand as needed)
+# Ticker → sector mapping (simplified)
 TICKER_SECTOR_MAP = {
-    "SPY": "XLK", "QQQ": "XLK", "IWM": "IWM", "XLK": "XLK", "XLY": "XLY",
-    "XLF": "XLF", "XLE": "XLE", "XLI": "XLI", "XLB": "XLB", "XLU": "XLU",
-    "XLP": "XLP", "XLC": "XLC", "KRE": "KRE", "TLT": "TLT", "IEF": "IEF",
-    "GLD": "GLD", "SLV": "SLV", "USO": "USO", "UNG": "UNG", "CPER": "CPER",
-    "CL=F": "XLE", "GC=F": "GLD", "SI=F": "SLV", "HG=F": "XLB", "NG=F": "UNG",
-    "BTC-USD": "BTC-USD", "ETH-USD": "ETH-USD", "IBIT": "BTC-USD", "ETHA": "ETH-USD",
-    "DXY": "DXY", "UUP": "DXY", "EURUSD=X": "FX", "GBPUSD=X": "FX", "JPY=X": "FX",
-    "NXT": "XLK", "AMPH": "XLK", "HLIT": "XLK", "COHR": "XLK", "LITE": "XLK", "MRVL": "XLK",
-    "VST": "XLU", "CEG": "XLU", "BE": "XLU", "SMR": "XLU", "OKLO": "XLU",
-    "FRO": "XLE", "TK": "XLE", "INSW": "XLE", "STNG": "XLE",
-    "NTR": "XLB", "MOS": "XLB", "CF": "XLB",
-    "MP": "XLB", "LYSDY": "XLB", "UROY": "XLU", "CCJ": "XLU",
-    "MSTR": "BTC-USD", "COIN": "XLK", "HOOD": "XLK",
-    "ADRO.JK": "XLE", "ITMG.JK": "XLE", "NCKL.JK": "XLB", "ANTM.JK": "GLD",
-    "BRMS.JK": "GLD", "BBRI.JK": "XLF", "BMRI.JK": "XLF",
+    "SPY": "SPY", "QQQ": "QQQ", "IWM": "IWM", "DIA": "DIA", "VIX": "VIX",
+    "XLK": "XLK", "XLF": "XLF", "XLE": "XLE", "XLI": "XLI", "XLB": "XLB",
+    "XLU": "XLU", "XLP": "XLP", "XLY": "XLY", "XLC": "XLC",
+    "TLT": "TLT", "IEF": "IEF", "HYG": "HYG", "LQD": "LQD", "SHY": "SHY",
+    "DX-Y.NYB": "DXY", "UUP": "DXY", "EURUSD=X": "FX", "GBPUSD=X": "FX",
+    "JPY=X": "FX", "AUDUSD=X": "FX", "CADUSD=X": "FX",
+    "GLD": "GLD", "SLV": "SLV", "CL=F": "CL=F", "GC=F": "GC=F",
+    "SI=F": "SI=F", "NG=F": "NG=F", "HG=F": "HG=F",
+    "AAPL": "AAPL", "MSFT": "MSFT", "NVDA": "NVDA", "TSLA": "TSLA",
+    "META": "META", "GOOGL": "GOOGL", "AMZN": "AMZN", "AMD": "AMD",
+    "BTC-USD": "BTC-USD", "ETH-USD": "ETH-USD", "EEM": "EEM", "VWO": "VWO",
 }
 
 def get_favored_sectors(current_quad: str) -> Dict[str, List[str]]:
@@ -67,8 +89,6 @@ def apply_keith_market_filter(tickers: List[str],
     1. Keith fractal signal (skip BEARISH)
     2. Quad sector alignment (skip AVOID sectors)
     3. Breadth signal (kalau <20% bullish, warning)
-
-    Returns: {"passed": [...], "avoided": [...], "meta": {...}}
     """
     quad_data = get_favored_sectors(current_quad)
     favored_sectors = set(quad_data["favored"])
@@ -120,11 +140,23 @@ def apply_keith_market_filter(tickers: List[str],
     return {"passed": passed, "avoided": avoided, "meta": meta}
 
 def keith_breadth_summary(keith_signals: Dict[str, Dict]) -> Dict:
-    """Summary 37 signals style (Keith tweet: '5 of 37 bearish')."""
-    bullish = sum(1 for v in keith_signals.values() if v.get("keith_trade") == "BULLISH")
-    bearish = sum(1 for v in keith_signals.values() if v.get("keith_trade") == "BEARISH")
-    neutral = sum(1 for v in keith_signals.values() if v.get("keith_trade") not in ("BULLISH", "BEARISH"))
-    total = bullish + bearish + neutral
+    """Summary 37 signals style (Keith tweet: '5 of 37 bearish').
+
+    Hanya count ticker yang ada di KEITH_UNIVERSE_37.
+    Ticker di universe yang tidak punya signal di-count sebagai NEUTRAL.
+    """
+    # Filter cuma keith signals untuk ticker di Keith universe
+    keith_universe_signals = {t: v for t, v in keith_signals.items() if t in KEITH_UNIVERSE_37}
+
+    bullish = sum(1 for v in keith_universe_signals.values() if v.get("keith_trade") == "BULLISH")
+    bearish = sum(1 for v in keith_universe_signals.values() if v.get("keith_trade") == "BEARISH")
+    neutral = sum(1 for v in keith_universe_signals.values() if v.get("keith_trade") not in ("BULLISH", "BEARISH"))
+
+    # Ticker di universe yang tidak ada signal = NEUTRAL
+    missing = KEITH_UNIVERSE_37 - set(keith_universe_signals.keys())
+    neutral += len(missing)
+    total = len(KEITH_UNIVERSE_37)
+
     return {
         "total_signals": total,
         "bullish": bullish,
@@ -132,5 +164,10 @@ def keith_breadth_summary(keith_signals: Dict[str, Dict]) -> Dict:
         "neutral": neutral,
         "bullish_pct": round(bullish / total * 100, 1) if total else 0,
         "bearish_pct": round(bearish / total * 100, 1) if total else 0,
-        "keith_quote": f"Only {bearish} of the {total} Risk Range Signals signaling Bearish TREND",
+        "keith_quote": f"Only {bearish} of the {total} Risk Range™ Signals signaling Bearish TREND",
+        "missing_tickers": sorted(missing),
     }
+
+def is_keith_universe(ticker: str) -> bool:
+    """Check if ticker is in Keith's 37 Risk Range™ Signals."""
+    return ticker in KEITH_UNIVERSE_37
