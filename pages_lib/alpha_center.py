@@ -1,59 +1,47 @@
-"""alpha_center.py — Alpha Center v40.7 HIGH ASYMMETRY ONLY
+"""alpha_center.py — Alpha Center v40.8 HIGH ASYMMETRY ONLY
 
-ALPHA DEFINITION: Ticker dengan potensi 100-1000x% upside dalam 12-18 bulan.
-Bukan MSFT +5% sebulan. Bukan swing 5-30%.
-
-Sections:
- 1. 🔥 Keith Fractal Breadth Meter
- 2. 🚀 High Asymmetry Picks (100-1000x% upside) — Dynamic upside dari RR data
+ALPHA = 100-1000x% upside. Bukan MSFT +5%.
 """
 import streamlit as st
 import pandas as pd
 
-# ── HIGH ASYMMETRY UNIVERSE (Stage 1-2 = highest potential) ──
 HIGH_ASYM_UNIVERSE = {
-    # Stage 1: Rare Earth / Critical Minerals / Micro Cap (highest asymmetry)
-    "MP": {"layer": "Rare Earth", "stage": 1, "thesis": "MP Materials — US rare earth, China export controls, dari $15 ke $150+"},
-    "LYSDY": {"layer": "Rare Earth", "stage": 1, "thesis": "Lynas — only Western rare earth miner, dari $2 ke $20+"},
-    "UROY": {"layer": "Uranium", "stage": 1, "thesis": "Uranium Royalty — leverage to uranium price, dari $1 ke $10+"},
-    "CCJ": {"layer": "Uranium", "stage": 1, "thesis": "Cameco — uranium supply deficit + reactor restart, dari $30 ke $300+"},
-    "BRMS.JK": {"layer": "Gold", "stage": 1, "thesis": "Bumi Resources Minerals — gold explorer micro cap, dari $50 ke $500+"},
-    "NCKL.JK": {"layer": "Nickel", "stage": 1, "thesis": "Nickel Industries — EV battery + Indonesia dominance, dari $100 ke $1000+"},
-    "SMR": {"layer": "Nuclear/SMR", "stage": 1, "thesis": "NuScale SMR — regulatory inflection, dari $10 ke $100+"},
-    "OKLO": {"layer": "Nuclear/SMR", "stage": 1, "thesis": "Oklo — Sam Altman backed SMR pioneer, dari $5 ke $50+"},
-    # Stage 2: Tankers / Shipping / Commodity (high asymmetry)
-    "FRO": {"layer": "Tankers", "stage": 2, "thesis": "Frontline — VLCC rates + Red Sea disruption, dari $15 ke $60+"},
-    "TK": {"layer": "Tankers", "stage": 2, "thesis": "Teekay — tanker fleet aging, dari $5 ke $25+"},
-    "INSW": {"layer": "Tankers", "stage": 2, "thesis": "International Seaways — M&A + rate surge, dari $40 ke $120+"},
-    "STNG": {"layer": "Tankers", "stage": 2, "thesis": "Scorpio Tankers — product tanker squeeze, dari $60 ke $180+"},
-    "MSTR": {"layer": "BTC Proxy", "stage": 2, "thesis": "MicroStrategy — BTC leverage play, 2x+ BTC upside, dari $300 ke $1500+"},
-    "ADRO.JK": {"layer": "Coal", "stage": 2, "thesis": "Adaro — seaborne thermal + Indonesia export, dari $2000 ke $8000+"},
-    "ITMG.JK": {"layer": "Coal", "stage": 2, "thesis": "Indo Tambangraya — coal royalty model, dari $10000 ke $40000+"},
-    # Stage 3: Power / Infrastructure (medium-high asymmetry)
-    "VST": {"layer": "Power/Cooling", "stage": 3, "thesis": "Vistra — nuclear renaissance + AI power contracts, dari $100 ke $300+"},
-    "CEG": {"layer": "Power/Cooling", "stage": 3, "thesis": "Constellation Energy — nuclear + AI, dari $200 ke $600+"},
-    "BE": {"layer": "Power/Cooling", "stage": 3, "thesis": "Bloom Energy — fuel cells for datacenters, dari $20 ke $80+"},
-    "NXT": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Nextracker — AI datacenter CPO, dari $40 ke $120+"},
-    "AMPH": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Amphenol — co-packaged optics, dari $30 ke $90+"},
-    "HLIT": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Harmonic — optical networking AI backbone, dari $10 ke $40+"},
-    # Stage 4: Optics / Semis (medium asymmetry)
-    "COHR": {"layer": "Optics", "stage": 4, "thesis": "Coherent — 800G/1.6T transceiver, dari $50 ke $150+"},
-    "LITE": {"layer": "Optics", "stage": 4, "thesis": "Lumentum — Apple + AI datacenter, dari $60 ke $180+"},
-    "MRVL": {"layer": "Optics", "stage": 4, "thesis": "Marvell — custom silicon + optics, dari $70 ke $210+"},
-    "COIN": {"layer": "Exchange", "stage": 4, "thesis": "Coinbase — crypto infra + derivatives, dari $200 ke $600+"},
-    "HOOD": {"layer": "Retail/Trading", "stage": 4, "thesis": "Robinhood — crypto + international, dari $40 ke $120+"},
-    # Stage 5: Fertilizer / Materials (lower asymmetry tapi still >100%)
-    "NTR": {"layer": "Fertilizer", "stage": 5, "thesis": "Nutrien — natgas squeeze + food security, dari $50 ke $100+"},
-    "MOS": {"layer": "Fertilizer", "stage": 5, "thesis": "Mosaic — phosphate oligopoly, dari $30 ke $60+"},
-    "CF": {"layer": "Fertilizer", "stage": 5, "thesis": "CF Industries — ammonia + hydrogen, dari $70 ke $140+"},
-    "ANTM.JK": {"layer": "Gold", "stage": 5, "thesis": "Aneka Tambang — gold + central bank buying, dari $2000 ke $4000+"},
-    "BBRI.JK": {"layer": "Banking", "stage": 5, "thesis": "BRI — NIM expansion + credit growth, dari $3000 ke $6000+"},
-    "BMRI.JK": {"layer": "Banking", "stage": 5, "thesis": "Mandiri — largest bank dividend, dari $4000 ke $8000+"},
+    "MP": {"layer": "Rare Earth", "stage": 1, "thesis": "MP Materials — US rare earth, China export controls"},
+    "LYSDY": {"layer": "Rare Earth", "stage": 1, "thesis": "Lynas — only Western rare earth miner"},
+    "UROY": {"layer": "Uranium", "stage": 1, "thesis": "Uranium Royalty — leverage to uranium price"},
+    "CCJ": {"layer": "Uranium", "stage": 1, "thesis": "Cameco — uranium supply deficit + reactor restart"},
+    "BRMS.JK": {"layer": "Gold", "stage": 1, "thesis": "Bumi Resources Minerals — gold explorer micro cap"},
+    "NCKL.JK": {"layer": "Nickel", "stage": 1, "thesis": "Nickel Industries — EV battery + Indonesia dominance"},
+    "SMR": {"layer": "Nuclear/SMR", "stage": 1, "thesis": "NuScale SMR — regulatory inflection"},
+    "OKLO": {"layer": "Nuclear/SMR", "stage": 1, "thesis": "Oklo — Sam Altman backed SMR pioneer"},
+    "FRO": {"layer": "Tankers", "stage": 2, "thesis": "Frontline — VLCC rates + Red Sea disruption"},
+    "TK": {"layer": "Tankers", "stage": 2, "thesis": "Teekay — tanker fleet aging"},
+    "INSW": {"layer": "Tankers", "stage": 2, "thesis": "International Seaways — M&A + rate surge"},
+    "STNG": {"layer": "Tankers", "stage": 2, "thesis": "Scorpio Tankers — product tanker squeeze"},
+    "MSTR": {"layer": "BTC Proxy", "stage": 2, "thesis": "MicroStrategy — BTC leverage play, 2x+ BTC"},
+    "ADRO.JK": {"layer": "Coal", "stage": 2, "thesis": "Adaro — seaborne thermal + Indonesia export"},
+    "ITMG.JK": {"layer": "Coal", "stage": 2, "thesis": "Indo Tambangraya — coal royalty model"},
+    "VST": {"layer": "Power/Cooling", "stage": 3, "thesis": "Vistra — nuclear renaissance + AI power"},
+    "CEG": {"layer": "Power/Cooling", "stage": 3, "thesis": "Constellation Energy — nuclear + AI contracts"},
+    "BE": {"layer": "Power/Cooling", "stage": 3, "thesis": "Bloom Energy — fuel cells for datacenters"},
+    "NXT": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Nextracker — AI datacenter CPO"},
+    "AMPH": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Amphenol — co-packaged optics"},
+    "HLIT": {"layer": "CPO/Connectors", "stage": 3, "thesis": "Harmonic — optical networking AI backbone"},
+    "COHR": {"layer": "Optics", "stage": 4, "thesis": "Coherent — 800G/1.6T transceiver"},
+    "LITE": {"layer": "Optics", "stage": 4, "thesis": "Lumentum — Apple + AI datacenter"},
+    "MRVL": {"layer": "Optics", "stage": 4, "thesis": "Marvell — custom silicon + optics"},
+    "COIN": {"layer": "Exchange", "stage": 4, "thesis": "Coinbase — crypto infra + derivatives"},
+    "HOOD": {"layer": "Retail/Trading", "stage": 4, "thesis": "Robinhood — crypto + international"},
+    "NTR": {"layer": "Fertilizer", "stage": 5, "thesis": "Nutrien — natgas squeeze + food security"},
+    "MOS": {"layer": "Fertilizer", "stage": 5, "thesis": "Mosaic — phosphate oligopoly"},
+    "CF": {"layer": "Fertilizer", "stage": 5, "thesis": "CF Industries — ammonia + hydrogen"},
+    "ANTM.JK": {"layer": "Gold", "stage": 5, "thesis": "Aneka Tambang — gold + central bank buying"},
+    "BBRI.JK": {"layer": "Banking", "stage": 5, "thesis": "BRI — NIM expansion + credit growth"},
+    "BMRI.JK": {"layer": "Banking", "stage": 5, "thesis": "Mandiri — largest bank dividend"},
 }
 
 
 def _get_price(ticker, prices, rr_data):
-    """Get current price from RR data or prices dict."""
     rr = rr_data.get(ticker, {})
     px = rr.get("px") if isinstance(rr, dict) else None
     if px is not None:
@@ -69,29 +57,22 @@ def _get_price(ticker, prices, rr_data):
 
 
 def _get_tail_trr(ticker, rr_data):
-    """Get TAIL TRR from RR data (farthest target = highest upside)."""
     rr = rr_data.get(ticker, {})
     if not isinstance(rr, dict):
         return None
     tail = rr.get("tail", {})
-    if isinstance(tail, dict):
-        return tail.get("trr")
-    return None
+    return tail.get("trr") if isinstance(tail, dict) else None
 
 
 def _get_trend_trr(ticker, rr_data):
-    """Get TREND TRR from RR data (mid target)."""
     rr = rr_data.get(ticker, {})
     if not isinstance(rr, dict):
         return None
     trend = rr.get("trend", {})
-    if isinstance(trend, dict):
-        return trend.get("trr")
-    return None
+    return trend.get("trr") if isinstance(trend, dict) else None
 
 
 def _calc_upside(px, target):
-    """Calculate upside percentage."""
     if px is None or target is None or px <= 0:
         return None
     return round((target - px) / px * 100, 1)
@@ -121,7 +102,7 @@ def _render_keith_breadth(snap):
     elif bearish > (total * 0.4):
         st.error(f"📉 BEARISH BREADTH — {bearish}/{total} bearish. Defensive posture.")
     else:
-        st.info(f"⚖️ NEUTRAL BREADTH — Mixed signals. Curation required.")
+        st.info(f"⚖️ NEUTRAL BREADTH — Mixed signals.")
     st.divider()
 
 
@@ -133,7 +114,7 @@ def _render_high_asymmetry(snap):
     rr_data = snap.get("risk_range", {}).get("asset_ranges", {}) if isinstance(snap.get("risk_range"), dict) else {}
     prices = snap.get("prices", {})
 
-    # Build picks with DYNAMIC upside calculation
+    # Build ALL picks (even without RR data)
     picks = []
     for ticker, meta in HIGH_ASYM_UNIVERSE.items():
         ks = keith_signals.get(ticker, {})
@@ -145,8 +126,6 @@ def _render_high_asymmetry(snap):
 
         upside_tail = _calc_upside(px, tail_trr)
         upside_trend = _calc_upside(px, trend_trr)
-
-        # Use highest available upside
         upside = upside_tail if upside_tail is not None else upside_trend
 
         stage = meta["stage"]
@@ -174,22 +153,27 @@ def _render_high_asymmetry(snap):
             "potential": potential,
         })
 
-    # FILTER: minimum 30% upside (user adjustable)
+    # FILTER: user adjustable, default 30% (not 100% — so more tickers show)
     min_upside = st.select_slider(
         "🎯 Minimum Upside Threshold (%)",
-        options=[30, 50, 100, 200, 500, 1000],
-        value=100,
-        help="ALPHA = minimum 100% upside. 30% = swing trade. 5% = dagang tahu.",
+        options=[0, 30, 50, 100, 200, 500, 1000],
+        value=0,  # DEFAULT 0 = show ALL tickers even without RR data
+        help="0 = show all. 30 = swing. 100 = alpha. 1000 = moonshot.",
     )
 
-    filtered = [p for p in picks if p["upside"] is not None and p["upside"] >= min_upside]
+    # Filter: if upside is None (no RR data), show if min_upside == 0
+    if min_upside == 0:
+        filtered = picks  # Show ALL
+    else:
+        filtered = [p for p in picks if p["upside"] is not None and p["upside"] >= min_upside]
+
     filtered.sort(key=lambda x: (x["upside"] or 0), reverse=True)
 
-    st.caption(f"📊 {len(filtered)} tickers dengan upside ≥ {min_upside}% (dari {len(picks)} universe)")
+    st.caption(f"📊 {len(filtered)} tickers (dari {len(picks)} universe)")
     st.divider()
 
     if not filtered:
-        st.warning(f"❌ No tickers match {min_upside}% upside. Lower threshold or check RR data.")
+        st.warning(f"❌ No tickers match {min_upside}% upside. Lower threshold.")
         return
 
     for pick in filtered:
@@ -204,37 +188,41 @@ def _render_high_asymmetry(snap):
                 if pick["px"]:
                     st.metric("Price", f"${pick['px']:.2f}")
                 else:
-                    st.metric("Price", "—")
+                    st.metric("Price", "N/A")
                 st.caption(f"Keith: {pick['keith']}")
             with c3:
                 if pick["upside"] is not None:
                     st.metric("Upside", f"+{pick['upside']:.0f}%")
-                    st.caption("to TAIL TRR" if pick["upside_tail"] else "to TREND TRR")
                 else:
                     st.metric("Upside", "N/A")
+                    st.caption("No RR data — rebuild snapshot")
             with c4:
                 if pick["tail_trr"]:
                     st.metric("TAIL TRR", f"${pick['tail_trr']:.2f}")
                 elif pick["trend_trr"]:
                     st.metric("TREND TRR", f"${pick['trend_trr']:.2f}")
+                else:
+                    st.metric("Target", "N/A")
 
-            # Progress bar: current price vs target
+            # Progress bar
             if pick["px"] and pick["tail_trr"] and pick["tail_trr"] > pick["px"]:
                 progress = pick["px"] / pick["tail_trr"]
                 st.progress(min(progress, 1.0))
-                st.caption(f"Current ${pick['px']:.2f} → Target ${pick['tail_trr']:.2f} ({pick['upside']:.0f}% upside)")
+                st.caption(f"${pick['px']:.2f} → ${pick['tail_trr']:.2f} ({pick['upside']:.0f}% upside)")
             elif pick["px"] and pick["trend_trr"] and pick["trend_trr"] > pick["px"]:
                 progress = pick["px"] / pick["trend_trr"]
                 st.progress(min(progress, 1.0))
-                st.caption(f"Current ${pick['px']:.2f} → Target ${pick['trend_trr']:.2f} ({pick['upside']:.0f}% upside)")
-
-            # Keith signal badge
-            if pick["keith"] == "BULLISH":
-                st.success("🟢 Keith BULLISH — Fractal signal aligned")
-            elif pick["keith"] == "BEARISH":
-                st.error("🔴 Keith BEARISH — Avoid")
+                st.caption(f"${pick['px']:.2f} → ${pick['trend_trr']:.2f} ({pick['upside']:.0f}% upside)")
             else:
-                st.info("⚪ Keith NEUTRAL — Cek composite signal")
+                st.caption("⚠️ No target price available — rebuild snapshot for TRR/LRR data")
+
+            # Keith badge
+            if pick["keith"] == "BULLISH":
+                st.success("🟢 Keith BULLISH")
+            elif pick["keith"] == "BEARISH":
+                st.error("🔴 Keith BEARISH — AVOID")
+            else:
+                st.info("⚪ Keith NEUTRAL")
 
     st.divider()
     st.markdown("""
@@ -247,9 +235,7 @@ def _render_high_asymmetry(snap):
 
 
 def render(snap: dict):
-    """Render Alpha Center v40.7 — High Asymmetry ONLY."""
-    st.title("⚡ Alpha Center v40.7")
+    st.title("⚡ Alpha Center v40.8")
     st.caption("HIGH ASYMMETRY ONLY — 100-1000x% upside. Bukan swing 5-30%.")
-
     _render_keith_breadth(snap)
     _render_high_asymmetry(snap)

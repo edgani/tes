@@ -1,6 +1,6 @@
-"""ihsg.py — IHSG (Indonesia) Tab v40.7 (Keith Filtered)
+"""ihsg.py — IHSG (Indonesia) Tab v40.8 (Keith Filtered + Fallback)
 
-Renders tickers dari snap["ihsg"] yang sudah Keith filtered.
+Renders tickers dari snap["ihsg"] — pakai Keith filtered kalau ada, kalau tidak fallback ke semua.
 """
 import streamlit as st
 import pandas as pd
@@ -21,15 +21,15 @@ def render(snap: dict):
 
     all_tickers = list(tab_data.keys())
 
-    # Apply Keith filter if available
-    if keith_filtered:
+    # FIX v40.8: kalau keith_filtered kosong list [], tetap fallback ke all_tickers
+    if keith_filtered and len(keith_filtered) > 0:
         display_tickers = [t for t in all_tickers if t in keith_filtered]
         st.caption(f"🔥 Keith Curated: {len(display_tickers)} tickers (dari {len(all_tickers)} total)")
         if keith_meta:
             st.caption(f"Theme: {keith_meta.get('theme', '—')} | Breadth: {keith_meta.get('breadth_signal', '—')}")
     else:
         display_tickers = all_tickers
-        st.caption(f"⚠️ Keith filter unavailable — showing {len(display_tickers)} tickers (full universe)")
+        st.caption(f"⚠️ Keith filter empty — showing {len(display_tickers)} tickers (full universe)")
 
     if not display_tickers:
         st.info("No tickers to display.")
@@ -56,16 +56,16 @@ def render(snap: dict):
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("TICKERS", len(display_tickers))
-    c2.metric("BUY/ADD", 0)  # Placeholder
-    c3.metric("TRIM", 0)  # Placeholder
-    c4.metric("A-GRADE", 0)  # Placeholder
+    c2.metric("BUY/ADD", 0)
+    c3.metric("TRIM", 0)
+    c4.metric("A-GRADE", 0)
 
     st.markdown(f"🟢 Long ({longs}) · 🔴 Short ({shorts}) · ⚪ Monitor ({monitors})")
     st.caption("Names di bullish TREND (Keith-style inventory). Per Keith: kalau cuma sedikit signal bearish, 'slim pickings on short side' → wajar banyak long.")
     st.divider()
 
     # Render cards
-    for ticker in display_tickers[:50]:  # Limit to 50 for performance
+    for ticker in display_tickers[:50]:
         rr = rr_data.get(ticker, {})
         px = rr.get("px") if isinstance(rr, dict) else None
         if px is None and ticker in prices:
@@ -82,7 +82,8 @@ def render(snap: dict):
         with st.container(border=True):
             hc1, hc2 = st.columns([3, 1])
             with hc1:
-                badge = "🔥" if ticker in {"SPY", "QQQ", "IWM", "DIA", "VIX", "XLK", "XLF", "XLE", "XLI", "XLB", "XLU", "XLP", "XLY", "TLT", "IEF", "GLD", "SLV", "CL=F", "GC=F", "SI=F", "NG=F", "AAPL", "MSFT", "NVDA", "TSLA", "META", "GOOGL", "BTC-USD", "EEM", "DX-Y.NYB", "UUP", "EURUSD=X", "GBPUSD=X", "JPY=X"} else ""
+                keith_37 = {"SPY", "QQQ", "IWM", "DIA", "VIX", "XLK", "XLF", "XLE", "XLI", "XLB", "XLU", "XLP", "XLY", "TLT", "IEF", "GLD", "SLV", "CL=F", "GC=F", "SI=F", "NG=F", "AAPL", "MSFT", "NVDA", "TSLA", "META", "GOOGL", "BTC-USD", "EEM", "DX-Y.NYB", "UUP", "EURUSD=X", "GBPUSD=X", "JPY=X"}
+                badge = "🔥" if ticker in keith_37 else ""
                 st.markdown(f"### {ticker} {badge}")
                 if px:
                     st.caption(f"Price: ${px:.2f}")
