@@ -28,6 +28,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger("orchestrator")
 
+# ── Silence noisy third-party loggers (yfinance 404s for delisted/invalid symbols
+#    are expected and handled; integrator_guide optional-engine warnings are non-fatal) ──
+for _noisy in ("yfinance", "yfinance.data", "yfinance.utils", "peewee", "urllib3", "integrator_guide"):
+    logging.getLogger(_noisy).setLevel(logging.CRITICAL)
+
 def _safe_progress(cb, msg: str, pct: float):
     if cb is None:
         return
@@ -803,34 +808,52 @@ def _analyze_news(headlines: Dict[str, List[dict]], prices: dict) -> dict:
 # not in current universe, then adds them for next run.
 # ═══════════════════════════════════════════════════════════════════════
 def _auto_discover_tickers(bottleneck_ref, cascade_results, news_analysis, supply_chain, current_tickers: Set[str]) -> List[str]:
+    # Map common company NAMES → real Yahoo symbols (auto-discovery often surfaces names)
+    NAME_TO_SYMBOL = {
+        "TSMC": "TSM", "SAMSUNG": "005930.KS", "SEAGATE": "STX", "KEYENCE": "6861.T",
+        "FANUC": "6954.T", "YASKAWA": "6506.T", "NABTESCO": "6268.T", "LINDE": "LIN",
+        "BESI": "BESI.AS", "FUJIBO": "3104.T", "THK": "6481.T", "SKHYNIX": "000660.KS",
+        "SK HYNIX": "000660.KS", "DISCO": "6146.T", "TOKYO ELECTRON": "8035.T",
+        "ASML": "ASML", "INFINEON": "IFX.DE", "STMICRO": "STM",
+    }
+    # Tickers that simply don't resolve on yfinance — never retry these
+    BLOCKLIST = {"VVIX", "AMEC", "ASIA METAL", "HELIUM ONE", "JEN", "LPK", "SYTECH",
+                 "SIPHONICS", "ELSFPS", "TUC", "RPI", "SMHN", "SMHN.DE"}
+
+    def _valid_symbol(t: str) -> bool:
+        # Reject names with spaces, empty, too long, or known-bad
+        if not t or " " in t or len(t) > 12 or t in BLOCKLIST:
+            return False
+        # Allow A-Z, 0-9, dot, caret, dash (covers .KS/.T/.AS/.DE, ^VIX, BRK-B)
+        return all(c.isalnum() or c in ".^-=" for c in t)
+
     candidates = set()
+    def _add(raw):
+        t = (raw or "").replace("$", "").strip().upper()
+        t = NAME_TO_SYMBOL.get(t, t)  # map name→symbol if known
+        if t and t not in current_tickers and _valid_symbol(t):
+            candidates.add(t)
+
     # From bottleneck consensus heatmap
     for item in bottleneck_ref.get("consensus_heatmap", []):
-        t = item.get("ticker", "").replace("$", "").strip().upper()
-        if t and t not in current_tickers and len(t) <= 10:
-            candidates.add(t)
+        _add(item.get("ticker", ""))
     # From cascade active shocks
     if cascade_results and isinstance(cascade_results, dict):
         for shock, data in cascade_results.get("active_shocks", {}).items():
             if isinstance(data, dict):
                 for t in data.get("impacted_tickers", []):
-                    if t and t not in current_tickers:
-                        candidates.add(t)
+                    _add(t)
                 for t in data.get("beneficiaries", []):
-                    if t and t not in current_tickers:
-                        candidates.add(t)
+                    _add(t)
     # From news rumor watch
     for rw in news_analysis.get("rumor_watch", []):
-        t = rw.get("ticker", "")
-        if t and t not in current_tickers:
-            candidates.add(t)
+        _add(rw.get("ticker", ""))
     # From supply chain chokepoints
     if supply_chain and isinstance(supply_chain, dict):
         for cp in supply_chain.get("chokepoints", []):
             if isinstance(cp, dict):
                 for t in cp.get("tickers", []):
-                    if t and t not in current_tickers:
-                        candidates.add(t)
+                    _add(t)
     return sorted(candidates)
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1355,7 +1378,7 @@ def _all_tickers() -> List[str]:
         list(FOREX_PAIRS.keys()), list(COMMODITIES.keys()),
         list(CRYPTO.keys()), list(BONDS.keys()),
         list(IHSG_UNIVERSE.keys()), list(MACRO_PROXIES.keys()),
-        ["^VIX", "UUP", "EEM", "VWO", "^GSPC", "^IXIC", "VVIX"],
+        ["^VIX", "UUP", "EEM", "VWO", "^GSPC", "^IXIC", "^VVIX"],
         alpha_tickers,  # ← Alpha Center surge candidates always loaded
         _extract_bottleneck_tickers(),
     ]
@@ -2025,7 +2048,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             skew = run_skew_term(list(US_SECTORS.keys()) + ["SPY", "QQQ", "IWM", "GLD", "TLT"], prices)
             result["skew_term"] = skew
         except Exception as e:
-            logger.warning(f"Skew term failed: {e}")
+            logger.debug(f"Skew term failed: {e}")
             result["errors"].append(f"skew: {e}")
 
         # ---- Reflexivity ----
@@ -2065,7 +2088,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             interconnect = run_interconnect(prices, fred, news_analysis, quad)
             result["interconnect"] = interconnect
         except Exception as e:
-            logger.warning(f"Interconnect failed: {e}")
+            logger.debug(f"Interconnect failed: {e}")
             result["errors"].append(f"interconnect: {e}")
 
         # ---- Cascade Engine ----
@@ -2157,7 +2180,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 )
                 result["discovery_brain"] = discovery
             except Exception as e:
-                logger.warning(f"Discovery Brain failed: {e}")
+                logger.debug(f"Discovery Brain failed: {e}")
                 result["errors"].append(f"discovery_brain: {e}")
 
         # ---- Ticker Expander ----
@@ -2206,7 +2229,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             scenario_discovery = run_scenario_discovery(prices, fred, news_analysis, quad)
             result["scenario_discovery"] = scenario_discovery
         except Exception as e:
-            logger.warning(f"Scenario discovery failed: {e}")
+            logger.debug(f"Scenario discovery failed: {e}")
             result["errors"].append(f"scenario_discovery: {e}")
 
         # ---- Transmission ----
@@ -2215,7 +2238,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             transmission = run_transmission(prices, fred, news_analysis, quad)
             result["transmission"] = transmission
         except Exception as e:
-            logger.warning(f"Transmission failed: {e}")
+            logger.debug(f"Transmission failed: {e}")
             result["errors"].append(f"transmission: {e}")
 
         # ---- Regime Transition ----
@@ -2224,7 +2247,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             regime_transition = run_regime_transition(prices, fred, quad, getattr(gip, "structural_probs", {}) if gip else {})
             result["regime_transition"] = regime_transition
         except Exception as e:
-            logger.warning(f"Regime transition failed: {e}")
+            logger.debug(f"Regime transition failed: {e}")
             result["errors"].append(f"regime_transition: {e}")
 
         # ---- News NLP v3 ----
@@ -2453,7 +2476,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             try:
                 result["karsan_scanner"] = scan_karsan(all_tickers, prices, vix=vix_last)
             except Exception as e:
-                logger.warning(f"Karsan scanner failed: {e}")
+                logger.debug(f"Karsan scanner failed: {e}")
         if _V9_SPOTGAMMA:
             _safe_progress(progress_cb, "SpotGamma proxy scanner...", 0.96)
             try:
@@ -2553,7 +2576,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 dpe = DailyPlayEngine()
                 result["daily_plays"] = dpe.scan_all(prices, result)
             except Exception as e:
-                logger.warning(f"Daily play failed: {e}")
+                logger.debug(f"Daily play failed: {e}")
                 result["errors"].append(f"daily_play: {e}")
 
         if _V39_TIER_S.get("ihsg_specialist"):
@@ -2576,7 +2599,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 ]]
                 result["chain_reaction"] = cre.project_all(chain_tickers)
             except Exception as e:
-                logger.warning(f"Chain reaction failed: {e}")
+                logger.debug(f"Chain reaction failed: {e}")
                 result["errors"].append(f"chain_reaction: {e}")
 
         if _V39_TIER_S.get("frontrun"):
@@ -2585,7 +2608,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 fre = FrontRunEngine()
                 result["frontrun_signals"] = fre.scan(result.get("news_narratives", {}), prices)
             except Exception as e:
-                logger.warning(f"Front-run engine failed: {e}")
+                logger.debug(f"Front-run engine failed: {e}")
                 result["errors"].append(f"frontrun: {e}")
 
         if _V39_TIER_S.get("methodology_pack"):
@@ -2855,7 +2878,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 "vix_multiplier": vix_mult,
             }
         except Exception as e:
-            logger.warning(f"Hedgeye sizing failed: {e}")
+            logger.debug(f"Hedgeye sizing failed: {e}")
             result["hedgeye_position_sizing"] = {"positions": [], "total_deployed_pct": 0, "cash_pct": 1.0, "vix_multiplier": 1.0}
 
         # ---- Legacy Conviction Sizing (fallback) ----
@@ -2969,7 +2992,7 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         # ---- Vol Forecast ----
         try:
             vol_f = {}
-            for proxy in ["SPY", "QQQ", "GLD", "TLT", "DX-Y.NYB", "EEM", "VWO", "IWM", "HYG", "LQD", "^VIX", "VVIX"]:
+            for proxy in ["SPY", "QQQ", "GLD", "TLT", "DX-Y.NYB", "EEM", "VWO", "IWM", "HYG", "LQD", "^VIX", "^VVIX"]:
                 s = prices.get(proxy)
                 if s is not None and len(s) >= 22:
                     try:

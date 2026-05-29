@@ -553,27 +553,39 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
     def _f(v): return f"{cur}{format(v, fmt)}"
 
     if bull:
-        ideal_entry = lrr + width * 0.15  # buy near lower band
         stop = lrr - width * 0.30
         target1 = trr
         target2 = (rr.get("trend", {}).get("trr", 0) or trr)
         direction = "LONG"
-        parts.append(f"**Entry zone (TRADE):** {_f(lrr)}–{_f(ideal_entry)} (lower band, beli saat dip)")
-        parts.append(f"**Stop:** < {_f(stop)} · **T1:** {_f(target1)} · **T2:** {_f(target2)}")
+        # Frame entry RELATIVE to current price (Keith daily-actionable style)
+        if pos < 0.25:
+            parts.append(f"🟢 **BUY ZONE SEKARANG** — harga {_f(px)} udah di lower TRADE band ({pos:.0%}). Entry di sini, ini level yang Keith sebut 'buy-able now'.")
+        elif pos < 0.55:
+            dip = lrr + width * 0.10
+            parts.append(f"🟡 **Bisa mulai sekarang** ({_f(px)}, mid-low {pos:.0%}) — atau tunggu dip ke {_f(dip)} buat add lebih bagus.")
+        elif pos < 0.80:
+            parts.append(f"🟠 **Mid-high ({pos:.0%})** — jangan chase. Tunggu pullback ke {_f(lrr)}–{_f(lrr + width*0.15)} ({((lrr/px-1)*100):+.1f}%) buat entry optimal.")
+        else:
+            parts.append(f"🔴 **Extended ({pos:.0%}, dekat TRR)** — JANGAN kejar. Trim kalau udah punya, atau tunggu reset ke {_f(lrr)} ({((lrr/px-1)*100):+.1f}%).")
+        parts.append(f"**Stop:** < {_f(stop)} · **T1:** {_f(target1)} ({((target1/px-1)*100):+.1f}%) · **T2:** {_f(target2)} ({((target2/px-1)*100):+.1f}%)")
     elif bear:
-        ideal_entry = trr - width * 0.15  # short near upper band
         stop = trr + width * 0.30
         target1 = lrr
         target2 = (rr.get("trend", {}).get("lrr", 0) or lrr)
         direction = "SHORT" if market_key != "ihsg" else "AVOID/WAIT"
         if market_key == "ihsg":
-            parts.append(f"**IHSG buy-only:** bearish — tunggu reclaim {_f(lrr)} dulu sebelum akumulasi.")
+            parts.append(f"🔴 **IHSG buy-only — HINDARI.** Bearish ({_f(px)}). Tunggu reclaim {_f(lrr)} ({((lrr/px-1)*100):+.1f}%) sebelum mikir akumulasi.")
         else:
-            parts.append(f"**Short zone (TRADE):** {_f(ideal_entry)}–{_f(trr)} (upper band, short saat rip)")
-            parts.append(f"**Stop:** > {_f(stop)} · **T1:** {_f(target1)} · **T2:** {_f(target2)}")
+            if pos > 0.75:
+                parts.append(f"🔴 **SHORT ZONE SEKARANG** — harga {_f(px)} di upper band ({pos:.0%}). Short di sini (Keith 'sell rip').")
+            elif pos > 0.45:
+                parts.append(f"🟠 **Mid-high ({pos:.0%})** — bisa short scale-in, atau tunggu rip ke {_f(trr)} ({((trr/px-1)*100):+.1f}%) buat entry lebih bagus.")
+            else:
+                parts.append(f"🟡 **Mid-low ({pos:.0%})** — udah turun jauh. Jangan short di bawah; tunggu bounce ke {_f(trr)} ({((trr/px-1)*100):+.1f}%).")
+            parts.append(f"**Stop:** > {_f(stop)} · **T1:** {_f(target1)} ({((target1/px-1)*100):+.1f}%) · **T2:** {_f(target2)} ({((target2/px-1)*100):+.1f}%)")
     else:
         direction = "WAIT"
-        parts.append(f"**Range-bound:** beli dekat {_f(lrr)}, jual dekat {_f(trr)} (no trend edge)")
+        parts.append(f"⚪ **Range-bound** ({_f(px)}, pos {pos:.0%}) — beli dekat {_f(lrr)}, jual dekat {_f(trr)}. No trend edge, fade extremes.")
 
     # ── Market-specific refinement (ONLY appropriate data) ───────────────
     if market_key in ("us_equity", "crypto"):

@@ -101,10 +101,10 @@ with st.sidebar:
     
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("🔄 Update", use_container_width=True):
+        if st.button("🔄 Update", width='stretch'):
             st.session_state.loading = True
     with c2:
-        if st.button("⚡ Rebuild", use_container_width=True):
+        if st.button("⚡ Rebuild", width='stretch'):
             st.session_state.loading = True
             st.session_state.snap = None
     

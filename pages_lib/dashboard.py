@@ -3,10 +3,7 @@ import streamlit as st
 
 
 def render(snap: dict):
-    """Entry point — Tier1Alpha strip at TOP, then legacy dashboard from tes.zip."""
-    # ── TIER1ALPHA MARKET STRUCTURE — now at TOP (compact horizontal) ────
-    _render_tier1alpha_panel(snap)
-
+    """Entry point — Tier1Alpha is now MERGED into the regime card (no separate panel)."""
     try:
         from pages_lib._dashboard_legacy import render as _legacy_render
     except Exception as e:
