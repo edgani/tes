@@ -323,3 +323,44 @@ def fetch_cot_by_ticker(tickers: List[str]) -> Dict:
 
     logger.info(f"live_data: COT fetched for {len(out)} tickers")
     return out
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SCRAPED DATA CONNECTOR — reads JSON pushed by the Hermes agent (or local scraper)
+# ═══════════════════════════════════════════════════════════════════════════
+
+def load_scraped_data(github_raw_url: str = None, local_path: str = None) -> Dict:
+    """Load market data scraped by the Hermes agent / local browser scraper.
+
+    The agent writes scraped_market_data.json and pushes to GitHub. This reads it
+    and returns {ticker: {gex, call_wall, put_wall, max_pain, oi_by_strike, ...}}.
+    Merged into snap['options_data'] so the dashboard shows real barchart/CME/laevitas
+    data for tickers that yfinance can't cover (futures OI, crypto Deribit GEX, etc).
+
+    Priority: local_path (if exists) → github_raw_url → empty.
+    """
+    import json, os
+    # Default GitHub raw URL — point this at YOUR repo's scraped_market_data.json
+    if github_raw_url is None:
+        github_raw_url = "https://raw.githubusercontent.com/edgani/tes/main/scraped_market_data.json"
+
+    # 1) Local file (if scraper runs on same box as dashboard)
+    if local_path and os.path.exists(local_path):
+        try:
+            with open(local_path) as f:
+                payload = json.load(f)
+            return payload.get("data", {})
+        except Exception as e:
+            logger.debug(f"scraped local read failed: {e}")
+
+    # 2) GitHub raw (agent pushes here)
+    try:
+        import urllib.request
+        req = urllib.request.Request(github_raw_url, headers={"User-Agent": "Mozilla/5.0"})
+        payload = json.loads(urllib.request.urlopen(req, timeout=10).read())
+        data = payload.get("data", {})
+        logger.info(f"live_data: loaded scraped data for {len(data)} tickers from GitHub")
+        return data
+    except Exception as e:
+        logger.debug(f"scraped GitHub read failed (file may not exist yet): {e}")
+        return {}
