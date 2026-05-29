@@ -583,7 +583,8 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
             dip = lrr + width * 0.10
             parts.append(f"🟡 **Bisa mulai sekarang** ({_f(px)}, mid-low {pos:.0%}) — atau tunggu dip ke {_f(dip)} buat add lebih bagus.")
         elif pos < 0.80:
-            parts.append(f"🟠 **Mid-high ({pos:.0%})** — jangan chase. Tunggu pullback ke {_f(lrr)}–{_f(lrr + width*0.15)} ({((lrr/px-1)*100):+.1f}%) buat entry optimal.")
+            zone_top = lrr + width * 0.15
+            parts.append(f"🟠 **Mid-high ({pos:.0%})** — jangan chase. Tunggu pullback ke {_f(lrr)}–{_f(zone_top)} ({((zone_top/px-1)*100):+.1f}% s/d {((lrr/px-1)*100):+.1f}%) buat entry optimal.")
         else:
             parts.append(f"🔴 **Extended ({pos:.0%}, dekat TRR)** — JANGAN kejar. Trim kalau udah punya, atau tunggu reset ke {_f(lrr)} ({((lrr/px-1)*100):+.1f}%).")
         parts.append(f"**Stop:** < {_f(stop)} · **T1:** {_f(target1)} ({((target1/px-1)*100):+.1f}%) · **T2:** {_f(target2)} ({((target2/px-1)*100):+.1f}%)")
