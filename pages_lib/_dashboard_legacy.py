@@ -360,59 +360,64 @@ def _regime_left_cards(snap, s_vals):
         for k, lbl in t1a_labels.items():
             v = sigs.get(k, {}).get("value", "Neutral")
             c = _t1a_color(k, v)
-            boxes += (f'<div style="flex:1;background:{c};border-radius:5px;padding:5px 3px;text-align:center;margin:0 2px;">'
-                      f'<div style="font-size:0.6rem;color:#fff;font-weight:600;opacity:0.9;">{lbl}</div>'
-                      f'<div style="font-size:0.78rem;color:#fff;font-weight:800;">{v}</div></div>')
+            boxes += (f'<div style="flex:1;background:{c};border-radius:4px;padding:4px 2px;text-align:center;margin:0 1px;">'
+                      f'<div style="font-size:0.55rem;color:#fff;font-weight:600;opacity:0.9;">{lbl}</div>'
+                      f'<div style="font-size:0.72rem;color:#fff;font-weight:800;">{v}</div></div>')
         lv = t1a.get("spx_levels", {}) or {}
-        gq = global_q_for_card(snap)
-        qn = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}.get(gq, "")
         lvl_line = ""
         if lv.get("last_price"):
-            lvl_line = (f'<div style="display:flex;justify-content:space-between;font-size:0.7rem;color:#8b949e;margin-bottom:10px;padding:0 2px;">'
+            lvl_line = (f'<div style="display:flex;justify-content:space-between;font-size:0.66rem;color:#8b949e;margin-bottom:8px;padding:0 2px;">'
                         f'<span>SPX <b style="color:#c9d1d9;">{lv.get("last_price",0):,.0f}</b></span>'
                         f'<span>PV↑ <b style="color:#F85149;">{lv.get("upper_pv_band",0):,.0f}</b></span>'
-                        f'<span>PV↓ <b style="color:#3FB950;">{lv.get("lower_pv_band",0):,.0f}</b></span>'
-                        f'<span>🌍 <b style="color:#58A6FF;">{gq}</b> {qn}</span></div>')
+                        f'<span>PV↓ <b style="color:#3FB950;">{lv.get("lower_pv_band",0):,.0f}</b></span></div>')
         t1a_html = (
-            f'<div style="font-size:0.7rem;color:#8b949e;font-weight:700;letter-spacing:0.5px;margin-bottom:6px;">📐 MARKET STRUCTURE (Tier1Alpha)</div>'
-            f'<div style="display:flex;gap:0;margin-bottom:8px;">{boxes}</div>'
+            f'<div style="font-size:0.62rem;color:#8b949e;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;">📐 MARKET STRUCTURE (Tier1Alpha)</div>'
+            f'<div style="display:flex;gap:0;margin-bottom:6px;">{boxes}</div>'
             f'{lvl_line}'
-            f'<div style="height:1px;background:#30363d;margin:4px 0 12px;"></div>'
+            f'<div style="height:1px;background:#30363d;margin:3px 0 9px;"></div>'
         )
 
+    # Global Quad as 4th column alongside Structural/Monthly/Markov
+    gq = global_q_for_card(snap)
+    gq_c = qc.get(gq, "#8b949e")
+
     html = (
-        f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 18px;">'
+        f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;">'
         # ── Tier1Alpha block (merged at top) ──
         f'{t1a_html}'
-        # Row 1: 3 quad cards
-        f'<div style="display:flex;gap:0;margin-bottom:12px;">'
-        f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.85rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">STRUCTURAL</div>'
-        f'<div style="font-size:1.3rem;font-weight:800;color:{sq_c};line-height:1.1;">{sq}</div></div>'
-        f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
-        f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.85rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MONTHLY</div>'
-        f'<div style="font-size:1.3rem;font-weight:800;color:{mq_c};line-height:1.1;">{mq}</div></div>'
-        f'<div style="width:1px;background:#30363d;margin:0 2px;"></div>'
-        f'<div style="flex:1;text-align:center;padding:0 3px;">'
-        f'<div style="font-size:0.85rem;color:#8b949e;font-weight:600;letter-spacing:0.5px;">MARKOV</div>'
-        f'<div style="font-size:1.15rem;font-weight:800;color:{mk_c};line-height:1.1;">{mk_next or "—"}</div></div>'
+        # Row 1: 4 quad cards (STRUCTURAL / MONTHLY / MARKOV / GLOBAL)
+        f'<div style="display:flex;gap:0;margin-bottom:9px;">'
+        f'<div style="flex:1;text-align:center;padding:0 2px;">'
+        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">STRUCTURAL</div>'
+        f'<div style="font-size:1.15rem;font-weight:800;color:{sq_c};line-height:1.1;">{sq}</div></div>'
+        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
+        f'<div style="flex:1;text-align:center;padding:0 2px;">'
+        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">MONTHLY</div>'
+        f'<div style="font-size:1.15rem;font-weight:800;color:{mq_c};line-height:1.1;">{mq}</div></div>'
+        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
+        f'<div style="flex:1;text-align:center;padding:0 2px;">'
+        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">MARKOV</div>'
+        f'<div style="font-size:1.05rem;font-weight:800;color:{mk_c};line-height:1.1;">{mk_next or "—"}</div></div>'
+        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
+        f'<div style="flex:1;text-align:center;padding:0 2px;">'
+        f'<div style="font-size:0.66rem;color:#58A6FF;font-weight:600;letter-spacing:0.3px;">🌍 GLOBAL</div>'
+        f'<div style="font-size:1.15rem;font-weight:800;color:{gq_c};line-height:1.1;">{gq}</div></div>'
         f'</div>'
         # Row 2: Conf + Kelly
-        f'<div style="font-size:0.85rem;color:#8b949e;text-align:center;margin-bottom:12px;">'
+        f'<div style="font-size:0.72rem;color:#8b949e;text-align:center;margin-bottom:8px;">'
         f'Conf {conf_pct}% · Kelly {int(mk_kelly*100)}%'
         f'</div>'
         # Row 3: Confidence bar
-        f'<div style="position:relative;height:12px;background:#21262d;border-radius:3px;overflow:hidden;margin-bottom:12px;">'
+        f'<div style="position:relative;height:9px;background:#21262d;border-radius:3px;overflow:hidden;margin-bottom:8px;">'
         f'<div style="position:absolute;top:0;left:0;height:100%;width:{conf_pct}%;background:{sq_c};border-radius:3px;opacity:0.8;"></div></div>'
         # Row 4: Mini sentiment
-        f'<div style="display:flex;height:16px;border-radius:3px;overflow:hidden;margin-bottom:12px;">'
+        f'<div style="display:flex;height:12px;border-radius:3px;overflow:hidden;margin-bottom:8px;">'
         f'<div style="width:{bp:.0f}%;background:#3FB950;"></div>'
         f'<div style="width:{np:.0f}%;background:#8B949E;"></div>'
         f'<div style="width:{bep:.0f}%;background:#F85149;"></div></div>'
-        f'<div style="display:flex;justify-content:space-between;font-size:0.85rem;color:#8b949e;">'
+        f'<div style="display:flex;justify-content:space-between;font-size:0.72rem;color:#8b949e;">'
         f'<span>🐂 {bull:.0f}%</span><span>⚖ {neut:.0f}%</span><span>🐻 {bear:.0f}%</span></div>'
-        f'<div style="font-size:0.85rem;color:{cs_c};margin-top:9px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
+        f'<div style="font-size:0.72rem;color:{cs_c};margin-top:6px;text-align:center;">🎰 Casino Score: {cs:.0f}/100</div>'
         f'</div>'
     )
     return html
@@ -1126,7 +1131,7 @@ def render(snap, prices=None, vix_now=20.0):
         trig_html = ''.join([f'<div style="margin:1px 0;font-size:0.75rem;color:#8b949e;">• {t}</div>' for t in triggers[:3]]) if triggers else '<div style="font-size:0.75rem;color:#484f58;">Regime stabil</div>'
 
         st.markdown(
-            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:5px;padding:14px 16px;margin-top:14px;">'
+            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:5px;padding:9px 12px;margin-top:8px;">'
             f'<div style="font-size:0.75rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI 1M</div>'
             f'<div style="font-size:1.0rem;font-weight:800;color:{tqc};line-height:1.1;">{sq_current} → {tq}</div>'
             f'<div style="font-size:0.75rem;color:#c9d1d9;margin-top:1px;">Prob: <b>{prob_val:.0%}</b> · Est: <b>{est_val}</b></div>'
