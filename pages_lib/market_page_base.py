@@ -124,16 +124,36 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
             if it["action"] in ("SHORT_RIP", "COVER"):
                 it["action"] = "WATCH"
 
-    longs = [it for it in items if it["action"] in ("BUY_DIP", "ADD")]
-    shorts = [] if is_ihsg else [it for it in items if it["action"] in ("SHORT_RIP", "COVER")]
-    monitor = [it for it in items if it["action"] in ("TRIM", "TRIM_RIP", "WATCH", "HOLD")]
+    # Group by DIRECTIONAL BIAS (not just immediate timing action), so a bull-trend
+    # ticker at mid-range still shows as a Long candidate (timing = HOLD) instead of
+    # vanishing into Monitor. Bias from phase + formation.
+    def _bias(it):
+        rr = it["rr"]
+        phase = rr.get("phase", "NEUTRAL")
+        formation = rr.get("signals", {}).get("formation", "NEUTRAL")
+        action = it["action"]
+        if action in ("BUY_DIP", "ADD"):
+            return "long"
+        if action in ("SHORT_RIP", "COVER"):
+            return "short"
+        # Directional bias fallback
+        if phase == "BULL" or formation == "BULLISH":
+            return "long"
+        if phase == "BEAR" or formation == "BEARISH":
+            return "short" if not is_ihsg else "monitor"
+        return "monitor"
 
-    # Sub-tabs
+    longs = [it for it in items if _bias(it) == "long"]
+    shorts = [] if is_ihsg else [it for it in items if _bias(it) == "short"]
+    monitor = [it for it in items if _bias(it) == "monitor"]
+
+    # Sub-tabs — IHSG uses "Akumulasi" instead of "Long" (buy-only market)
+    long_label = "🟢 Akumulasi" if is_ihsg else "🟢 Long"
     if is_ihsg:
-        sub_long, sub_mon = st.tabs([f"🟢 Long ({len(longs)})", f"🟡 Monitor ({len(monitor)})"])
+        sub_long, sub_mon = st.tabs([f"{long_label} ({len(longs)})", f"🟡 Monitor ({len(monitor)})"])
         with sub_long:
             if not longs:
-                st.caption("No long picks active right now.")
+                st.caption("Belum ada saham di zona akumulasi sekarang.")
             for it in longs[:25]:
                 render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                    show_options=show_options, show_cot=show_cot,
@@ -146,7 +166,7 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
         return
 
     sub_long, sub_short, sub_mon = st.tabs(
-        [f"🟢 Long ({len(longs)})", f"🔴 Short ({len(shorts)})", f"🟡 Monitor ({len(monitor)})"]
+        [f"{long_label} ({len(longs)})", f"🔴 Short ({len(shorts)})", f"🟡 Monitor ({len(monitor)})"]
     )
     with sub_long:
         if not longs:

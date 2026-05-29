@@ -480,6 +480,15 @@ def _derive_signals_v20_3b(rr: Dict) -> Dict:
     trend_phase = tr["phase_state"]
     tail_phase = tl["phase_state"]
 
+    # MA-based trend bias (21v63) — used as fallback when hysteresis phase is neutral.
+    # Without this, trade/trend phase_state ≈ 0 always (since score = (px−basis)/width,
+    # and basis = prev-close → ~1-day return ≈ 0) → no longs/shorts ever fire.
+    ma_phase = rr.get("phase_code", 0)
+    if trade_phase == 0:
+        trade_phase = ma_phase
+    if trend_phase == 0:
+        trend_phase = ma_phase
+
     trade_width = t["trr"] - t["lrr"]
     trade_pos = (px - t["lrr"]) / trade_width if trade_width > 0 else 0.5
 

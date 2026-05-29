@@ -846,6 +846,27 @@ ALPHA_CENTER_CANDIDATES = {
     # ║ CRYPTO L1 (DePIN + scaling)                                       ║
     # ╚═══════════════════════════════════════════════════════════════════╝
 
+    "NBIS": {
+        "market": "us_equity", "stars": 4,
+        "thesis": "Nebius Group — AI cloud / GPU infrastructure (ex-Yandex). Neocloud play renting NVDA GPUs at scale. Keith McCullough + Hedgeye community held through drops.",
+        "bottleneck_reason": "One of few pure-play AI neoclouds with NVDA allocation priority. GPU capacity is the bottleneck — Nebius has secured H200/B200 supply + datacenter buildout in Europe/US. Scarce listed exposure to GPU-rental economics.",
+        "correlations": {
+            "NVDA": "1.55 - GPU supply + demand beta",
+            "CRWV": "1.30 - neocloud peer (CoreWeave)",
+            "VRT": "0.70 - datacenter cooling dependency",
+        },
+        "monopoly_strength": "PIONEER (scarce listed neocloud)",
+        "sources": ["keith_mccullough", "lifelong_learner", "HyperTechInvest"],
+        "catalysts_2026": [
+            "GPU capacity expansion disclosure",
+            "Enterprise AI contract wins",
+            "Profitability inflection",
+        ],
+        "potential_upside": "+150-400% if neocloud demand sustains",
+        "risk": "GPU oversupply; hyperscaler competition; capex burn",
+        "tags": ["AI", "Cloud", "GPU", "MULTI-BAG"],
+    },
+
     "SOL-USD": {
         "market": "crypto", "stars": 3,
         "thesis": "Solana — DePIN + memecoin volume leader. Visa/Shopify integrations. Firedancer mainnet 2026.",

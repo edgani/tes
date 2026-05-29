@@ -2629,9 +2629,13 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             logger.warning(f"Alpha Center failed: {e}")
             result["errors"].append(f"alpha_center: {e}")
 
-        # ---- Simulation Layer ----
-        _safe_progress(progress_cb, "Running Monte Carlo simulation (100x per ticker)...", 0.80)
-        if _V2_SIM:
+        # ---- Simulation Layer (DISABLED by default — was 12-min killer) ----
+        # Monte Carlo 100x/ticker + walkforward gatekeeper too slow for interactive use.
+        # Set env MACROREGIME_HEAVY_SIM=1 to re-enable.
+        import os as _os
+        _RUN_HEAVY_SIM = _os.environ.get("MACROREGIME_HEAVY_SIM", "0") == "1"
+        _safe_progress(progress_cb, "Skipping heavy Monte Carlo (fast mode)...", 0.80)
+        if _V2_SIM and _RUN_HEAVY_SIM:
             try:
                 alpha_items = result.get("alpha_center", {}).get("all", [])
                 if alpha_items:
@@ -3677,6 +3681,18 @@ def build_snapshot_v40(
     except Exception as e:
         logger.error(f"v40: tier1alpha failed: {e}")
         snap["tier1alpha"] = {}
+
+    # ── V40 ENGINE: NARRATIVE (Ricky2212 thesis collection) ──────────────
+    try:
+        from engines.narrative_engine import build_narrative
+        snap["narrative"] = build_narrative(snap)
+        # Also surface scenarios at top level for themes page
+        narr_scenarios = snap["narrative"].get("scenarios", {})
+        if narr_scenarios and not snap.get("scenarios"):
+            snap["scenarios"] = narr_scenarios
+    except Exception as e:
+        logger.error(f"v40: narrative engine failed: {e}")
+        snap["narrative"] = {}
 
     _cb("v40: Snapshot complete", 100)
     snap["ok"] = True

@@ -16,6 +16,78 @@ import streamlit as st
 # NARRATIVE GENERATORS
 # ═══════════════════════════════════════════════════════════════════════════
 
+def compute_signal_strength(rr: dict) -> dict:
+    """Keith McCullough Signal Strength: HH across all 3 durations (TRADE/TREND/TAIL).
+    'If it is a HH across all 3, that has the strongest Signal Strength.' """
+    if not rr:
+        return {"score": 0, "label": "MIXED", "detail": ""}
+    px = rr.get("px", 0)
+    bull = bear = 0
+    states = []
+    for d in ["trade", "trend", "tail"]:
+        dd = rr.get(d, {})
+        lrr = dd.get("lrr", 0) or 0
+        trr = dd.get("trr", 0) or 0
+        mid = (lrr + trr) / 2 if (lrr and trr) else px
+        ph = dd.get("phase_state", 0)
+        if px > mid and ph >= 0:
+            bull += 1; states.append("HH")
+        elif px < mid and ph <= 0:
+            bear += 1; states.append("LL")
+        else:
+            states.append("-")
+    if bull == 3:
+        return {"score": 3, "label": "STRONGEST BULL", "detail": "TRADE+TREND+TAIL all HH - Keith max signal strength"}
+    if bear == 3:
+        return {"score": -3, "label": "STRONGEST BEAR", "detail": "TRADE+TREND+TAIL all LL - max bearish"}
+    if bull == 2:
+        return {"score": 2, "label": "STRONG BULL", "detail": "HH " + "/".join(states)}
+    if bear == 2:
+        return {"score": -2, "label": "STRONG BEAR", "detail": "LL " + "/".join(states)}
+    return {"score": 0, "label": "MIXED", "detail": "/".join(states) + " - no aligned signal"}
+
+
+def _render_signal_boxes(rr, snap, market_key, show_options, ticker):
+    """Tier1Alpha-style color-coded signal boxes per ticker."""
+    import streamlit as st
+    if not rr:
+        return
+    def _box(label, value, color):
+        return (f"<div style='background:{color};color:white;padding:6px 4px;border-radius:6px;"
+                f"text-align:center;font-weight:700;font-size:0.72rem;margin:2px 0;'>"
+                f"{label}<br><span style='font-size:0.82rem;'>{value}</span></div>")
+    GREEN, RED, AMBER, GREY = "#1a7f37", "#cf222e", "#bf8700", "#57606a"
+    ss = compute_signal_strength(rr)
+    ss_color = GREEN if ss["score"] > 0 else RED if ss["score"] < 0 else AMBER
+    phase = rr.get("phase", "NEUTRAL")
+    phase_color = GREEN if phase == "BULL" else RED if phase == "BEAR" else AMBER
+    quality = rr.get("signals", {}).get("quality", "C")
+    q_color = GREEN if quality.startswith("A") else RED if quality.startswith("short") else AMBER if quality == "B" else GREY
+    hurst = rr.get("hurst", {}).get("interpretation", "RANDOM_WALK")
+    hurst_short = {"TRENDING": "TREND", "MEAN_REVERTING": "MEAN-REV", "RANDOM_WALK": "RANDOM"}.get(hurst, "-")
+    hurst_color = GREEN if hurst == "TRENDING" else AMBER if hurst == "MEAN_REVERTING" else GREY
+    boxes = [
+        _box("Signal Strength", ss["label"], ss_color),
+        _box("Phase", phase, phase_color),
+        _box("Quality", quality, q_color),
+        _box("Hurst", hurst_short, hurst_color),
+    ]
+    if show_options:
+        opts = (snap.get("options_data", {}) or {}).get(ticker, {})
+        gex = opts.get("net_gex") or opts.get("gex")
+        if gex is not None:
+            try:
+                g = float(gex)
+                boxes.append(_box("Gamma", "LONG g" if g > 0 else "SHORT g", GREEN if g > 0 else RED))
+            except (TypeError, ValueError):
+                pass
+    cols = st.columns(len(boxes))
+    for c, b in zip(cols, boxes):
+        c.markdown(b, unsafe_allow_html=True)
+    if ss["detail"]:
+        st.caption(f"Signal: {ss['detail']}")
+
+
 def _phase_narrative(rr: dict) -> str:
     """Generate phase explanation in plain language."""
     if not rr:
@@ -538,6 +610,9 @@ def render_rich_ticker(
                 f"expected impact pada {ticker}: **{expected:+.2f}% within {lag} days**. "
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
+
+        # ── TIER1ALPHA-STYLE SIGNAL BOXES (color-coded) ─────────────────
+        _render_signal_boxes(rr, snap, market_key, show_options, ticker)
 
         # ── TRR/LRR ───────────────────────────────────────────────────────
         st.markdown("**📊 TRR/LRR v20.3b (Hedgeye-style)**")

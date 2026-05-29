@@ -3,8 +3,57 @@ import streamlit as st
 
 def render(snap):
     st.title("📖 Themes & Scenarios")
-    st.caption("Macro narratives, active scenarios, and theme exposure.")
-    
+    st.caption("Macro narratives (Ricky2212/MentorBaik), active scenarios, dan theme exposure.")
+
+    # ── RICKY2212 NARRATIVES (from narrative_universe) ───────────────────
+    narrative = snap.get("narrative", {})
+    if narrative and isinstance(narrative, dict):
+        macro = narrative.get("macro_narrative", {})
+        if macro and macro.get("headline"):
+            st.markdown(f"### 🧠 Macro Narrative")
+            st.info(f"**{macro.get('headline','')}**\n\n{macro.get('narrative','')}")
+        bn = narrative.get("active_bottlenecks", [])
+        if bn:
+            with st.expander(f"🔒 Active Bottlenecks ({len(bn)})", expanded=False):
+                for b in bn[:8]:
+                    st.caption(f"• **{b.get('name','').replace('_',' ').title()}** — {b.get('description', b.get('thesis',''))[:140]}")
+        chains = narrative.get("active_causal_chains", [])
+        if chains:
+            with st.expander(f"🔗 Active Causal Chains ({len(chains)})", expanded=False):
+                for c in chains[:8]:
+                    st.caption(f"• **{c.get('name','').replace('_',' ').title()}** — {c.get('description','')[:140]}")
+
+    # ── Ricky thesis library (browsable) ─────────────────────────────────
+    try:
+        from config.narrative_universe import NARRATIVES, TICKER_NARRATIVES
+        with st.expander(f"📚 Ricky2212 Thesis Library ({len(NARRATIVES)} articles)", expanded=False):
+            search = st.text_input("Search narratives (ticker / theme)", key="narr_search")
+            shown = 0
+            for nid, n in NARRATIVES.items():
+                title = n.get("title", nid)
+                tickers = n.get("tickers", [])
+                themes_l = n.get("themes", [])
+                hay = (title + " " + " ".join(tickers) + " " + " ".join(themes_l)).lower()
+                if search and search.lower() not in hay:
+                    continue
+                if shown >= 15:
+                    break
+                shown += 1
+                st.markdown(f"**{title}**")
+                meta = []
+                if tickers: meta.append(f"Tickers: {', '.join(tickers[:6])}")
+                if n.get("regime_signal"): meta.append(f"Signal: {n['regime_signal']}")
+                if n.get("priority"): meta.append(f"Priority: {n['priority']}/10")
+                st.caption(" · ".join(meta))
+                content = n.get("content", "")
+                if content:
+                    st.caption(content[:280] + "…")
+                st.divider()
+    except Exception as e:
+        st.caption(f"Narrative library: {e}")
+
+    st.markdown("### 🌐 Active Scenarios")
+
     scenarios = snap.get("scenarios", []) or snap.get("active_scenarios", [])
     # Normalize wrap before fallback
     if isinstance(scenarios, dict):
