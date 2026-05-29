@@ -545,8 +545,27 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
     bull = phase == "BULL" or rr.get("phase_code", 0) == 1
     bear = phase == "BEAR" or rr.get("phase_code", 0) == -1
 
+    # ── KEITH OVERRIDE: markets follow Keith's actual public calls ───────
+    # If Keith says BEARISH TRADE on this name, don't chase even if our phase is bull.
+    keith_note = None
+    try:
+        from engines.keith_signal_sync import resolve_direction
+        dash_dir = "LONG" if bull else "SHORT" if bear else "NEUTRAL"
+        kd = resolve_direction(ticker, dash_dir)
+        if kd.get("override") or kd.get("keith_trade") not in (None, "NEUTRAL", ""):
+            kt = kd.get("keith_trade", "NEUTRAL")
+            ktr = kd.get("keith_trend", "NEUTRAL")
+            keith_note = f"🎯 **Keith ({ticker}):** TRADE {kt} · TREND {ktr} — {kd.get('basis','')}"
+            # If Keith TRADE bearish but we're bull → flip framing to 'wait/don't chase'
+            if kt == "BEARISH" and bull:
+                bull = False  # don't show 'buy now'; treat as wait
+    except Exception:
+        pass
+
     # Base entry zone from TRR/LRR (universal)
     parts = []
+    if keith_note:
+        parts.append(keith_note)
     is_fx = market_key == "forex"
     fmt = ".4f" if is_fx else ",.2f"
     cur = "" if is_fx else "$"

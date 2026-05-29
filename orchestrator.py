@@ -630,33 +630,6 @@ logger.info(
 )
 
 # ═══════════════════════════════════════════════════════════════════════
-# V40 ENGINE IMPORTS (Keith Market Filter + Alpha Center Curator v2)
-# ═══════════════════════════════════════════════════════════════════════
-_V40_KEITH_FILTER = False
-_V40_ALPHA_CURATOR = False
-
-try:
-    from engines.keith_market_filter import apply_keith_market_filter, keith_breadth_summary, get_favored_sectors
-    _V40_KEITH_FILTER = True
-except Exception as e:
-    logger.debug(f"Optional engine not present: keith_market_filter: {e}")
-    def apply_keith_market_filter(*a, **k): return {"passed": [], "avoided": [], "meta": {}}
-    def keith_breadth_summary(*a, **k): return {"total_signals": 0}
-    def get_favored_sectors(*a, **k): return {"favored": [], "avoid": [], "theme": ""}
-
-try:
-    from engines.alpha_center_curator import AlphaCenterCurator
-    _V40_ALPHA_CURATOR = True
-except Exception as e:
-    logger.debug(f"Optional engine not present: alpha_center_curator: {e}")
-    class AlphaCenterCurator:
-        def __init__(self, *a, **k): pass
-        def curate(self, *a, **k): return {"passed": [], "meta": {}}
-        def curate_short_term(self, *a, **k): return {"passed": [], "meta": {}}
-
-logger.info(f"V40 engines loaded: keith_filter={_V40_KEITH_FILTER} alpha_curator={_V40_ALPHA_CURATOR}")
-
-# ═══════════════════════════════════════════════════════════════════════
 # HEDGEYE COUNTRY OVERRIDE (Keith McCullough public calls)
 # ═══════════════════════════════════════════════════════════════════════
 HEDGEYE_COUNTRY_OVERRIDE = {
@@ -3187,10 +3160,8 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             "sources": ["Dynamic Hedgeye Risk Range Resolver v39.5"]
         }
 
-        # v40.6 FIX: Keith sync ke SEMUA ticker yang punya Risk Range data (276+ tickers)
-        # Bukan cuma alpha_center["all"] (18 tickers). Ini yang bikin "5 of 37" jadi valid.
-        rr_tickers = list(result.get("risk_ranges", {}).get("asset_ranges", {}).keys())
-        for t in rr_tickers:
+        for item in result["alpha_center"].get("all", []):
+            t = item.get("ticker", "")
             ks = _resolve_keith_signal(t, result.get("risk_ranges", {}), prices)
             if not ks:
                 continue
@@ -3660,64 +3631,22 @@ def build_snapshot_v40(
         snap["chain_reactions_catalog"] = {}
         snap["transmissions"] = {"active_transmissions": [], "error": str(e)}
 
-    # ── V40 ENGINE: ALPHA CENTER CURATOR (backward compatible v1 + v2) ───
-    _cb("v40: Running Alpha Center curator…", 65)
+    # ── V40 ENGINE: ALPHA CENTER CURATOR ─────────────────────────────────
+    _cb("v40: Running Alpha Center 5-layer filter…", 65)
     try:
-        # Try v1 first (get_curator) — ini yang user mau, bottleneck + surge potential
         from engines.alpha_center_curator import get_curator
-        curator = get_curator()
+        curator = get_curator(bottleneck_ref_path="bottleneck_reference.json")
         keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
-        wf_results = snap.get("walkforward_results", {}) or snap.get("walkforward_results_v40", {}) or {}
+        wf_results = snap.get("walkforward_results", {})
         ac_result = curator.filter_universe(
-            keith_signals=keith_signals, wf_results=wf_results,
-            current_quad=current_quad, min_stars=1,
+            keith_signals=keith_signals,
+            wf_results=wf_results,
+            current_quad=current_quad,
         )
         snap["alpha_center"] = ac_result
-    except Exception as e_v1:
-        logger.warning(f"v40: alpha center v1 failed: {e_v1}, trying v2 fallback...")
-        try:
-            # Fallback v2 (AlphaCenterCurator)
-            from engines.alpha_center_curator import AlphaCenterCurator
-            keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
-            composite = snap.get("composite_signals", {})
-            ac = AlphaCenterCurator(keith_signals, composite, prices, current_quad)
-            ac_high = ac.curate(max_picks=15)
-            ac_short = ac.curate_short_term(snap.get("walkforward_results", {}), max_picks=10)
-            snap["alpha_center"] = {"high_asymmetry": ac_high, "short_term": ac_short}
-        except Exception as e_v2:
-            logger.error(f"v40: alpha center v2 also failed: {e_v2}")
-            # Ultimate fallback: _alpha_center_proxy dari orchestrator
-            try:
-                ac_proxy = _alpha_center_proxy(
-                    prices, snap.get("risk_ranges", {}), current_quad, vix,
-                    news_analysis=snap.get("news_narratives", {}),
-                    composite_signals=snap.get("composite_signals", {}),
-                )
-                snap["alpha_center"] = ac_proxy
-            except Exception as e_proxy:
-                logger.error(f"v40: alpha center proxy fallback failed: {e_proxy}")
-                snap["alpha_center"] = {"passed": [], "rejected": [], "error": str(e_v1)}
-
-    # ── V40 ENGINE: KEITH MARKET FILTER ──────────────────────────────────
-    _cb("v40: Applying Keith fractal market filter…", 66)
-    try:
-        from engines.keith_market_filter import apply_keith_market_filter, keith_breadth_summary
-        keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
-        for tab_key in ["us_stocks", "forex", "commodities", "crypto", "ihsg"]:
-            tab_data = snap.get(tab_key, {})
-            if not isinstance(tab_data, dict):
-                continue
-            tickers = list(tab_data.keys())
-            if not tickers:
-                continue
-            filtered = apply_keith_market_filter(tickers, keith_signals, current_quad)
-            snap[f"{tab_key}_keith_filtered"] = filtered["passed"]
-            snap[f"{tab_key}_keith_avoided"] = filtered["avoided"]
-            snap[f"{tab_key}_keith_meta"] = filtered["meta"]
-        snap["keith_breadth"] = keith_breadth_summary(keith_signals)
-        logger.info(f"v40: Keith filter applied | breadth={snap['keith_breadth'].get('breadth_signal', 'N/A')}")
     except Exception as e:
-        logger.warning(f"v40: Keith filter failed: {e}")
+        logger.error(f"v40: alpha center failed: {e}")
+        snap["alpha_center"] = {"passed": [], "rejected": [], "error": str(e)}
 
     # ── V40 ENGINE: HEDGEYE POSITION SIZING ──────────────────────────────
     _cb("v40: Computing Hedgeye position sizing…", 75)
@@ -3873,32 +3802,19 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
     except Exception as e:
         logger.warning(f"v40: COT failed: {e}")
 
-    # ── CME OI (PATCHED v40.5 — auto-fallback ke yfinance) ──────────────
+    # ── CME OI (commodities — best effort, may fail server-side) ─────────
     try:
         from engines.cme_scraper import get_cme_volume
-        cme_map = {"CL=F": "4250", "GC=F": "133", "SI=F": "84", "NG=F": "4240", "HG=F": "424"}
-        cme_success = 0
-        cme_fallback = 0
+        cme_map = {"CL=F": "CL", "GC=F": "GC", "SI=F": "SI", "NG=F": "NG", "HG=F": "HG"}
         for tkr, prod in cme_map.items():
             if tkr in price_tickers:
                 try:
                     vol = get_cme_volume(prod)
-                    if vol:
-                        out["cme_oi"][tkr] = vol
-                        src = vol.get("source", "")
-                        if "yfinance" in src:
-                            cme_fallback += 1
-                        else:
-                            cme_success += 1
-                except Exception as e:
-                    logger.debug(f"v40: CME OI skip {tkr}: {e}")
+                    if vol: out["cme_oi"][tkr] = vol
+                except Exception:
                     continue
-        if cme_fallback > 0 and cme_success == 0:
-            logger.info(f"v40: CME blocked (403) — all {cme_fallback} commodities fallback to yfinance")
-        elif cme_success > 0:
-            logger.info(f"v40: CME OK — {cme_success} direct, {cme_fallback} fallback")
     except Exception as e:
-        logger.debug(f"v40: CME OI module error: {e}")
+        logger.debug(f"v40: CME OI: {e}")
 
     # ── MERGE scraped data (Hermes agent / local browser scraper) ────────
     # Fills what yfinance can't: futures OI (CME), crypto Deribit GEX (laevitas),
