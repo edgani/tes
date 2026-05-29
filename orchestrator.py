@@ -3732,11 +3732,14 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
     _cb("v40: Fetching options (yfinance)…", 95)
     try:
         from engines.live_data_engine import fetch_options_yf
-        # US equities + key ETFs (IBIT, SPY, QQQ) + commodity ETFs with options
-        opt_targets = us_tickers[:25] + [t for t in ("SPY", "QQQ", "IBIT", "GLD", "SLV", "USO", "TLT", "IWM")
-                                          if t in price_tickers]
+        # US equities + key ETFs + commodity/FX ETF proxies (for OI heatmap)
+        _commodity_etfs = ["USO", "GLD", "SLV", "UNG", "CPER", "UGA", "CORN", "WEAT", "SOYB"]
+        _fx_etfs = ["UUP", "FXE", "FXY", "FXB", "FXA", "FXC"]
+        opt_targets = (us_tickers[:25]
+                       + [t for t in ("SPY", "QQQ", "IBIT", "TLT", "IWM") if t in price_tickers]
+                       + _commodity_etfs + _fx_etfs)
         opt_targets = list(dict.fromkeys(opt_targets))  # dedupe, preserve order
-        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=35)
+        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=45)
     except Exception as e:
         logger.warning(f"v40: yfinance options failed: {e}")
 

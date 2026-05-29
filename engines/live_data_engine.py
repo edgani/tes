@@ -276,7 +276,12 @@ COT_TICKER_MAP = {
     "HG=F": "COPPER", "CPER": "COPPER",
     "ZC=F": "CORN", "CORN": "CORN",
     "ZW=F": "WHEAT", "WEAT": "WHEAT",
-    "ZS=F": "SOYBEAN",
+    "ZS=F": "SOYBEAN", "SOYB": "SOYBEAN",
+    "RB=F": "GASOLINE", "UGA": "GASOLINE",
+    "HO=F": "HEATING_OIL",
+    "ZL=F": "SOYBEAN_OIL", "ZM=F": "SOYBEAN_MEAL",
+    "KC=F": "COFFEE", "SB=F": "SUGAR", "CC=F": "COCOA", "CT=F": "COTTON",
+    "LE=F": "LIVE_CATTLE", "HE=F": "LEAN_HOGS",
 }
 
 

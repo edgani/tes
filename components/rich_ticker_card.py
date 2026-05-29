@@ -18,33 +18,91 @@ import streamlit as st
 
 def compute_signal_strength(rr: dict) -> dict:
     """Keith McCullough Signal Strength: HH across all 3 durations (TRADE/TREND/TAIL).
-    'If it is a HH across all 3, that has the strongest Signal Strength.' """
+    HH = price breaking ABOVE the band (higher-high); LL = below the band (lower-low).
+    For mid-range price, lean on MA trend (phase_code) so it stays CONSISTENT with Phase box.
+    """
     if not rr:
-        return {"score": 0, "label": "MIXED", "detail": ""}
+        return {"score": 0, "label": "NEUTRAL", "detail": ""}
     px = rr.get("px", 0)
-    bull = bear = 0
+    phase_code = rr.get("phase_code", 0)
+    hh = ll = 0
     states = []
     for d in ["trade", "trend", "tail"]:
         dd = rr.get(d, {})
         lrr = dd.get("lrr", 0) or 0
         trr = dd.get("trr", 0) or 0
-        mid = (lrr + trr) / 2 if (lrr and trr) else px
-        ph = dd.get("phase_state", 0)
-        if px > mid and ph >= 0:
-            bull += 1; states.append("HH")
-        elif px < mid and ph <= 0:
-            bear += 1; states.append("LL")
+        if trr and px >= trr:
+            hh += 1; states.append("HH")
+        elif lrr and px <= lrr:
+            ll += 1; states.append("LL")
         else:
-            states.append("-")
-    if bull == 3:
-        return {"score": 3, "label": "STRONGEST BULL", "detail": "TRADE+TREND+TAIL all HH - Keith max signal strength"}
-    if bear == 3:
-        return {"score": -3, "label": "STRONGEST BEAR", "detail": "TRADE+TREND+TAIL all LL - max bearish"}
-    if bull == 2:
-        return {"score": 2, "label": "STRONG BULL", "detail": "HH " + "/".join(states)}
-    if bear == 2:
-        return {"score": -2, "label": "STRONG BEAR", "detail": "LL " + "/".join(states)}
-    return {"score": 0, "label": "MIXED", "detail": "/".join(states) + " - no aligned signal"}
+            states.append("mid")
+    # Breakout extremes (Keith's true HH/LL across durations)
+    if hh == 3:
+        return {"score": 3, "label": "STRONGEST BULL", "detail": "Price > TRR on TRADE+TREND+TAIL - HH all 3 (Keith max strength)"}
+    if ll == 3:
+        return {"score": -3, "label": "STRONGEST BEAR", "detail": "Price < LRR on TRADE+TREND+TAIL - LL all 3 (max bearish)"}
+    if hh >= 1 and ll == 0 and phase_code >= 0:
+        return {"score": 2, "label": "STRONG BULL", "detail": f"Breaking out HH on {hh}/3 durations - bull trend intact"}
+    if ll >= 1 and hh == 0 and phase_code <= 0:
+        return {"score": -2, "label": "STRONG BEAR", "detail": f"Breaking down LL on {ll}/3 durations - bear trend"}
+    # Mid-range: lean on MA trend so it agrees with the Phase box
+    if phase_code == 1:
+        return {"score": 1, "label": "BULL BIAS", "detail": "Mid-range, 21d>63d MA - bullish lean, wait for pullback/breakout"}
+    if phase_code == -1:
+        return {"score": -1, "label": "BEAR BIAS", "detail": "Mid-range, 21d<63d MA - bearish lean"}
+    return {"score": 0, "label": "NEUTRAL", "detail": "Mid-range, no trend - no edge"}
+
+
+def _render_oi_heatmap(snap, ticker, market_key):
+    """OI heatmap (open interest by strike). Uses yfinance options OI when available.
+    Futures (CL=F etc) → ETF proxy (USO etc). FX → currency ETF proxy."""
+    import streamlit as st
+    st.markdown("**📊 OI Heatmap (Open Interest by Strike)**")
+
+    # Futures → ETF proxy mapping (futures have no yfinance options)
+    FUT_PROXY = {
+        "CL=F": "USO", "GC=F": "GLD", "SI=F": "SLV", "NG=F": "UNG", "HG=F": "CPER",
+        "RB=F": "UGA", "HO=F": "USO", "ZC=F": "CORN", "ZW=F": "WEAT", "ZS=F": "SOYB",
+    }
+    FX_PROXY = {
+        "EURUSD=X": "FXE", "EUR=X": "FXE", "JPY=X": "FXY", "USDJPY=X": "FXY",
+        "GBPUSD=X": "FXB", "GBP=X": "FXB", "AUDUSD=X": "FXA", "DX-Y.NYB": "UUP",
+        "USDCAD=X": "FXC",
+    }
+
+    # First try direct OI from snapshot options_data
+    opts = (snap.get("options_data", {}) or {}).get(ticker, {})
+    proxy = None
+    if not opts:
+        proxy = FUT_PROXY.get(ticker) or FX_PROXY.get(ticker)
+        if proxy:
+            opts = (snap.get("options_data", {}) or {}).get(proxy, {})
+
+    if opts and (opts.get("total_call_oi") or opts.get("call_wall")):
+        cw = opts.get("call_wall")
+        pw = opts.get("put_wall")
+        mp = opts.get("max_pain")
+        tot_c = opts.get("total_call_oi", 0)
+        tot_p = opts.get("total_put_oi", 0)
+        src = f" (via {proxy} proxy)" if proxy else ""
+        st.markdown(
+            f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}**{src}  \n"
+            f"🧱 Call Wall (resistance): **${cw}** · Put Wall (support): **${pw}** · Max Pain: **${mp}**"
+        )
+        # Simple visual: call wall above, put wall below current
+        spot = opts.get("spot", 0)
+        if spot and cw and pw:
+            st.caption(f"Price ${spot} sits between Put Wall ${pw} ↓ and Call Wall ${cw} ↑ — "
+                       f"dealers pin toward Max Pain ${mp} into OPEX.")
+    else:
+        if market_key == "commodity":
+            st.caption(f"OI heatmap untuk {ticker} butuh CME QuikStrike (sering ke-block server-side) "
+                       f"atau ETF proxy options. Futures OI ga ada di yfinance — pakai proxy: "
+                       f"{FUT_PROXY.get(ticker, 'N/A')}.")
+        else:
+            st.caption(f"OI data untuk {ticker} belum tersedia — pakai FX ETF proxy "
+                       f"({FX_PROXY.get(ticker, 'N/A')}) atau CME QuikStrike.")
 
 
 def _render_signal_boxes(rr, snap, market_key, show_options, ticker):
@@ -545,6 +603,7 @@ def render_rich_ticker(
     show_options: bool = False, show_cot: bool = False,
     show_onchain: bool = False, show_bandar: bool = False,
     is_frontrun: bool = False, frontrun_info: dict = None,
+    show_oi: bool = False,
 ):
     """Render comprehensive ticker card with all narratives.
 
@@ -719,7 +778,14 @@ def render_rich_ticker(
                 if cot_text:
                     st.markdown(cot_text)
                 else:
-                    st.caption("COT data unavailable for this ticker.")
+                    from engines.live_data_engine import COT_TICKER_MAP
+                    if ticker in COT_TICKER_MAP or ticker.upper() in COT_TICKER_MAP:
+                        st.caption(f"COT untuk {ticker} ({COT_TICKER_MAP.get(ticker, COT_TICKER_MAP.get(ticker.upper()))}) belum ter-fetch — CFTC publish mingguan (Jumat). Coba Rebuild after Fri 3:30pm ET.")
+                    else:
+                        st.caption(f"{ticker} bukan produk CFTC reportable — no COT data (cuma futures utama: EUR/GBP/JPY/GOLD/CRUDE/dst).")
+
+            if show_oi:
+                _render_oi_heatmap(snap, ticker, market_key)
 
             if show_onchain:
                 oc_map = snap.get("crypto_tokens", {}) or snap.get("onchain_data", {}) or {}
@@ -729,7 +795,11 @@ def render_rich_ticker(
                 if oc_text:
                     st.markdown(oc_text)
                 else:
-                    st.caption("On-chain data unavailable for this ticker.")
+                    _CHAIN_OK = {"BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD", "MATIC-USD", "ARB-USD", "OP-USD", "BNB-USD"}
+                    if ticker in _CHAIN_OK:
+                        st.caption(f"On-chain {ticker} belum ter-fetch dari DeFiLlama — coba Rebuild (butuh internet di server).")
+                    else:
+                        st.caption(f"{ticker} ga punya chain TVL di DeFiLlama — on-chain cuma buat L1/L2 utama (BTC/ETH/SOL/AVAX/dst).")
 
             if show_bandar:
                 bandar_map = snap.get("ihsg_broker_proxy", {}) or snap.get("ihsg_broker_data", {}) or {}

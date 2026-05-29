@@ -53,6 +53,7 @@ def render_market_page(
     show_cot: bool = False,
     show_onchain: bool = False,
     show_bandar: bool = False,
+    show_oi: bool = False,
 ):
     st.title(f"{icon} {title}")
 
@@ -80,17 +81,17 @@ def render_market_page(
     tab1, tab2 = st.tabs(["🎯 Picks (Hedgeye-style)", "🔮 Front-Run (Pre-positioning)"])
 
     with tab1:
-        _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar)
+        _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar, show_oi)
 
     with tab2:
-        _render_frontrun_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar)
+        _render_frontrun_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar, show_oi)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 1: PICKS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar):
+def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar, show_oi=False):
     """Hedgeye-style picks — sorted by R/R, grouped by long/short/monitor."""
 
     # Convert to sortable list
@@ -148,52 +149,61 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
     monitor = [it for it in items if _bias(it) == "monitor"]
 
     # Sub-tabs — IHSG uses "Akumulasi" instead of "Long" (buy-only market)
+    # Sort longs by signal strength (strongest bull first), shorts by strongest bear
+    from components.rich_ticker_card import compute_signal_strength
+    def _ss_score(it):
+        return compute_signal_strength(it.get("rr", {})).get("score", 0)
+    longs.sort(key=_ss_score, reverse=True)
+    shorts.sort(key=_ss_score)
+
     long_label = "🟢 Akumulasi" if is_ihsg else "🟢 Long"
     if is_ihsg:
         sub_long, sub_mon = st.tabs([f"{long_label} ({len(longs)})", f"🟡 Monitor ({len(monitor)})"])
         with sub_long:
+            st.caption("📋 Saham di bullish TREND (Keith-style inventory). Timing entry per-card (BUY_DIP/ADD/HOLD). Diurutkan dari signal strength terkuat.")
             if not longs:
                 st.caption("Belum ada saham di zona akumulasi sekarang.")
             for it in longs[:25]:
                 render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                    show_options=show_options, show_cot=show_cot,
-                                   show_onchain=show_onchain, show_bandar=show_bandar)
+                                   show_onchain=show_onchain, show_bandar=show_bandar, show_oi=show_oi)
         with sub_mon:
             for it in monitor[:30]:
                 render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                    show_options=show_options, show_cot=show_cot,
-                                   show_onchain=show_onchain, show_bandar=show_bandar)
+                                   show_onchain=show_onchain, show_bandar=show_bandar, show_oi=show_oi)
         return
 
     sub_long, sub_short, sub_mon = st.tabs(
         [f"{long_label} ({len(longs)})", f"🔴 Short ({len(shorts)})", f"🟡 Monitor ({len(monitor)})"]
     )
     with sub_long:
+        st.caption("📋 Names di bullish TREND (Keith-style inventory). Per Keith: kalau cuma sedikit signal bearish, 'slim pickings on short side' → wajar banyak long. Timing per-card. Diurutkan signal strength terkuat dulu.")
         if not longs:
             st.caption("No long picks active right now.")
         for it in longs[:25]:
             render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                show_options=show_options, show_cot=show_cot,
-                               show_onchain=show_onchain, show_bandar=show_bandar)
+                               show_onchain=show_onchain, show_bandar=show_bandar, show_oi=show_oi)
     with sub_short:
         if not shorts:
             st.caption("No short picks active right now.")
         for it in shorts[:25]:
             render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                show_options=show_options, show_cot=show_cot,
-                               show_onchain=show_onchain, show_bandar=show_bandar)
+                               show_onchain=show_onchain, show_bandar=show_bandar, show_oi=show_oi)
     with sub_mon:
         for it in monitor[:30]:
             render_rich_ticker(it["ticker"], it["rr"], snap, market_key,
                                show_options=show_options, show_cot=show_cot,
-                               show_onchain=show_onchain, show_bandar=show_bandar)
+                               show_onchain=show_onchain, show_bandar=show_bandar, show_oi=show_oi)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 # TAB 2: FRONT-RUN
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _render_frontrun_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar):
+def _render_frontrun_tab(market_rrs, snap, market_key, show_options, show_cot, show_onchain, show_bandar, show_oi=False):
     """Front-Run tab — tickers being set up for front-running based on:
        (a) Active chain reactions (driver shocks → impact on this market)
        (b) Quad transition setups (tickers favored by NEXT quad)
