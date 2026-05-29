@@ -3660,19 +3660,43 @@ def build_snapshot_v40(
         snap["chain_reactions_catalog"] = {}
         snap["transmissions"] = {"active_transmissions": [], "error": str(e)}
 
-    # ── V40 ENGINE: ALPHA CENTER CURATOR v2 ──────────────────────────────
-    _cb("v40: Running Alpha Center v2 (asymmetry detector)…", 65)
+    # ── V40 ENGINE: ALPHA CENTER CURATOR (backward compatible v1 + v2) ───
+    _cb("v40: Running Alpha Center curator…", 65)
     try:
-        from engines.alpha_center_curator import AlphaCenterCurator
+        # Try v1 first (get_curator) — ini yang user mau, bottleneck + surge potential
+        from engines.alpha_center_curator import get_curator
+        curator = get_curator()
         keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
-        composite = snap.get("composite_signals", {})
-        ac = AlphaCenterCurator(keith_signals, composite, prices, current_quad)
-        ac_high = ac.curate(max_picks=15)
-        ac_short = ac.curate_short_term(snap.get("walkforward_results", {}), max_picks=10)
-        snap["alpha_center"] = {"high_asymmetry": ac_high, "short_term": ac_short}
-    except Exception as e:
-        logger.error(f"v40: alpha center v2 failed: {e}")
-        snap["alpha_center"] = {"high_asymmetry": {"passed": [], "error": str(e)}, "short_term": {"passed": [], "error": str(e)}}
+        wf_results = snap.get("walkforward_results", {}) or snap.get("walkforward_results_v40", {}) or {}
+        ac_result = curator.filter_universe(
+            keith_signals=keith_signals, wf_results=wf_results,
+            current_quad=current_quad, min_stars=1,
+        )
+        snap["alpha_center"] = ac_result
+    except Exception as e_v1:
+        logger.warning(f"v40: alpha center v1 failed: {e_v1}, trying v2 fallback...")
+        try:
+            # Fallback v2 (AlphaCenterCurator)
+            from engines.alpha_center_curator import AlphaCenterCurator
+            keith_signals = snap.get("keith_signals", {}) or snap.get("keith_signal_sync", {})
+            composite = snap.get("composite_signals", {})
+            ac = AlphaCenterCurator(keith_signals, composite, prices, current_quad)
+            ac_high = ac.curate(max_picks=15)
+            ac_short = ac.curate_short_term(snap.get("walkforward_results", {}), max_picks=10)
+            snap["alpha_center"] = {"high_asymmetry": ac_high, "short_term": ac_short}
+        except Exception as e_v2:
+            logger.error(f"v40: alpha center v2 also failed: {e_v2}")
+            # Ultimate fallback: _alpha_center_proxy dari orchestrator
+            try:
+                ac_proxy = _alpha_center_proxy(
+                    prices, snap.get("risk_ranges", {}), current_quad, vix,
+                    news_analysis=snap.get("news_narratives", {}),
+                    composite_signals=snap.get("composite_signals", {}),
+                )
+                snap["alpha_center"] = ac_proxy
+            except Exception as e_proxy:
+                logger.error(f"v40: alpha center proxy fallback failed: {e_proxy}")
+                snap["alpha_center"] = {"passed": [], "rejected": [], "error": str(e_v1)}
 
     # ── V40 ENGINE: KEITH MARKET FILTER ──────────────────────────────────
     _cb("v40: Applying Keith fractal market filter…", 66)
