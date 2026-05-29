@@ -79,25 +79,25 @@ except Exception as e:
 try:
     from engines.gamma_engine import GammaEngine
 except Exception as e:
-    logger.error(f"Failed to import gamma_engine: {e}")
+    logger.debug(f"Optional engine not present: gamma_engine: {e}")
     GammaEngine = None
 
 try:
     from engines.greeks_proxy import GreeksProxy
 except Exception as e:
-    logger.error(f"Failed to import greeks_proxy: {e}")
+    logger.debug(f"Optional engine not present: greeks_proxy: {e}")
     GreeksProxy = None
 
 try:
     from engines.vanna_charm_flows import get_vanna_charm_flows
 except Exception as e:
-    logger.error(f"Failed to import vanna_charm_flows: {e}")
+    logger.debug(f"Optional engine not present: vanna_charm_flows: {e}")
     def get_vanna_charm_flows(*args, **kwargs): return {}
 
 try:
     from engines.bottleneck_engine import BottleneckEngine
 except Exception as e:
-    logger.error(f"Failed to import bottleneck_engine: {e}")
+    logger.debug(f"Optional engine not present: bottleneck_engine: {e}")
     BottleneckEngine = None
 
 try:
@@ -111,137 +111,137 @@ except Exception as e:
 try:
     from engines.aaii_scraper import get_behavioral_macro
 except Exception as e:
-    logger.error(f"Failed to import aaii_scraper: {e}")
+    logger.debug(f"Optional engine not present: aaii_scraper: {e}")
     def get_behavioral_macro(*args, **kwargs):
         return {"bullish": 30, "bearish": 30, "neutral": 40, "yves": {"alert": None, "alert_level": "NONE"}}
 
 try:
     from engines.odte_monitor import run_odte_monitor
 except Exception as e:
-    logger.error(f"Failed to import odte_monitor: {e}")
+    logger.debug(f"Optional engine not present: odte_monitor: {e}")
     def run_odte_monitor(*args, **kwargs):
         return {"expiry": "-", "tickers": {}, "cascade_warning": False, "summary": "0DTE unavailable"}
 
 try:
     from engines.skew_term_engine import run_skew_term
 except Exception as e:
-    logger.error(f"Failed to import skew_term_engine: {e}")
+    logger.debug(f"Optional engine not present: skew_term_engine: {e}")
     def run_skew_term(*args, **kwargs):
         return {"skew_data": {}, "term_regime": "NORMAL"}
 
 try:
     from engines.reflexivity_engine import run_reflexivity
 except Exception as e:
-    logger.error(f"Failed to import reflexivity_engine: {e}")
+    logger.debug(f"Optional engine not present: reflexivity_engine: {e}")
     def run_reflexivity(*args, **kwargs):
         return {"super_bubble_score": 5.0, "stage": "INCEPTION", "ticker_scores": {}}
 
 try:
     from engines.boombust_engine import classify_stage
 except Exception as e:
-    logger.error(f"Failed to import boombust_engine: {e}")
+    logger.debug(f"Optional engine not present: boombust_engine: {e}")
     def classify_stage(*args, **kwargs):
         return {"stage": "INCEPTION", "stage_confidence": 0.5}
 
 try:
     from engines.conviction_sizing import run_sizing
 except Exception as e:
-    logger.error(f"Failed to import conviction_sizing: {e}")
+    logger.debug(f"Optional engine not present: conviction_sizing: {e}")
     def run_sizing(*args, **kwargs): return {}
 
 try:
     from engines.interconnect_engine import run_interconnect
 except Exception as e:
-    logger.error(f"Failed to import interconnect_engine: {e}")
+    logger.debug(f"Optional engine not present: interconnect_engine: {e}")
     def run_interconnect(*args, **kwargs):
         return {"active_scenarios": [], "scenarios": [], "summary": "Interconnect unavailable"}
 
 try:
     from engines.yfinance_options import YFinanceOptionsEngine
 except Exception as e:
-    logger.error(f"Failed to import yfinance_options: {e}")
+    logger.debug(f"Optional engine not present: yfinance_options: {e}")
     YFinanceOptionsEngine = None
 
 try:
     from engines.scenario_discovery_engine import run_scenario_discovery
 except Exception as e:
-    logger.error(f"Failed to import scenario_discovery_engine: {e}")
+    logger.debug(f"Optional engine not present: scenario_discovery_engine: {e}")
     def run_scenario_discovery(*args, **kwargs):
         return {"scenarios": [], "active_scenarios": [], "watch_scenarios": [], "summary": "Unavailable"}
 
 try:
     from engines.transmission_engine import run_transmission
 except Exception as e:
-    logger.error(f"Failed to import transmission_engine: {e}")
+    logger.debug(f"Optional engine not present: transmission_engine: {e}")
     def run_transmission(*args, **kwargs):
         return {"scenarios": [], "active_scenarios": [], "watch_scenarios": [], "summary": "Unavailable"}
 
 try:
     from engines.regime_transition_engine import run_regime_transition
 except Exception as e:
-    logger.error(f"Failed to import regime_transition_engine: {e}")
+    logger.debug(f"Optional engine not present: regime_transition_engine: {e}")
     def run_regime_transition(*args, **kwargs):
         return {"current_quad": "Q3", "transitions": {}, "summary": "Unavailable"}
 
 try:
     from engines.news_nlp_engine_v3 import run_news_nlp
 except Exception as e:
-    logger.error(f"Failed to import news_nlp_engine_v3: {e}")
+    logger.debug(f"Optional engine not present: news_nlp_engine_v3: {e}")
     def run_news_nlp(*args, **kwargs):
         return {"ticker_specific": {}, "emergent_narratives": [], "rumor_watch": [], "analyzed_count": 0}
 
 try:
     from engines.gex_engine import analyze_multi as gex_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import gex_engine: {e}")
+    logger.debug(f"Optional engine not present: gex_engine: {e}")
     def gex_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.charm_proxy_engine import analyze_multi as charm_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import charm_proxy_engine: {e}")
+    logger.debug(f"Optional engine not present: charm_proxy_engine: {e}")
     def charm_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.vanna_proxy_engine import analyze_multi as vanna_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import vanna_proxy_engine: {e}")
+    logger.debug(f"Optional engine not present: vanna_proxy_engine: {e}")
     def vanna_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.odte_enhanced import analyze_multi as odte_enhanced_multi
 except Exception as e:
-    logger.error(f"Failed to import odte_enhanced: {e}")
+    logger.debug(f"Optional engine not present: odte_enhanced: {e}")
     def odte_enhanced_multi(*args, **kwargs): return {}
 
 try:
     from engines.structure_quality import analyze_multi as structure_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import structure_quality: {e}")
+    logger.debug(f"Optional engine not present: structure_quality: {e}")
     def structure_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.afternoon_signal import analyze_multi as afternoon_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import afternoon_signal: {e}")
+    logger.debug(f"Optional engine not present: afternoon_signal: {e}")
     def afternoon_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.volga_proxy import analyze_volga
 except Exception as e:
-    logger.error(f"Failed to import volga_proxy: {e}")
+    logger.debug(f"Optional engine not present: volga_proxy: {e}")
     def analyze_volga(*args, **kwargs): return {}
 
 try:
     from engines.institutional_proxy import analyze_multi as inst_analyze_multi
 except Exception as e:
-    logger.error(f"Failed to import institutional_proxy: {e}")
+    logger.debug(f"Optional engine not present: institutional_proxy: {e}")
     def inst_analyze_multi(*args, **kwargs): return {}
 
 try:
     from engines.bottleneck_discovery_v3 import run_bottleneck_discovery_v3
 except Exception as e:
-    logger.error(f"Failed to import bottleneck_discovery_v3: {e}")
+    logger.debug(f"Optional engine not present: bottleneck_discovery_v3: {e}")
     def run_bottleneck_discovery_v3(*args, **kwargs):
         return {"active_bottlenecks": [], "watch_bottlenecks": [], "summary": "Unavailable"}
 
@@ -249,7 +249,7 @@ try:
     from engines.cascade_engine import run_all_cascades, bottleneck_full_cascade
     _V2_CASCADE = True
 except Exception as e:
-    logger.error(f"Failed to import cascade_engine: {e}")
+    logger.debug(f"Optional engine not present: cascade_engine: {e}")
     _V2_CASCADE = False
     def run_all_cascades(*a, **k): return {"cascades": {}, "active_shocks": {}}
     def bottleneck_full_cascade(*a, **k): return {"impacts": []}
@@ -258,7 +258,7 @@ try:
     from engines.yves_engine import run_yves_v2
     _V2_YVES = True
 except Exception as e:
-    logger.error(f"Failed to import yves_engine: {e}")
+    logger.debug(f"Optional engine not present: yves_engine: {e}")
     _V2_YVES = False
     def run_yves_v2(*a, **k): return {"alerts": [], "summary": {"level": "NONE"}}
 
@@ -266,7 +266,7 @@ try:
     from engines.portfolio_sizing import run_portfolio_sizing
     _V2_SIZING = True
 except Exception as e:
-    logger.error(f"Failed to import portfolio_sizing: {e}")
+    logger.debug(f"Optional engine not present: portfolio_sizing: {e}")
     _V2_SIZING = False
     def run_portfolio_sizing(*a, **k): return {"positions": [], "total_deployed_pct": 0, "cash_pct": 1.0}
 
@@ -274,7 +274,7 @@ try:
     from engines.discovery_brain import run_discovery_brain
     _V2_DISCOVERY = True
 except Exception as e:
-    logger.error(f"Failed to import discovery_brain: {e}")
+    logger.debug(f"Optional engine not present: discovery_brain: {e}")
     _V2_DISCOVERY = False
     def run_discovery_brain(*a, **k): return {"by_mode": {}, "top_10": [], "summary": {}}
 
@@ -282,7 +282,7 @@ try:
     from engines.cem_karsan_universal import analyze_multi as cem_universal_multi
     _V2_CEM = True
 except Exception as e:
-    logger.error(f"Failed to import cem_karsan_universal: {e}")
+    logger.debug(f"Optional engine not present: cem_karsan_universal: {e}")
     _V2_CEM = False
     def cem_universal_multi(*a, **k): return {}
 
@@ -290,7 +290,7 @@ try:
     from engines.ticker_universe_expander import run_ticker_expander
     _V2_EXPANDER = True
 except Exception as e:
-    logger.error(f"Failed to import ticker_universe_expander: {e}")
+    logger.debug(f"Optional engine not present: ticker_universe_expander: {e}")
     _V2_EXPANDER = False
     def run_ticker_expander(*a, **k): return {"new_tickers": [], "candidates": [], "auto_add_recommended": []}
 
@@ -298,7 +298,7 @@ try:
     from engines.supply_chain_graph_real import run_supply_chain_analysis, reverse_lookup as supply_reverse
     _V2_SUPPLY = True
 except Exception as e:
-    logger.error(f"Failed to import supply_chain_graph_real: {e}")
+    logger.debug(f"Optional engine not present: supply_chain_graph_real: {e}")
     _V2_SUPPLY = False
     def run_supply_chain_analysis(*a, **k): return {"chokepoints": [], "propagation": {}, "summary": {}}
     def supply_reverse(*a, **k): return []
@@ -307,7 +307,7 @@ try:
     from engines.composite_signal_engine import analyze_multi as composite_analyze_multi, compute_composite_signal
     _V2_COMPOSITE = True
 except Exception as e:
-    logger.error(f"Failed to import composite_signal_engine: {e}")
+    logger.debug(f"Optional engine not present: composite_signal_engine: {e}")
     _V2_COMPOSITE = False
     def composite_analyze_multi(*a, **k): return {}
     def compute_composite_signal(*a, **k): return {"direction": "NEUTRAL", "confidence": 0}
@@ -316,7 +316,7 @@ try:
     from engines.risk_setup_engine import calculate_risk_setup as v2_risk_setup
     _V2_RISK_SETUP = True
 except Exception as e:
-    logger.error(f"Failed to import risk_setup_engine: {e}")
+    logger.debug(f"Optional engine not present: risk_setup_engine: {e}")
     _V2_RISK_SETUP = False
     v2_risk_setup = None
 
@@ -324,7 +324,7 @@ try:
     from engines.bonds_xau_regime import run_bonds_xau_regime
     _V2_BONDS_XAU = True
 except Exception as e:
-    logger.error(f"Failed to import bonds_xau_regime: {e}")
+    logger.debug(f"Optional engine not present: bonds_xau_regime: {e}")
     _V2_BONDS_XAU = False
     def run_bonds_xau_regime(*a, **k): return {"ok": False, "regime": "UNKNOWN", "ticker_biases": {}}
 
@@ -332,7 +332,7 @@ try:
     from engines.simulation_engine import run_simulation_batch, get_simulation_summary, filter_by_simulation
     _V2_SIM = True
 except Exception as e:
-    logger.error(f"Failed to import simulation_engine: {e}")
+    logger.debug(f"Optional engine not present: simulation_engine: {e}")
     _V2_SIM = False
     def run_simulation_batch(*a, **k): return {}
     def get_simulation_summary(*a, **k): return {"total": 0, "passed": 0, "failed": 0, "avg_score": 0}
@@ -342,7 +342,7 @@ try:
     from engines.thought_process_engine import compute_thesis as v7_compute_thesis, analyze_multi as v7_thesis_multi
     _V7_THOUGHT = True
 except Exception as e:
-    logger.error(f"Failed to import thought_process_engine: {e}")
+    logger.debug(f"Optional engine not present: thought_process_engine: {e}")
     _V7_THOUGHT = False
     def v7_compute_thesis(*a, **k): return {"thesis_score": 0, "matched_frameworks": []}
     def v7_thesis_multi(*a, **k): return {}
@@ -351,7 +351,7 @@ try:
     from engines.markov_regime_engine_v3 import run_markov_v3
     _V7_MARKOV = True
 except Exception as e:
-    logger.error(f"Failed to import markov_regime_engine_v3: {e}")
+    logger.debug(f"Optional engine not present: markov_regime_engine_v3: {e}")
     _V7_MARKOV = False
     def run_markov_v3(*a, **k):
         class _M:
@@ -364,7 +364,7 @@ try:
     from engines.smart_money_tracker import run_smart_money_analysis, get_ticker_smart_money
     _V7_SMART = True
 except Exception as e:
-    logger.error(f"Failed to import smart_money_tracker: {e}")
+    logger.debug(f"Optional engine not present: smart_money_tracker: {e}")
     _V7_SMART = False
     def run_smart_money_analysis(*a, **k): return {"ok": False, "n_funds_tracked": 0}
     def get_ticker_smart_money(*a, **k): return {"smart_money_held": False}
@@ -373,7 +373,7 @@ try:
     from engines.capital_rotation_engine import compute_capital_rotation, get_ticker_capital_rotation_role
     _V7_CAPROT = True
 except Exception as e:
-    logger.error(f"Failed to import capital_rotation_engine: {e}")
+    logger.debug(f"Optional engine not present: capital_rotation_engine: {e}")
     _V7_CAPROT = False
     def compute_capital_rotation(*a, **k): return {"ok": False}
     def get_ticker_capital_rotation_role(*a, **k): return None
@@ -382,7 +382,7 @@ try:
     from engines.ust_auction_tracker import run_ust_auction_tracker
     _V7_UST = True
 except Exception as e:
-    logger.error(f"Failed to import ust_auction_tracker: {e}")
+    logger.debug(f"Optional engine not present: ust_auction_tracker: {e}")
     _V7_UST = False
     def run_ust_auction_tracker(*a, **k): return {"ok": False}
 
@@ -390,7 +390,7 @@ try:
     from engines.vrp_scanner import scan_vrp
     _V7_VRP = True
 except Exception as e:
-    logger.error(f"Failed to import vrp_scanner: {e}")
+    logger.debug(f"Optional engine not present: vrp_scanner: {e}")
     _V7_VRP = False
     def scan_vrp(*a, **k): return {"ok": False, "calls_to_action": []}
 
@@ -398,7 +398,7 @@ try:
     from engines.squeeze_scanner import scan_squeezes
     _V7_SQUEEZE = True
 except Exception as e:
-    logger.error(f"Failed to import squeeze_scanner: {e}")
+    logger.debug(f"Optional engine not present: squeeze_scanner: {e}")
     _V7_SQUEEZE = False
     def scan_squeezes(*a, **k): return {"ok": False, "imminent_squeezes": [], "strong_candidates": [], "watch_list": []}
 
@@ -406,7 +406,7 @@ try:
     from engines.karsan_vol_scanner import scan_karsan
     _V9_KARSAN = True
 except Exception as e:
-    logger.error(f"Failed to import karsan_vol_scanner: {e}")
+    logger.debug(f"Optional engine not present: karsan_vol_scanner: {e}")
     _V9_KARSAN = False
     def scan_karsan(*a, **k): return {"ok": False, "per_ticker": {}, "squeeze_setups": [], "sell_premium": [], "buy_convexity": []}
 
@@ -414,7 +414,7 @@ try:
     from engines.spotgamma_gex_engine import run_spotgamma_scanner
     _V9_SPOTGAMMA = True
 except Exception as e:
-    logger.error(f"Failed to import spotgamma_gex_engine: {e}")
+    logger.debug(f"Optional engine not present: spotgamma_gex_engine: {e}")
     _V9_SPOTGAMMA = False
     def run_spotgamma_scanner(*a, **k): return {"ok": False, "per_ticker_proxy_gex": {}, "compass": {}}
 
@@ -422,7 +422,7 @@ try:
     from engines.leopold_methodology import run_leopold_scan
     _V9_LEOPOLD = True
 except Exception as e:
-    logger.error(f"Failed to import leopold_methodology: {e}")
+    logger.debug(f"Optional engine not present: leopold_methodology: {e}")
     _V9_LEOPOLD = False
     def run_leopold_scan(*a, **k): return {"ok": False, "per_ticker": {}, "top_picks_by_layer": {}, "asymmetry_setups": [], "written_off_recovering": []}
 
@@ -430,7 +430,7 @@ try:
     from engines.coatue_methodology import run_coatue_scan
     _V9_COATUE = True
 except Exception as e:
-    logger.error(f"Failed to import coatue_methodology: {e}")
+    logger.debug(f"Optional engine not present: coatue_methodology: {e}")
     _V9_COATUE = False
     def run_coatue_scan(*a, **k): return {"ok": False, "per_ticker": {}, "sellers_top": [], "buyers_top": [], "decay_alerts": [], "agentic_plays": []}
 
@@ -438,7 +438,7 @@ try:
     from engines.volsignals_regime import compute_dealer_regime_multi
     _V11_VOLSIGNALS = True
 except Exception as e:
-    logger.error(f"Failed to import volsignals_regime: {e}")
+    logger.debug(f"Optional engine not present: volsignals_regime: {e}")
     _V11_VOLSIGNALS = False
     def compute_dealer_regime_multi(*a, **k): return {}
 
@@ -446,7 +446,7 @@ try:
     from engines.spotgamma_levels import compute_structural_levels_multi
     _V11_SPOTGAMMA = True
 except Exception as e:
-    logger.error(f"Failed to import spotgamma_levels: {e}")
+    logger.debug(f"Optional engine not present: spotgamma_levels: {e}")
     _V11_SPOTGAMMA = False
     def compute_structural_levels_multi(*a, **k): return {}
 
@@ -454,7 +454,7 @@ try:
     from engines.schadner_iv import schadner_iv, validate_iv_proxy
     _V11_SCHADNER = True
 except Exception as e:
-    logger.error(f"Failed to import schadner_iv: {e}")
+    logger.debug(f"Optional engine not present: schadner_iv: {e}")
     _V11_SCHADNER = False
     def schadner_iv(*a, **k): return None
     def validate_iv_proxy(*a, **k): return {}
@@ -463,7 +463,7 @@ try:
     from engines.integrator_guide import enhance_snapshot, get_enhanced_summary
     _V32_INTEGRATOR = True
 except Exception as e:
-    logger.error(f"Failed to import integrator_guide: {e}")
+    logger.debug(f"Optional engine not present: integrator_guide: {e}")
     _V32_INTEGRATOR = False
     def enhance_snapshot(snap, prices, portfolio_value=100_000): return snap
     def get_enhanced_summary(snap): return snap.get("summary", {})
@@ -472,7 +472,7 @@ try:
     from engines.narrative_engine import build_narrative
     _V10_NARRATIVE = True
 except Exception as e:
-    logger.error(f"Failed to import narrative_engine: {e}")
+    logger.debug(f"Optional engine not present: narrative_engine: {e}")
     _V10_NARRATIVE = False
     def build_narrative(result): return {}
 
@@ -492,7 +492,7 @@ try:
         BOTTLENECK_PROFILES,
     )
 except Exception as e:
-    logger.error(f"Failed to import settings: {e}")
+    logger.debug(f"Optional engine not present: settings: {e}")
     US_SECTORS = {}; US_FACTORS = {}; FOREX_PAIRS = {}; COMMODITIES = {}; CRYPTO = {}
     BONDS = {}; IHSG_UNIVERSE = {}; MACRO_PROXIES = {}
     US_BUCKETS = {}; IHSG_BUCKETS = {}; FX_BUCKETS = {}; COMMODITY_BUCKETS = {}; CRYPTO_BUCKETS = {}
@@ -507,7 +507,7 @@ try:
     from engines.alpha_synthesis_v37 import run_alpha_synthesis
     _V39_TIER_S["alpha_synthesis"] = True
 except Exception as e:
-    logger.error(f"Failed to import alpha_synthesis_v37: {e}")
+    logger.debug(f"Optional engine not present: alpha_synthesis_v37: {e}")
     _V39_TIER_S["alpha_synthesis"] = False
     def run_alpha_synthesis(*a, **k): return {"frameworks": [], "top_signals": [], "synthesis_summary": {}}
 
@@ -515,7 +515,7 @@ try:
     from engines.daily_play_engine import DailyPlayEngine
     _V39_TIER_S["daily_play"] = True
 except Exception as e:
-    logger.error(f"Failed to import daily_play_engine: {e}")
+    logger.debug(f"Optional engine not present: daily_play_engine: {e}")
     _V39_TIER_S["daily_play"] = False
     class DailyPlayEngine:
         def scan_all(self, *a, **k): return {"plays": [], "summary": "DailyPlayEngine unavailable"}
@@ -524,7 +524,7 @@ try:
     from engines.ihsg_specialist_v38 import IHSGSpecialistEngine
     _V39_TIER_S["ihsg_specialist"] = True
 except Exception as e:
-    logger.error(f"Failed to import ihsg_specialist_v38: {e}")
+    logger.debug(f"Optional engine not present: ihsg_specialist_v38: {e}")
     _V39_TIER_S["ihsg_specialist"] = False
     class IHSGSpecialistEngine:
         def analyze(self, *a, **k): return {"goreng_phases": [], "conglomerate_flows": [], "hedgeye_check": {}}
@@ -533,7 +533,7 @@ try:
     from engines.entry_decision_engine import decide_entry
     _V39_TIER_S["entry_decision"] = True
 except Exception as e:
-    logger.error(f"Failed to import entry_decision_engine: {e}")
+    logger.debug(f"Optional engine not present: entry_decision_engine: {e}")
     _V39_TIER_S["entry_decision"] = False
     def decide_entry(*a, **k): return {"action": "AVOID", "direction": "NEUTRAL", "conviction": 0}
 
@@ -541,7 +541,7 @@ try:
     from engines.movement_timing_engine import MovementTimingDetector
     _V39_TIER_S["movement_timing"] = True
 except Exception as e:
-    logger.error(f"Failed to import movement_timing_engine: {e}")
+    logger.debug(f"Optional engine not present: movement_timing_engine: {e}")
     _V39_TIER_S["movement_timing"] = False
     class MovementTimingDetector:
         def detect(self, *a, **k): return None
@@ -550,7 +550,7 @@ try:
     from engines.frontrun_engine import FrontRunEngine
     _V39_TIER_S["frontrun"] = True
 except Exception as e:
-    logger.error(f"Failed to import frontrun_engine: {e}")
+    logger.debug(f"Optional engine not present: frontrun_engine: {e}")
     _V39_TIER_S["frontrun"] = False
     class FrontRunEngine:
         def scan(self, *a, **k): return {"front_run_signals": [], "catalyst_timeline": []}
@@ -559,7 +559,7 @@ try:
     from engines.chain_reaction_engine import ChainReactionEngine
     _V39_TIER_S["chain_reaction"] = True
 except Exception as e:
-    logger.error(f"Failed to import chain_reaction_engine: {e}")
+    logger.debug(f"Optional engine not present: chain_reaction_engine: {e}")
     _V39_TIER_S["chain_reaction"] = False
     class ChainReactionEngine:
         def __init__(self, *a, **k): pass
@@ -569,7 +569,7 @@ try:
     from engines.methodology_pack import evaluate_all_pack
     _V39_TIER_S["methodology_pack"] = True
 except Exception as e:
-    logger.error(f"Failed to import methodology_pack: {e}")
+    logger.debug(f"Optional engine not present: methodology_pack: {e}")
     _V39_TIER_S["methodology_pack"] = False
     def evaluate_all_pack(*a, **k): return {}
 
@@ -577,7 +577,7 @@ try:
     from engines.walkforward_backtest_engine import batch_gatekeeper
     _V39_TIER_S["walkforward"] = True
 except Exception as e:
-    logger.error(f"Failed to import walkforward_backtest_engine: {e}")
+    logger.debug(f"Optional engine not present: walkforward_backtest_engine: {e}")
     _V39_TIER_S["walkforward"] = False
     def batch_gatekeeper(*a, **k): return {}
 
@@ -585,7 +585,7 @@ try:
     from engines.alpha_gatekeeper import batch_evaluate
     _V39_TIER_S["alpha_gatekeeper"] = True
 except Exception as e:
-    logger.error(f"Failed to import alpha_gatekeeper: {e}")
+    logger.debug(f"Optional engine not present: alpha_gatekeeper: {e}")
     _V39_TIER_S["alpha_gatekeeper"] = False
     def batch_evaluate(*a, **k): return {}
 
@@ -593,7 +593,7 @@ try:
     from engines.vix_bucket_engine import classify_vix_bucket, apply_vix_position_sizing
     _V39_TIER_S["vix_bucket"] = True
 except Exception as e:
-    logger.error(f"Failed to import vix_bucket_engine: {e}")
+    logger.debug(f"Optional engine not present: vix_bucket_engine: {e}")
     _V39_TIER_S["vix_bucket"] = False
     def classify_vix_bucket(*a, **k): return {"bucket": "NORMAL", "label": "Investable", "multiplier": 1.0}
     def apply_vix_position_sizing(*a, **k): return k[1] if len(k) > 1 else 0
@@ -602,7 +602,7 @@ try:
     from engines.hedgeye_position_sizing import calculate_position_size
     _V39_TIER_S["hedgeye_sizing"] = True
 except Exception as e:
-    logger.error(f"Failed to import hedgeye_position_sizing: {e}")
+    logger.debug(f"Optional engine not present: hedgeye_position_sizing: {e}")
     _V39_TIER_S["hedgeye_sizing"] = False
     def calculate_position_size(*a, **k): return {"size_pct": 0.02, "dollar_size": 2000, "mode": "DEFAULT"}
 
@@ -610,7 +610,7 @@ try:
     from engines.keith_signal_sync import resolve_direction, should_avoid, get_keith_summary
     _V39_TIER_S["keith_sync"] = True
 except Exception as e:
-    logger.error(f"Failed to import keith_signal_sync: {e}")
+    logger.debug(f"Optional engine not present: keith_signal_sync: {e}")
     _V39_TIER_S["keith_sync"] = False
     def resolve_direction(*a, **k): return {"direction": k[1] if len(k) > 1 else "LONG", "override": False, "basis": "No Keith signal", "keith_trade": "NEUTRAL", "keith_trend": "NEUTRAL", "duration_mismatch": False}
     def should_avoid(*a, **k): return False

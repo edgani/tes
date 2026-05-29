@@ -229,6 +229,20 @@ def render(snap: dict):
                     if cur else ""
                 )
 
+            # ── OPTIMAL ENTRY (uses TRR/LRR + options if available) ───────
+            rr_for_entry = snap.get("risk_range", {}).get("asset_ranges", {}).get(ticker, {}) if isinstance(snap.get("risk_range"), dict) else {}
+            if rr_for_entry:
+                try:
+                    from components.rich_ticker_card import compute_optimal_entry
+                    mkt = cand.get("market", "us_equity")
+                    oe = compute_optimal_entry(rr_for_entry, snap, mkt, ticker)
+                    if oe and oe.get("lines"):
+                        st.markdown(f"**🎯 Optimal Entry — {oe['direction']}**")
+                        for ln in oe["lines"][:3]:  # top 3 lines, keep compact
+                            st.caption(ln)
+                except Exception:
+                    pass
+
             # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
 

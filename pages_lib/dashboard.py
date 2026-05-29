@@ -79,26 +79,21 @@ def _render_tier1alpha_panel(snap: dict):
                 f"{label}<br><span style='font-size:0.9rem;'>{val}</span></div>",
                 unsafe_allow_html=True)
 
-        # SPX levels + Global Quad in ONE compact row (6 metrics)
+        # SPX levels + Global Quad (Structural/Monthly intentionally omitted —
+        # they live in the regime box below; no duplication)
         lv = t1a.get("spx_levels", {})
         gip = snap.get("gip", {})
         if isinstance(gip, dict):
             global_q = gip.get("global_quad") or gip.get("structural_quad") or snap.get("current_quad", "Q3")
-            struct_q = gip.get("structural_quad", "?")
-            month_q = gip.get("monthly_quad", "?")
         else:
             global_q = getattr(gip, "global_quad", None) or getattr(gip, "structural_quad", None) or "Q3"
-            struct_q = getattr(gip, "structural_quad", "?")
-            month_q = getattr(gip, "monthly_quad", "?")
         quad_names = {"Q1": "Goldilocks", "Q2": "Reflation", "Q3": "Stagflation", "Q4": "Deflation"}
 
-        m = st.columns(6)
+        m = st.columns(4)
         m[0].metric("SPX Last", f"{lv.get('last_price', 0):,.0f}" if lv.get('last_price') else "—")
         m[1].metric("Upper PV (TRR)", f"{lv.get('upper_pv_band', 0):,.0f}" if lv.get('upper_pv_band') else "—")
         m[2].metric("Lower PV (LRR)", f"{lv.get('lower_pv_band', 0):,.0f}" if lv.get('lower_pv_band') else "—")
-        m[3].metric("🌍 Global Quad", global_q, quad_names.get(global_q, ""))
-        m[4].metric("Structural", struct_q)
-        m[5].metric("Monthly", month_q)
+        m[3].metric("🌍 Global Quad (Hedgeye)", global_q, quad_names.get(global_q, ""))
 
         # Compact notes (collapsed)
         with st.expander("ℹ️ Signal notes", expanded=False):
@@ -108,7 +103,8 @@ def _render_tier1alpha_panel(snap: dict):
                     st.caption(f"**{label}:** {note}")
             if t1a.get("data_quality") == "vix_proxy":
                 st.caption("⚠️ Gamma using VIX proxy — SPY options give precise GEX on Rebuild.")
-            st.caption(f"Hedgeye GIP: Global economy in **{global_q}** — {quad_names.get(global_q, '')}")
+            st.caption(f"Hedgeye GIP: Global economy in **{global_q}** — {quad_names.get(global_q, '')}. "
+                       f"(Structural/Monthly/Markov quads di box bawah.)")
     else:
         st.caption("Tier1Alpha signals computing — click Rebuild.")
 

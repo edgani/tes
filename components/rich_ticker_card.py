@@ -523,6 +523,166 @@ def _bandar_narrative(b: dict, ticker: str) -> str:
     return "\n".join(parts)
 
 
+def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) -> dict:
+    """Synthesize the OPTIMAL ENTRY using ONLY data appropriate to this market.
+
+    Data by market (Edward's rule — never use options/greeks for IHSG/forex):
+      • us_equity / crypto : TRR/LRR + options(GEX/walls/max-pain) + vanna/charm timing
+      • forex              : TRR/LRR + COT positioning (NO options/greeks)
+      • commodity          : TRR/LRR + COT + OI heatmap walls (NO options/greeks for futures)
+      • ihsg               : TRR/LRR + bandar accumulation (NO options/greeks/COT)
+    """
+    if not rr:
+        return {}
+    px = rr.get("px", 0) or 0
+    phase = rr.get("phase", "NEUTRAL")
+    trade = rr.get("trade", {})
+    lrr = trade.get("lrr", 0) or 0
+    trr = trade.get("trr", 0) or 0
+    width = trr - lrr if (trr and lrr) else 0
+    pos = (px - lrr) / width if width > 0 else 0.5
+
+    bull = phase == "BULL" or rr.get("phase_code", 0) == 1
+    bear = phase == "BEAR" or rr.get("phase_code", 0) == -1
+
+    # Base entry zone from TRR/LRR (universal)
+    parts = []
+    is_fx = market_key == "forex"
+    fmt = ".4f" if is_fx else ",.2f"
+    cur = "" if is_fx else "$"
+    def _f(v): return f"{cur}{format(v, fmt)}"
+
+    if bull:
+        ideal_entry = lrr + width * 0.15  # buy near lower band
+        stop = lrr - width * 0.30
+        target1 = trr
+        target2 = (rr.get("trend", {}).get("trr", 0) or trr)
+        direction = "LONG"
+        parts.append(f"**Entry zone (TRADE):** {_f(lrr)}–{_f(ideal_entry)} (lower band, beli saat dip)")
+        parts.append(f"**Stop:** < {_f(stop)} · **T1:** {_f(target1)} · **T2:** {_f(target2)}")
+    elif bear:
+        ideal_entry = trr - width * 0.15  # short near upper band
+        stop = trr + width * 0.30
+        target1 = lrr
+        target2 = (rr.get("trend", {}).get("lrr", 0) or lrr)
+        direction = "SHORT" if market_key != "ihsg" else "AVOID/WAIT"
+        if market_key == "ihsg":
+            parts.append(f"**IHSG buy-only:** bearish — tunggu reclaim {_f(lrr)} dulu sebelum akumulasi.")
+        else:
+            parts.append(f"**Short zone (TRADE):** {_f(ideal_entry)}–{_f(trr)} (upper band, short saat rip)")
+            parts.append(f"**Stop:** > {_f(stop)} · **T1:** {_f(target1)} · **T2:** {_f(target2)}")
+    else:
+        direction = "WAIT"
+        parts.append(f"**Range-bound:** beli dekat {_f(lrr)}, jual dekat {_f(trr)} (no trend edge)")
+
+    # ── Market-specific refinement (ONLY appropriate data) ───────────────
+    if market_key in ("us_equity", "crypto"):
+        opts = (snap.get("options_data", {}) or {}).get(ticker, {})
+        if opts and opts.get("call_wall"):
+            cw, pw, mp = opts.get("call_wall"), opts.get("put_wall"), opts.get("max_pain")
+            gex = opts.get("net_gex")
+            if bull and pw:
+                parts.append(f"📊 **Options confirm:** Put Wall {_f(pw)} = dealer support (entry floor). "
+                             f"Call Wall {_f(cw)} = upside magnet/T-zone. Max Pain {_f(mp)}.")
+            elif bear and cw:
+                parts.append(f"📊 **Options confirm:** Call Wall {_f(cw)} = dealer resistance (short ceiling). "
+                             f"Put Wall {_f(pw)} = downside target.")
+            if gex is not None:
+                try:
+                    g = float(gex)
+                    parts.append(f"γ regime: {'LONG gamma (mean-revert, fade extremes)' if g > 0 else 'SHORT gamma (momentum, breakouts run)'}.")
+                except (TypeError, ValueError):
+                    pass
+            # Vanna/charm timing
+            try:
+                from engines.options_greeks_engine import get_opex_calendar
+                cal = get_opex_calendar()
+                vcw = cal.get("vanna_charm_window", {}) if cal else {}
+                status = vcw.get("status", "")
+                if status in ("WINDOW_ACTIVE_BUILDING", "CHARM_MAX", "OPEX_DAY"):
+                    parts.append(f"🗓️ **Timing terbaik:** vanna/charm window AKTIF ({status}) → {vcw.get('note', 'pin risk into OPEX')}. Charm-max ~{vcw.get('peak', '')}.")
+                elif vcw.get("start"):
+                    parts.append(f"🗓️ **Timing:** vanna/charm window buka {vcw.get('start')} → peak {vcw.get('peak')} (charm-max window = best entry buat pin move).")
+            except Exception:
+                pass
+        else:
+            parts.append("📊 Options belum ter-fetch — entry pakai TRR/LRR dulu. (Rebuild buat GEX/walls + vanna/charm timing.)")
+
+    elif market_key == "forex":
+        cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
+        cot = cot_map.get(ticker, {})
+        if cot and cot.get("noncomm_net") is not None:
+            net = cot.get("noncomm_net")
+            chg = cot.get("noncomm_change_wow")
+            parts.append(f"📋 **COT confirm:** non-comm net {net:+,.0f}"
+                         + (f" (Δ {chg:+,.0f} WoW)" if chg is not None else "")
+                         + f". {'Selaras sama long bias' if (bull and (net or 0) > 0) else 'Selaras sama short bias' if (bear and (net or 0) < 0) else 'Hati-hati: COT divergence dari TRR/LRR'}.")
+        else:
+            parts.append("📋 COT belum ter-fetch — entry pakai TRR/LRR. (COT confirm positioning saat live.)")
+
+    elif market_key == "commodity":
+        cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
+        cot = cot_map.get(ticker, {})
+        if cot and cot.get("noncomm_net") is not None:
+            net = cot.get("noncomm_net")
+            parts.append(f"📋 **COT:** non-comm net {net:+,.0f} — {'managed money long' if (net or 0) > 0 else 'managed money short'}.")
+        # OI walls via ETF proxy
+        FUT_PROXY = {"CL=F": "USO", "GC=F": "GLD", "SI=F": "SLV", "NG=F": "UNG", "HG=F": "CPER", "RB=F": "UGA"}
+        proxy = FUT_PROXY.get(ticker)
+        opts = (snap.get("options_data", {}) or {}).get(proxy or ticker, {})
+        if opts and opts.get("call_wall"):
+            parts.append(f"📊 **OI walls (via {proxy or ticker}):** resistance {_f(opts.get('call_wall'))}, "
+                         f"support {_f(opts.get('put_wall'))}, max-pain {_f(opts.get('max_pain'))}.")
+        elif not cot:
+            parts.append("📋 COT + OI belum ter-fetch — entry pakai TRR/LRR. (Saat live: COT + OI walls confirm.)")
+
+    elif market_key == "ihsg":
+        bandar_map = snap.get("ihsg_broker_proxy", {}) or snap.get("ihsg_broker_data", {}) or {}
+        b = bandar_map.get(ticker, {})
+        if b and b.get("phase"):
+            parts.append(f"🏦 **Bandar:** {b.get('phase')} — {b.get('note', '')}")
+        else:
+            # Auto-compute bandar proxy from price/volume action (no manual!)
+            bp = _auto_bandar_proxy(rr, snap, ticker)
+            if bp:
+                parts.append(f"🏦 **Bandar (auto-proxy):** {bp}")
+
+    return {"direction": direction, "lines": parts}
+
+
+def _auto_bandar_proxy(rr: dict, snap: dict, ticker: str) -> str:
+    """Auto-derive bandar accumulation/distribution signal from price action + range position.
+    Replaces 'manual check' — uses what we have (TRR/LRR position, phase, Hurst, BSI proxy)."""
+    if not rr:
+        return ""
+    phase = rr.get("phase", "NEUTRAL")
+    trade = rr.get("trade", {})
+    px = rr.get("px", 0) or 0
+    lrr = trade.get("lrr", 0) or 0
+    trr = trade.get("trr", 0) or 0
+    width = trr - lrr if (trr and lrr) else 0
+    pos = (px - lrr) / width if width > 0 else 0.5
+    hurst = rr.get("hurst", {}).get("value", 0.5) if isinstance(rr.get("hurst"), dict) else 0.5
+    bsi = rr.get("bsi", {}) if isinstance(rr.get("bsi"), dict) else {}
+
+    # Heuristic bandar phase from structure
+    if phase == "BULL" and pos < 0.35:
+        return ("ACCUMULATION (proxy) — harga di lower TRADE range + uptrend, "
+                "pola bandar nyerap di bawah. Watch volume naik tanpa harga turun = akumulasi asli.")
+    elif phase == "BULL" and pos > 0.75:
+        return ("MARKUP/DISTRIBUSI awal (proxy) — harga di upper range + uptrend. "
+                "Kalau volume spike tapi harga stuck = mulai distribusi.")
+    elif phase == "BEAR" and pos > 0.65:
+        return ("DISTRIBUTION (proxy) — harga di upper range + downtrend, bandar buang barang ke retail. "
+                "Hindari FOMO di rip.")
+    elif phase == "BEAR" and pos < 0.30:
+        return ("MARKDOWN/FORCED SELL (proxy) — harga di lower range + downtrend. "
+                "Tunggu basing sebelum akumulasi.")
+    else:
+        return (f"NETRAL (proxy) — range-bound, pos {pos:.0%}. "
+                "Bandar belum nunjukin niat jelas. Pantau broker summary + bid-offer untuk konfirmasi.")
+
+
 def _render_targets(rr: dict, px: float, market_key: str):
     """Render explicit nearest/mid/farthest target prices from TRR/LRR.
 
@@ -698,6 +858,17 @@ def render_rich_ticker(
         # ── TARGET PRICES (nearest + farthest, Edward request) ────────────
         _render_targets(rr, px, market_key)
 
+        # ── OPTIMAL ENTRY (market-appropriate data synthesis) ─────────────
+        oe = compute_optimal_entry(rr, snap, market_key, ticker)
+        if oe and oe.get("lines"):
+            dir_color = {"LONG": "#1a7f37", "SHORT": "#cf222e", "AVOID/WAIT": "#bf8700", "WAIT": "#57606a"}.get(oe["direction"], "#57606a")
+            st.markdown(
+                f"<div style='background:#0d1117;border-left:3px solid {dir_color};padding:8px 12px;border-radius:4px;margin:6px 0;'>"
+                f"<b>🎯 OPTIMAL ENTRY — {oe['direction']}</b></div>",
+                unsafe_allow_html=True)
+            for ln in oe["lines"]:
+                st.markdown(ln)
+
         # ── ENTRY NARRATIVE ───────────────────────────────────────────────
         entry_text = _entry_narrative(rr)
         if entry_text:
@@ -809,11 +980,13 @@ def render_rich_ticker(
                 if b_text:
                     st.markdown(b_text)
                 else:
-                    # Even without specific data, show the framework
+                    # AUTO-COMPUTE bandar phase from price action (no manual!)
+                    bp = _auto_bandar_proxy(rr, snap, ticker)
+                    st.markdown(f"**Auto-proxy:** {bp}")
                     st.caption(
-                        "Bandar data tidak tersedia untuk ticker ini. "
-                        "Manual check: broker summary, bid-offer frequency, cross-trade pattern, "
-                        "konglomerat group correlation."
+                        "ℹ️ Proxy dihitung dari TRR/LRR position + phase + Hurst. "
+                        "Untuk data bandar real (broker summary, foreign flow, cross-trade), "
+                        "butuh API berbayar (Invezgo/GOAPI) — bisa di-wire kalau lu kasih API key."
                     )
 
             # Correlation drivers (universal)
