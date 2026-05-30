@@ -3847,6 +3847,64 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
     except Exception as e:
         logger.debug(f"v40: scraped merge skipped: {e}")
 
+    # ── PROXY FALLBACK (from macroregime base) — fill greeks/GEX for tickers
+    #    WITHOUT yfinance options (small-caps, FX, futures, crypto). Computed from
+    #    price/vol so EVERY ticker shows something. Marked source='proxy' (modeled,
+    #    NOT real dealer flow/dark pool — those need yfinance options or UW/scraper).
+    try:
+        from engines.gex_engine import analyze_gex
+        try:
+            from engines.greeks_proxy import GreeksProxy
+            _gp = GreeksProxy()
+        except Exception:
+            _gp = None
+        vix_now = snap.get("vix", 20.0) or 20.0
+        # Cover the tickers users actually view per market (cap to keep it fast)
+        cover = []
+        for k in ("us_tickers", "crypto_tickers", "comm_tickers", "fx_tickers"):
+            cover += snap.get(k, []) if isinstance(snap.get(k), list) else []
+        try:
+            from engines.alpha_center_curator import ALPHA_CENTER_CANDIDATES
+            cover += list(ALPHA_CENTER_CANDIDATES.keys())
+        except Exception:
+            pass
+        cover = [t for t in dict.fromkeys(cover) if t in price_tickers][:120]
+        n_proxy = 0
+        for t in cover:
+            existing = out["options_data"].get(t, {})
+            # Only fill if real options data is absent (don't overwrite yfinance/scraped)
+            if existing.get("net_gex") is not None or existing.get("call_wall") is not None:
+                continue
+            try:
+                gx = analyze_gex(t, prices, vix=vix_now)
+                if not gx or not gx.get("ok", True):
+                    continue
+                merged = dict(existing)
+                if gx.get("net_gex") is not None: merged["net_gex"] = gx["net_gex"]
+                if gx.get("flip_level"): merged["gamma_flip"] = gx["flip_level"]
+                if gx.get("call_wall"): merged["call_wall"] = gx["call_wall"]
+                if gx.get("put_wall"): merged["put_wall"] = gx["put_wall"]
+                if _gp is not None:
+                    try:
+                        g = _gp.analyze(t, prices, vix=vix_now)
+                        if g.get("ok"):
+                            if g.get("max_pain"): merged.setdefault("max_pain", g["max_pain"])
+                            merged["greeks_proxy"] = {
+                                "gamma": g.get("gamma"), "vanna": g.get("vanna"),
+                                "charm": g.get("charm"), "composite": g.get("composite"),
+                            }
+                    except Exception:
+                        pass
+                merged["source"] = "proxy"  # modeled from price, NOT real flow
+                out["options_data"][t] = merged
+                n_proxy += 1
+            except Exception:
+                continue
+        if n_proxy:
+            logger.info(f"v40: greeks/GEX proxy filled {n_proxy} tickers (price-derived fallback)")
+    except Exception as e:
+        logger.debug(f"v40: proxy fallback skipped: {e}")
+
     logger.info(f"v40: external data — options:{len(out['options_data'])} "
                 f"cot:{len(out['cot_data'])} cme:{len(out['cme_oi'])} onchain:{len(out['onchain_data'])}")
     return out

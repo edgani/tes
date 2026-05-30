@@ -1148,4 +1148,11 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
     else:
         label, emoji = "Distribution (avoid)", "🔴"
 
-    return {"score": score, "label": label, "emoji": emoji, "signals": signals[:6]}
+    # Flag data provenance so modeled proxy isn't mistaken for real dealer flow/dark pool
+    src = od.get("source", "")
+    if src == "proxy":
+        signals.insert(0, "📐 PROXY (price-derived estimate — bukan real flow/dark pool)")
+    elif od.get("dark_pool") or od.get("dark_pool_sentiment"):
+        signals.insert(0, "🌑 REAL dark pool + options flow")
+
+    return {"score": score, "label": label, "emoji": emoji, "signals": signals[:7], "source": src or "yfinance"}
