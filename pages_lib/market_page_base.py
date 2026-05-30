@@ -169,6 +169,24 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
     # Shorts: best SHORTS first → high range pos (ripped to TRR = sell-the-rip).
     shorts.sort(key=lambda it: (-_range_pos(it), _phase(it)))
 
+    # ── KEITH QUALITY FILTER (avoid 100 garbage ideas) ───────────────────
+    # Keith: cleanest signal = Bullish TRADE+TREND + Higher Highs + Higher Lows.
+    # Our quality grade A/A+ = bull_form (px>TREND TRR & px>TAIL TRR = HH across
+    # durations) + bull trend. short_A/short_A+ = the bearish mirror. Default ON.
+    def _qual(it):
+        return (it.get("rr", {}).get("signals", {}) or {}).get("quality", "C")
+    quality_only = st.checkbox(
+        "✅ Quality only — Keith-grade setups (Bullish TRADE+TREND + Higher-Highs/Lows). "
+        "Matiin buat liat semua.", value=True, key=f"qual_{market_key}")
+    if quality_only:
+        longs_q = [it for it in longs if _qual(it) in ("A+", "A")]
+        shorts_q = [it for it in shorts if _qual(it) in ("short_A+", "short_A")]
+        # If filter empties a bucket, fall back to B-grade so it's not blank
+        longs = longs_q or [it for it in longs if _qual(it) in ("A+", "A", "B")]
+        shorts = shorts_q or [it for it in shorts if _qual(it) in ("short_A+", "short_A", "B")]
+        st.caption(f"🎯 Quality filter ON: {len(longs)} long · {len(shorts)} short "
+                   f"(A/A+ Keith-grade). Sisanya disembunyiin.")
+
     long_label = "🟢 Akumulasi" if is_ihsg else "🟢 Long"
     if is_ihsg:
         sub_long, sub_mon = st.tabs([f"{long_label} ({len(longs)})", f"🟡 Monitor ({len(monitor)})"])

@@ -915,6 +915,14 @@ def render_rich_ticker(
                 fund_map = snap.get("fundamentals", {}) or {}
                 fund = fund_map.get(ticker, {}) if isinstance(fund_map, dict) else {}
 
+                # ── ACCUMULATION READINESS (options/greeks/dark pool) — only if data ──
+                ar = compute_accumulation_readiness(rr, snap, ticker)
+                if ar:
+                    st.markdown(f"**{ar['emoji']} Accumulation Readiness: {ar['label']}** (score {ar['score']:+d})")
+                    for s in ar["signals"]:
+                        st.caption("📡 " + s)
+                    st.markdown("---")
+
                 st.markdown("**📈 Options + Greeks + Vanna/Charm (NVTS-style)**")
 
                 # Vanna/Charm calendar — ALWAYS available (calendar-based)
@@ -1034,3 +1042,89 @@ def render_rich_ticker(
                         st.caption(f"• **{p['parent']}** {direction} β={beta:.2f}, lag {p.get('lag_days', 0)}d — {p.get('thesis', '')}")
             except Exception:
                 pass
+
+
+def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
+    """Detect if a name is being ACCUMULATED / setting up to rise, using options
+    flow + greeks + dark pool. ONLY returns a signal if real data exists (else None).
+
+    Methodology (from deep research):
+      • Dark pool (Unusual Whales/scraped): prints BELOW spot + repeated + volume
+        spike = institutions building BEFORE the public move ('front-run the rally').
+      • Options flow: daily Vol >> OI = NEW positions; call-heavy + low PCR = bullish.
+      • Gamma (GEX): price ABOVE gamma_flip = dealers long gamma (support); a large
+        positive call_wall above = magnet/target; negative net GEX = explosive fuel.
+      • DEX rising = dealers getting longer delta (bullish hedging flow).
+    """
+    od = (snap.get("options_data", {}) or {}).get(ticker, {})
+    if not od:
+        return None  # no options/greeks/dark-pool data → skip entirely
+
+    px = rr.get("px", 0) or od.get("spot", 0) or 0
+    score = 0
+    signals = []
+    has_any = False
+
+    # ── GREEKS: gamma positioning ──
+    gex = od.get("net_gex")
+    gflip = od.get("gamma_flip")
+    cwall = od.get("call_wall")
+    pwall = od.get("put_wall")
+    if gflip and px:
+        has_any = True
+        if px > gflip:
+            score += 1; signals.append(f"px>{gflip:,.0f} γ-flip → dealers long gamma (support)")
+        else:
+            signals.append(f"px<{gflip:,.0f} γ-flip → below flip (volatile/needs reclaim)")
+    if gex is not None:
+        has_any = True
+        if gex < 0:
+            score += 1; signals.append("net GEX negative → explosive-move fuel (squeeze risk up)")
+        else:
+            signals.append("net GEX positive → moves dampened/pinned")
+    if cwall and px and cwall > px:
+        signals.append(f"call wall {cwall:,.0f} = upside magnet/target ({(cwall/px-1)*100:+.0f}%)")
+
+    # ── OPTIONS FLOW: PCR + new positioning ──
+    pcr = od.get("put_call_ratio")
+    if pcr is not None:
+        has_any = True
+        if pcr < 0.7:
+            score += 1; signals.append(f"PCR {pcr:.2f} low → call-heavy (bullish flow)")
+        elif pcr > 1.3:
+            score -= 1; signals.append(f"PCR {pcr:.2f} high → put-heavy (hedging/bearish)")
+    vol_oi = od.get("volume_oi_ratio")
+    if vol_oi and vol_oi > 1.0:
+        score += 1; signals.append(f"Vol/OI {vol_oi:.1f}× → NEW positions opening (fresh interest)")
+
+    # ── DARK POOL (if present from scraped/UW) ──
+    dp = od.get("dark_pool", {}) or {}
+    dp_net = dp.get("net_sentiment") or od.get("dark_pool_sentiment")
+    dp_below = dp.get("prints_below_pct") or od.get("dp_below_pct")
+    if dp_net is not None or dp_below is not None:
+        has_any = True
+        if (dp_net and str(dp_net).lower() in ("bullish", "accumulation")) or (dp_below and dp_below > 60):
+            score += 2; signals.append("🌑 Dark pool: net buying BELOW spot → institutions accumulating")
+        elif (dp_net and str(dp_net).lower() in ("bearish", "distribution")) or (dp_below and dp_below < 40):
+            score -= 2; signals.append("🌑 Dark pool: selling above spot → distribution")
+    dex = od.get("dex") or od.get("net_dex")
+    if dex is not None:
+        has_any = True
+        if dex > 0:
+            score += 1; signals.append("DEX positive → dealers long delta (supportive)")
+
+    if not has_any:
+        return None
+
+    if score >= 4:
+        label, emoji = "SIAP NAIK (strong accumulation)", "🟢🟢"
+    elif score >= 2:
+        label, emoji = "Ancang-ancang (building)", "🟢"
+    elif score >= 0:
+        label, emoji = "Netral / wait", "⚪"
+    elif score >= -2:
+        label, emoji = "Hati-hati (soft)", "🟡"
+    else:
+        label, emoji = "Distribution (avoid)", "🔴"
+
+    return {"score": score, "label": label, "emoji": emoji, "signals": signals[:6]}

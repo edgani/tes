@@ -71,6 +71,17 @@ def _alpha_score(cand: dict, rr: dict = None) -> dict:
     # 6) CATALYST / inflection (M&A target, contract, validation, capacity)
     if "m&a-target" in tags or any(k in text for k in ["m&a", "acquisition", "buyout", "inflection", "order book", "offtake", "contract win"]):
         score += 12; factors.append("⚡ Catalyst")
+    # 6b) VERIFIABLE SHORTAGE — the strongest bottleneck proof (HyperTechInvest/Solo Cap):
+    #     capacity reserved/prepaid/booked through future years = real, not narrative.
+    if any(k in text for k in ["reserved", "prepay", "pre-pay", "sold out", "booked through",
+                                "through 2027", "through 2028", "capacity locked", "multi-year supply",
+                                "two to three year", "2-3 year", "lead time"]):
+        score += 15; factors.append("✅ Verifiable shortage")
+    # 6c) PURE-PLAY / direct exposure (SIVE pattern): the bottleneck IS the whole small-cap,
+    #     not one line in a giant's portfolio → far more asymmetric.
+    if any(k in text for k in ["pure-play", "pure play", "direct exposure", "only public", "sole",
+                                "whole company", "entire business"]):
+        score += 12; factors.append("🎯 Pure-play")
     # 7) PENALTY — large-cap low-conviction = appreciation, NOT moonshot alpha
     if conv < 100 and "multi-bag" not in tags and "small-cap" not in tags:
         score -= 25; factors.append("⚠️ Mega-cap (low asym)")
@@ -320,6 +331,16 @@ def render(snap: dict):
                 st.markdown(f"**🎯 Alpha Entry (ride-the-wave):** {acc_note}{conv_line}")
             elif pot:
                 st.markdown(f"🚀 **Conviction target: {pot}** — ride-the-wave multi-bagger. (Price data pending buat entry zone.)")
+
+            # ── ACCUMULATION READINESS (options/greeks/dark pool) — only if data ──
+            try:
+                from components.rich_ticker_card import compute_accumulation_readiness
+                ar = compute_accumulation_readiness(rr, snap, ticker)
+                if ar:
+                    st.markdown(f"**{ar['emoji']} Accumulation Readiness: {ar['label']}** (score {ar['score']:+d})")
+                    st.caption("📡 " + " · ".join(ar["signals"][:4]))
+            except Exception:
+                pass
 
             # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
