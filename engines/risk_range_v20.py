@@ -518,20 +518,31 @@ def _derive_signals_v20_3b(rr: Dict) -> Dict:
     else:
         action = "HOLD"; reason = "Mid TRADE range — wait for signal"
 
-    # Quality grade
-    bull_form = px > tr["trr"] and px > tl["trr"]
+    # Quality grade — Keith McCullough's cleanest OWN signal = Bullish TRADE +
+    # Bullish TREND with higher-highs + higher-lows. We grade on TREND ALIGNMENT
+    # (both durations bullish), NOT on price being overbought above the bands.
+    # (Old bug: required px > trend_TRR AND tail_TRR = overbought → contradicts
+    #  buying at LRR → graded everything C → empty Quality buckets.)
+    bull_form = px > tr["trr"] and px > tl["trr"]   # kept for 'formation' field
     bear_form = px < tr["lrr"] and px < tl["lrr"]
+    # Multi-duration structure (Keith: bullish across TRADE/TREND/TAIL = strongest).
+    # Use TAIL midpoint as long-term uptrend confirmation (px above = secular up).
+    tail_mid = (tl["lrr"] + tl["trr"]) / 2
+    bull_tail_struct = px > tail_mid
+    bear_tail_struct = px < tail_mid
 
-    if bull_form and is_bull_trend and trade_pos < 0.25:
-        quality = "A+"
-    elif bull_form and is_bull_trend:
-        quality = "A"
-    elif bear_form and is_bear_trend and trade_pos > 0.75:
-        quality = "short_A+"
-    elif bear_form and is_bear_trend:
+    if is_bull_trade and is_bull_trend and bull_tail_struct and trade_pos < 0.45:
+        quality = "A+"   # bullish TRADE+TREND + long-term uptrend + pulled back = best BUY
+    elif is_bull_trade and is_bull_trend and bull_tail_struct:
+        quality = "A"    # bullish TRADE+TREND + above TAIL mid = clean multi-duration long
+    elif is_bull_trade and is_bull_trend:
+        quality = "B"    # bullish TRADE+TREND but below TAIL mid (early/recovering)
+    elif is_bear_trade and is_bear_trend and bear_tail_struct and trade_pos > 0.55:
+        quality = "short_A+"  # bearish all + ripped to TRR = best SHORT
+    elif is_bear_trade and is_bear_trend and bear_tail_struct:
         quality = "short_A"
-    elif bull_form or bear_form:
-        quality = "B"
+    elif is_bear_trade and is_bear_trend:
+        quality = "short_B"
     else:
         quality = "C"
 

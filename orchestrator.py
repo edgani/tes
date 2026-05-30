@@ -3758,11 +3758,20 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
         # US equities + key ETFs + commodity/FX ETF proxies (for OI heatmap)
         _commodity_etfs = ["USO", "GLD", "SLV", "UNG", "CPER", "UGA", "CORN", "WEAT", "SOYB"]
         _fx_etfs = ["UUP", "FXE", "FXY", "FXB", "FXA", "FXC"]
+        # Alpha Center candidates (small/mid-cap moonshots) — fetch their options too so
+        # Accumulation Readiness (GEX/PCR/walls) shows for POET/SIVE/OKLO/NVTS/AXTI/etc.
+        _alpha_tickers = []
+        try:
+            from engines.alpha_center_curator import ALPHA_CENTER_CANDIDATES
+            _alpha_tickers = [t for t in ALPHA_CENTER_CANDIDATES.keys()
+                              if t in price_tickers and "." not in t and "=" not in t]
+        except Exception:
+            pass
         opt_targets = (us_tickers[:25]
                        + [t for t in ("SPY", "QQQ", "IBIT", "TLT", "IWM") if t in price_tickers]
-                       + _commodity_etfs + _fx_etfs)
+                       + _commodity_etfs + _fx_etfs + _alpha_tickers)
         opt_targets = list(dict.fromkeys(opt_targets))  # dedupe, preserve order
-        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=45)
+        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=70)
     except Exception as e:
         logger.warning(f"v40: yfinance options failed: {e}")
 

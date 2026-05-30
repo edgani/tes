@@ -1057,8 +1057,9 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
       • DEX rising = dealers getting longer delta (bullish hedging flow).
     """
     od = (snap.get("options_data", {}) or {}).get(ticker, {})
-    if not od:
-        return None  # no options/greeks/dark-pool data → skip entirely
+    oc_check = (snap.get("onchain_data", {}) or {}).get(ticker, {})
+    if not od and not oc_check:
+        return None  # no options/greeks/dark-pool AND no on-chain → skip entirely
 
     px = rr.get("px", 0) or od.get("spot", 0) or 0
     score = 0
@@ -1112,6 +1113,26 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
         has_any = True
         if dex > 0:
             score += 1; signals.append("DEX positive → dealers long delta (supportive)")
+
+    # ── ON-CHAIN (crypto): unusual TVL/volume/flow = quiet accumulation ──
+    oc = (snap.get("onchain_data", {}) or {}).get(ticker, {})
+    if oc:
+        has_any = True
+        tvl_chg = oc.get("tvl_change_7d") or oc.get("tvl_change_pct")
+        vol_tvl = oc.get("volume_tvl_ratio")
+        net_flow = oc.get("net_flow") or oc.get("netflow")
+        if tvl_chg is not None:
+            if tvl_chg > 10:
+                score += 2; signals.append(f"⛓️ TVL +{tvl_chg:.0f}% → capital flowing IN (accumulation)")
+            elif tvl_chg < -10:
+                score -= 2; signals.append(f"⛓️ TVL {tvl_chg:.0f}% → capital leaving")
+        if vol_tvl is not None and vol_tvl > 0.5:
+            score += 1; signals.append(f"⛓️ Vol/TVL {vol_tvl:.2f} → unusual on-chain activity spike")
+        if net_flow is not None:
+            if net_flow > 0:
+                score += 1; signals.append("⛓️ Net inflow positive → on-chain accumulation")
+            else:
+                score -= 1; signals.append("⛓️ Net outflow → on-chain distribution")
 
     if not has_any:
         return None

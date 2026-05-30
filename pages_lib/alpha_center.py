@@ -328,16 +328,16 @@ def render(snap: dict):
                 conv_line = ""
                 if conv_price:
                     conv_line = f"  \n🚀 **Conviction target: {pot}** → ~${conv_price:,.2f} kalau thesis full. Ini RIDE multi-tahun, bukan scalp."
-                st.markdown(f"**🎯 Alpha Entry (ride-the-wave):** {acc_note}{conv_line}")
+                st.markdown(f"**🎯 Entry:** {acc_note}{conv_line}")
             elif pot:
                 st.markdown(f"🚀 **Conviction target: {pot}** — ride-the-wave multi-bagger. (Price data pending buat entry zone.)")
 
-            # ── ACCUMULATION READINESS (options/greeks/dark pool) — only if data ──
+            # ── ACCUMULATION READINESS (options/greeks/dark pool/on-chain) — if data ──
             try:
                 from components.rich_ticker_card import compute_accumulation_readiness
                 ar = compute_accumulation_readiness(rr, snap, ticker)
                 if ar:
-                    st.markdown(f"**{ar['emoji']} Accumulation Readiness: {ar['label']}** (score {ar['score']:+d})")
+                    st.markdown(f"**{ar['emoji']} Readiness — {ar['label']}** ({ar['score']:+d})")
                     st.caption("📡 " + " · ".join(ar["signals"][:4]))
             except Exception:
                 pass
@@ -348,7 +348,7 @@ def render(snap: dict):
             # ── Bottleneck reason ────────────────────────────────────────
             br = cand.get("bottleneck_reason")
             if br:
-                st.info(f"🔒 **Why bottleneck:** {br}")
+                st.markdown(f"**🔒 Why bottleneck:** {br}")
 
             # ── Correlations + Catalysts + Risk ──────────────────────────
             with st.expander("🔍 Detail — correlations, catalysts, RR, filters"):
