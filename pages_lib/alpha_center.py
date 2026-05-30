@@ -277,31 +277,29 @@ def render(snap: dict):
         is_ma_target = "M&A-Target" in tags
 
         with st.container(border=True):
-            # ── Header row ───────────────────────────────────────────────
-            hc1, hc2, hc3 = st.columns([2.4, 1.2, 1.4])
+            # ── Header row (consistent typography: h4 title, uniform captions) ──
+            hc1, hc2, hc3 = st.columns([2.6, 1.0, 1.3])
             with hc1:
-                tickline = f"### {ticker} &nbsp;{stars}"
-                if is_multi_bag: tickline += " &nbsp;🚀"
-                if is_ma_target: tickline += " &nbsp;🎯 M&A"
-                st.markdown(tickline)
+                badges = ""
+                if is_multi_bag: badges += " 🚀"
+                if is_ma_target: badges += " 🎯"
+                st.markdown(f"#### {ticker} {stars}{badges}")
                 st.caption(f"{market} · {cand.get('monopoly_strength', '—')}")
-                # ALPHA SCORE — why this ranks (bottleneck methodology, transparent)
-                ascore = _alpha_score(cand, rr)
-                if ascore["factors"]:
-                    st.caption(f"⚡ **Alpha Score {ascore['score']:.0f}** · " + " · ".join(ascore["factors"][:5]))
-                st.caption(f"💼 Sources: {', '.join(cand.get('sources', [])[:4])}")
             with hc2:
                 px_str = f"${(rr.get('px') or 0):.2f}" if rr.get('px') else "—"
                 st.metric("Price", px_str)
-                st.caption(f"{action_emoji} **{action}**")
+                st.caption(f"{action_emoji} {action}")
             with hc3:
-                if upside:
-                    st.metric("Upside → TAIL TRR",
-                             f"{upside['upside_to_tail_trr_pct']:+.1f}%" if upside.get('upside_to_tail_trr_pct') else "—")
-                    st.caption(f"🎯 {upside.get('thesis_stage', '—')}")
+                if upside and upside.get("upside_to_tail_trr_pct") is not None:
+                    st.metric("→ TAIL TRR", f"{upside['upside_to_tail_trr_pct']:+.1f}%")
                 pot = cand.get("potential_upside", "")
                 if pot:
-                    st.caption(f"📈 **{pot}**")
+                    st.caption(f"📈 {pot}")
+            # ── Alpha Score — prominent, consistent line (bottleneck methodology) ──
+            ascore = _alpha_score(cand, rr)
+            if ascore["factors"]:
+                st.markdown(f"**⚡ Alpha Score {ascore['score']:.0f}** · " + " · ".join(ascore["factors"][:6]))
+            st.caption(f"💼 Sources: {', '.join(cand.get('sources', [])[:4])}")
 
             # ── ALPHA ENTRY: accumulation zone + CONVICTION TARGET (ride the wave) ──
             pot = cand.get("potential_upside", "")

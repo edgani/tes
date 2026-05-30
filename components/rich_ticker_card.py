@@ -906,6 +906,15 @@ def render_rich_ticker(
         if entry_text:
             st.markdown(entry_text)
 
+        # ── ACCUMULATION READINESS — ALWAYS VISIBLE (options/greeks/dark-pool/
+        #    on-chain/institutional/13F smart-money). The key 'siap naik / akumulasi'
+        #    signal should never be buried in a collapsed expander.
+        _ar = compute_accumulation_readiness(rr, snap, ticker)
+        if _ar:
+            st.markdown(f"**{_ar['emoji']} Readiness — {_ar['label']}** ({_ar['score']:+d})")
+            for _s in _ar["signals"][:5]:
+                st.caption("📡 " + _s)
+
         # ── MARKET-SPECIFIC OVERLAYS ─────────────────────────────────────
         with st.expander("🔍 Detail per market (options/COT/on-chain/bandar)", expanded=False):
 
@@ -914,14 +923,6 @@ def render_rich_ticker(
                 opts = opts_map.get(ticker, {}) if isinstance(opts_map, dict) else {}
                 fund_map = snap.get("fundamentals", {}) or {}
                 fund = fund_map.get(ticker, {}) if isinstance(fund_map, dict) else {}
-
-                # ── ACCUMULATION READINESS (options/greeks/dark pool) — only if data ──
-                ar = compute_accumulation_readiness(rr, snap, ticker)
-                if ar:
-                    st.markdown(f"**{ar['emoji']} Accumulation Readiness: {ar['label']}** (score {ar['score']:+d})")
-                    for s in ar["signals"]:
-                        st.caption("📡 " + s)
-                    st.markdown("---")
 
                 st.markdown("**📈 Options + Greeks + Vanna/Charm (NVTS-style)**")
 
@@ -1058,8 +1059,9 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
     """
     od = (snap.get("options_data", {}) or {}).get(ticker, {})
     oc_check = (snap.get("onchain_data", {}) or {}).get(ticker, {})
-    if not od and not oc_check:
-        return None  # no options/greeks/dark-pool AND no on-chain → skip entirely
+    px_check = (snap.get("prices", {}) or {}).get(ticker)
+    if not od and not oc_check and px_check is None:
+        return None  # nothing to compute from
 
     px = rr.get("px", 0) or od.get("spot", 0) or 0
     score = 0
@@ -1133,6 +1135,41 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
                 score += 1; signals.append("⛓️ Net inflow positive → on-chain accumulation")
             else:
                 score -= 1; signals.append("⛓️ Net outflow → on-chain distribution")
+
+    # ── INSTITUTIONAL FLOW PROXY (price/vol-derived, works for ALL tickers) ──
+    prices = snap.get("prices", {}) or {}
+    if prices.get(ticker) is not None:
+        try:
+            from engines.institutional_proxy import analyze_institutional
+            inst = analyze_institutional(ticker, prices, vix=snap.get("vix", 20.0) or 20.0)
+            if inst.get("ok"):
+                has_any = True
+                fs = inst.get("flow_score", 0)
+                bias = inst.get("bias", "NEUTRAL")
+                if bias == "BULLISH" or fs > 0:
+                    score += 1; signals.append(f"🏦 Institutional flow {bias} (score {fs}) — CTA/collar supportive")
+                elif bias == "BEARISH" or fs < 0:
+                    score -= 1; signals.append(f"🏦 Institutional flow {bias} (score {fs})")
+        except Exception:
+            pass
+
+    # ── 13F SMART MONEY (which famous funds hold + recent action = quiet accumulation) ──
+    try:
+        from engines.smart_money_tracker import get_ticker_smart_money
+        sm = get_ticker_smart_money(ticker)
+        if sm.get("smart_money_held") and sm.get("n_holders", 0) > 0:
+            has_any = True
+            act = sm.get("recent_action", "")
+            top = sm.get("top_holder", "")
+            n = sm.get("n_holders", 0)
+            if "adding" in act.lower() or "🟢" in act:
+                score += 2; signals.append(f"💎 {n} smart-money funds hold (top: {top}) — net ADDING (quiet accumulation)")
+            elif "trim" in act.lower() or "🔴" in act:
+                score -= 1; signals.append(f"💎 {n} smart-money funds hold but net trimming")
+            else:
+                score += 1; signals.append(f"💎 {n} smart-money funds hold (top: {top}) — {act}")
+    except Exception:
+        pass
 
     if not has_any:
         return None
