@@ -1053,11 +1053,12 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
     signals = []
     has_any = False
 
-    # ── GREEKS: gamma positioning ──
-    gex = od.get("net_gex")
-    gflip = od.get("gamma_flip")
-    cwall = od.get("call_wall")
-    pwall = od.get("put_wall")
+    # ── GREEKS: gamma positioning (REAL options only — proxy GEX is unreliable) ──
+    _real_opts = bool(od) and od.get("source") != "proxy"
+    gex = od.get("net_gex") if _real_opts else None
+    gflip = od.get("gamma_flip") if _real_opts else None
+    cwall = od.get("call_wall") if _real_opts else None
+    pwall = od.get("put_wall") if _real_opts else None
     if gflip and px:
         has_any = True
         if px > gflip:
@@ -1181,35 +1182,41 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
 
 
 def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: str = "us_equity") -> dict:
-    """Multi-sided position report from options + greeks + dark pool + TRR/LRR confluence.
-    Picks the RIGHT INSTRUMENT for the market and BOTH directions:
-      • us_equity/crypto (options exist) → BUY CALL / Long Spot / BUY PUT / Short
-      • commodity/forex (futures)       → Long Futures / Short Futures (+COT, no options)
-      • ihsg (buy-only)                 → Akumulasi (no short/options)
-    Entry/target/stop use CONFLUENCE of option walls with TRR/LRR bands.
-    Returns None if no options data for options markets (proxy still counts)."""
+    """Position report. TWO modes:
+      • REAL options (yfinance live) → full dealer/walls/vanna/charm/dark-pool + TRR/LRR confluence
+      • No real options (proxy/futures/ihsg) → TRR/LRR-based ONLY (entry=LRR, target=TRR,
+        stop below LRR) + COT (futures) / institutional (stocks). NO fake gamma shown.
+    Proxy GEX is SMA-derived & unreliable, so it is NEVER displayed as dealer positioning."""
     od = (snap.get("options_data", {}) or {}).get(ticker, {})
     px = rr.get("px", 0) or od.get("spot", 0) or 0
     if not px:
         return None
-    has_opts = bool(od)
-    is_proxy = od.get("source") == "proxy"
+    has_real_opts = bool(od) and od.get("source") != "proxy"
 
-    # Bands
-    trade = rr.get("trade", {}) or {}; trend = rr.get("trend", {}) or {}
+    # TRR/LRR bands (always)
+    trade = rr.get("trade", {}) or {}; trend = rr.get("trend", {}) or {}; tail = rr.get("tail", {}) or {}
     t_lrr, t_trr = trade.get("lrr", 0) or 0, trade.get("trr", 0) or 0
     tr_lrr, tr_trr = trend.get("lrr", 0) or 0, trend.get("trr", 0) or 0
+    tl_lrr = tail.get("lrr", 0) or 0
     width = t_trr - t_lrr if (t_trr and t_lrr) else px * 0.04
     pos = (px - t_lrr) / width if width > 0 else 0.5
 
-    # Greeks levels
-    gflip = od.get("gamma_flip"); gex = od.get("net_gex")
-    cwall = od.get("call_wall"); pwall = od.get("put_wall"); maxpain = od.get("max_pain")
-    pcr = od.get("put_call_ratio"); em = od.get("expected_move_pct") or od.get("expected_move")
+    # Greeks ONLY if real options
+    gflip = od.get("gamma_flip") if has_real_opts else None
+    gex = od.get("net_gex") if has_real_opts else None
+    cwall = od.get("call_wall") if has_real_opts else None
+    pwall = od.get("put_wall") if has_real_opts else None
+    maxpain = od.get("max_pain") if has_real_opts else None
+    pcr = od.get("put_call_ratio") if has_real_opts else None
+    em = (od.get("expected_move_pct") or od.get("expected_move")) if has_real_opts else None
     above_flip = bool(gflip and px > gflip)
-    short_gamma = (gex is not None and gex < 0) or (gflip and px < gflip)
+    short_gamma = has_real_opts and ((gex is not None and gex < 0) or (gflip and px < gflip))
 
-    # Direction (phase + Keith)
+    # sanity: walls must be on the right side (put<px<call); ignore if inverted (bad data)
+    if pwall and pwall > px: pwall = None
+    if cwall and cwall < px: cwall = None
+
+    # Direction
     phase = rr.get("phase", "NEUTRAL"); pc = rr.get("phase_code", 0)
     bull = phase == "BULL" or pc == 1; bear = phase == "BEAR" or pc == -1
     keith_note = None; keith_flip = False
@@ -1220,104 +1227,102 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         if kt and kt != "NEUTRAL":
             keith_note = f"Keith TRADE {kt} / TREND {kd.get('keith_trend','NEUTRAL')}"
         if kt == "BEARISH" and bull:
-            bull = False; keith_flip = True  # don't fight Keith near-term
+            bull = False; keith_flip = True
     except Exception:
         pass
 
-    # Dark pool
-    dp = od.get("dark_pool", {}) or {}
-    dp_acc = (str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bullish", "accumulation")) \
-             or ((dp.get("prints_below_pct") or od.get("dp_below_pct") or 0) > 60)
-    dp_dist = (str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bearish", "distribution")) \
-              or (0 < (dp.get("prints_below_pct") or od.get("dp_below_pct") or 100) < 40)
+    # Dark pool (real only)
+    dp = od.get("dark_pool", {}) or {} if has_real_opts else {}
+    dp_acc = has_real_opts and ((str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bullish","accumulation")) or ((dp.get("prints_below_pct") or od.get("dp_below_pct") or 0) > 60))
+    dp_dist = has_real_opts and ((str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bearish","distribution")) or (0 < (dp.get("prints_below_pct") or od.get("dp_below_pct") or 100) < 40))
 
-    def f(v): return f"\\${v:,.2f}"
+    def f(v): return f"${v:,.2f}"   # plain $ — rendered inside HTML div (no LaTeX)
     def pct(v): return f"{(v/px-1)*100:+.1f}%"
 
-    # ── INSTRUMENT + DIRECTION (market-appropriate, both sides) ──
+    # ── INSTRUMENT + DIRECTION ──
     instrument = None; direction = None; conviction = "medium"
     if market_key == "ihsg":
-        if bull: instrument, direction = "AKUMULASI (beli spot)", "long"
-        else: instrument, direction = "WAIT / hindari (buy-only market)", "flat"
+        instrument, direction = ("AKUMULASI (beli spot bertahap)", "long") if bull else ("WAIT / hindari (buy-only)", "flat")
     elif market_key in ("commodity", "forex"):
-        if bull: instrument, direction = "LONG FUTURES", "long"
-        elif bear: instrument, direction = "SHORT FUTURES", "short"
-        else: instrument, direction = "WAIT (range)", "flat"
-    else:  # us_equity / crypto — options available
+        instrument, direction = ("LONG FUTURES", "long") if bull else ("SHORT FUTURES", "short") if bear else ("WAIT (range)", "flat")
+    else:  # us_equity / crypto
         if bull:
-            if short_gamma or dp_acc:
+            if has_real_opts and (short_gamma or dp_acc):
                 instrument, direction, conviction = "BUY CALL (leverage squeeze)", "long", "high"
             else:
                 instrument, direction = "LONG SPOT/SHARES", "long"
         elif bear:
-            if short_gamma or dp_dist:
+            if has_real_opts and (short_gamma or dp_dist):
                 instrument, direction, conviction = "BUY PUT (leverage downside)", "short", "high"
             else:
                 instrument, direction = "SHORT / SELL", "short"
         else:
-            if keith_flip:
-                instrument, direction = "WAIT — Keith bearish near-term (jangan chase, tunggu reclaim)", "flat"
-            else:
-                instrument, direction = "WAIT (range — fade extremes)", "flat"
+            instrument, direction = ("WAIT — Keith bearish near-term (jangan chase)", "flat") if keith_flip else ("WAIT (range — fade extremes)", "flat")
 
-    # ── ENTRY + CONFLUENCE ──
+    # ── ENTRY / TARGET / STOP (TRR/LRR base; walls refine if real) ──
     entry_zone = None; confluence = []; target = None; stop = None
     if direction == "long":
-        support = max([x for x in (pwall, t_lrr) if x] or [t_lrr])
-        e_lo = t_lrr; e_hi = pwall if (pwall and pwall <= px) else (t_lrr + width * 0.3)
-        entry_zone = f"{f(min(e_lo,e_hi))}–{f(max(e_lo,e_hi))}"
-        if pwall and t_lrr and abs(pwall - t_lrr) / px < 0.04:
-            confluence.append(f"🎯 Put wall {f(pwall)} ≈ TRADE LRR {f(t_lrr)} → support kuat (beli di sini)")
-        elif pwall:
-            confluence.append(f"Put wall {f(pwall)} = support dealer")
-        tgt = cwall if cwall else tr_trr
-        target = f"{f(tgt)} ({pct(tgt)})" if tgt else None
-        if cwall and tr_trr and abs(cwall - tr_trr) / px < 0.05:
-            confluence.append(f"🎯 Call wall {f(cwall)} ≈ TREND TRR {f(tr_trr)} → target/resistance confluence")
-        elif cwall:
-            confluence.append(f"Call wall {f(cwall)} = target + resistance (dealer cap)")
-        stop_lvl = min([x for x in (pwall, t_lrr, gflip) if x] or [t_lrr]) * 0.985
-        stop = f"< {f(stop_lvl)}"
+        # Buy the dip toward TRADE LRR (Keith). If price already below LRR, buy now.
+        e_lo, e_hi = t_lrr, (t_lrr + width * 0.30)
+        entry_zone = f"{f(e_lo)}–{f(e_hi)}" + (" (beli sekarang, udah di support)" if px <= e_hi else " (tunggu pullback ke sini)")
+        if has_real_opts and pwall:
+            confluence.append(f"Put wall {f(pwall)} = support dealer ({pct(pwall)})")
+            if abs(pwall - t_lrr) / px < 0.04:
+                confluence[-1] = f"🎯 Put wall {f(pwall)} ≈ TRADE LRR {f(t_lrr)} → support confluence kuat"
+        # Target: TREND TRR (or call wall if real & nearer/aligned)
+        tgt = tr_trr or px * 1.08
+        if has_real_opts and cwall:
+            if abs(cwall - tr_trr) / px < 0.05:
+                confluence.append(f"🎯 Call wall {f(cwall)} ≈ TREND TRR {f(tr_trr)} → target confluence")
+                tgt = min(cwall, tr_trr)
+            else:
+                confluence.append(f"Call wall {f(cwall)} = resistance dealer ({pct(cwall)})")
+                tgt = cwall
+        target = f"{f(tgt)} ({pct(tgt)})"
+        # Stop: below TREND LRR (medium-term support), fallback TRADE LRR - buffer
+        stop_lvl = tr_lrr if (tr_lrr and tr_lrr < px) else t_lrr * 0.97
+        stop = f"< {f(stop_lvl)} ({pct(stop_lvl)})"
     elif direction == "short":
-        e_lo = cwall if (cwall and cwall >= px) else (t_trr - width * 0.3); e_hi = t_trr
-        entry_zone = f"{f(min(e_lo,e_hi))}–{f(max(e_lo,e_hi))}"
-        if cwall and t_trr and abs(cwall - t_trr) / px < 0.04:
-            confluence.append(f"🎯 Call wall {f(cwall)} ≈ TRADE TRR {f(t_trr)} → resistance kuat (short di sini)")
-        elif cwall:
-            confluence.append(f"Call wall {f(cwall)} = resistance dealer")
-        tgt = pwall if pwall else tr_lrr
-        target = f"{f(tgt)} ({pct(tgt)})" if tgt else None
-        if pwall: confluence.append(f"Put wall {f(pwall)} = target + support")
-        stop_lvl = max([x for x in (cwall, t_trr, gflip) if x] or [t_trr]) * 1.015
-        stop = f"> {f(stop_lvl)}"
+        e_lo, e_hi = (t_trr - width * 0.30), t_trr
+        entry_zone = f"{f(e_lo)}–{f(e_hi)}" + (" (short sekarang, udah di resistance)" if px >= e_lo else " (tunggu rip ke sini)")
+        if has_real_opts and cwall:
+            confluence.append(f"Call wall {f(cwall)} = resistance dealer ({pct(cwall)})")
+            if abs(cwall - t_trr) / px < 0.04:
+                confluence[-1] = f"🎯 Call wall {f(cwall)} ≈ TRADE TRR {f(t_trr)} → resistance confluence"
+        tgt = tr_lrr or px * 0.92
+        if has_real_opts and pwall:
+            confluence.append(f"Put wall {f(pwall)} = target support ({pct(pwall)})")
+            tgt = pwall
+        target = f"{f(tgt)} ({pct(tgt)})"
+        stop_lvl = tr_trr if (tr_trr and tr_trr > px) else t_trr * 1.03
+        stop = f"> {f(stop_lvl)} ({pct(stop_lvl)})"
     else:
-        entry_zone = f"{f(t_lrr)} (beli) / {f(t_trr)} (jual)"
-        if pwall: confluence.append(f"Range support: put wall {f(pwall)}")
-        if cwall: confluence.append(f"Range resistance: call wall {f(cwall)}")
+        entry_zone = f"{f(t_lrr)} (beli) / {f(t_trr)} (jual) — range, fade extremes"
 
-    # ── Dealer + vanna/charm (only meaningful for options markets) ──
+    # ── Dealer + vanna/charm (REAL options only) ──
     dealer = None; vc = None
-    if market_key in ("us_equity", "crypto") and (gflip or gex is not None):
+    if has_real_opts and (gflip or gex is not None):
         if above_flip:
             dealer = f"Long gamma (di atas γ-flip {f(gflip)}) → harga pinned/stabil, dealer jual rip beli dip"
         elif gflip:
             dealer = f"Short gamma (di bawah γ-flip {f(gflip)}) → gerakan diperbesar; reclaim {f(gflip)} = flip bullish"
         else:
-            dealer = "Short gamma regime → explosive" if (gex or 0) < 0 else "Long gamma → teredam"
+            dealer = "Short gamma → explosive" if (gex or 0) < 0 else "Long gamma → teredam"
         try:
             from engines.options_greeks_engine import build_options_intelligence
             intel = build_options_intelligence(ticker, od, px, {})
             vcw = intel.get("opex_calendar", {}).get("vanna_charm_window", {})
             dto = intel.get("opex_calendar", {}).get("days_to_opex")
             stt = vcw.get("status", "")
-            if stt == "WINDOW_ACTIVE_BUILDING": vc = f"Vanna tailwind aktif ({dto}d ke OPEX) → drift bullish, pin ke call wall/max pain"
-            elif stt == "CHARM_MAX": vc = f"Charm max ({dto}d ke OPEX) → pinning ke max pain {f(maxpain) if maxpain else ''}"
-            elif stt == "POST_OPEX": vc = "Post-OPEX → gamma reset, window gerakan baru"
+            if stt == "WINDOW_ACTIVE_BUILDING": vc = f"Vanna tailwind aktif ({dto}d ke OPEX) → kalau vol turun dealer beli → drift bullish, pin ke call wall/max pain"
+            elif stt == "CHARM_MAX": vc = f"Charm max ({dto}d ke OPEX) → pinning ke max pain {f(maxpain) if maxpain else ''}; gerakan terbatas s/d expiry"
+            elif stt == "POST_OPEX": vc = "Post-OPEX → gamma reset, posisi unwinding → window gerakan baru (vol naik)"
+            elif stt == "PRE_WINDOW": vc = f"Pre-vanna window ({dto}d ke OPEX) — efek vanna/charm belum dominan"
             if intel.get("expected_move_pct"): em = intel["expected_move_pct"]
         except Exception:
             pass
 
-    # COT (commodity/forex)
+    # COT (futures)
     cot_note = None
     if market_key in ("commodity", "forex"):
         cot = (snap.get("cot_data", {}) or {}).get(ticker, {})
@@ -1326,52 +1331,38 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
             aligned = (nc > 0 and direction == "long") or (nc < 0 and direction == "short")
             cot_note = f"COT non-comm net {nc:+,.0f} — {'selaras' if aligned else 'divergence (hati-hati)'}"
 
-    # Dark pool line
     dp_line = "🌑 Dark pool: akumulasi (institusi beli diam-diam)" if dp_acc else \
               "🌑 Dark pool: distribusi (institusi jual)" if dp_dist else None
 
-    # ── EXPECTED MOVE + BY-EXPIRY RANGE + BREAKOUT SCENARIOS ──
+    # Expected move / breakout (REAL options only — needs real walls/IV)
     by_expiry = None; breakout_up = None; breakout_down = None
-    if em:
+    if has_real_opts and em:
         lo = px * (1 - em/100); hi = px * (1 + em/100)
-        by_expiry = f"{f(lo)} — {f(hi)} (±{em:.1f}%) sampai expiry"
-    # Breakout up: above call wall → next target = TREND TRR / TAIL TRR
-    if cwall:
-        nxt_up = tr_trr if (tr_trr and tr_trr > cwall) else (rr.get("tail", {}) or {}).get("trr")
-        if nxt_up and nxt_up > cwall:
-            breakout_up = f"break {f(cwall)} → squeeze ke {f(nxt_up)} ({pct(nxt_up)})"
-        else:
-            breakout_up = f"break {f(cwall)} → gamma squeeze, dealer kejar (akselerasi naik)"
-    # Breakout down: below put wall → next support = TREND LRR / TAIL LRR
-    if pwall:
-        nxt_dn = tr_lrr if (tr_lrr and tr_lrr < pwall) else (rr.get("tail", {}) or {}).get("lrr")
-        if nxt_dn and nxt_dn < pwall:
-            breakout_down = f"break {f(pwall)} → drop ke {f(nxt_dn)} ({pct(nxt_dn)})"
-        else:
-            breakout_down = f"break {f(pwall)} → support hilang, downside cepat"
+        by_expiry = f"{f(lo)} — {f(hi)} (±{em:.1f}%) s/d expiry"
+    if has_real_opts and cwall:
+        nxt = tr_trr if (tr_trr and tr_trr > cwall) else None
+        breakout_up = f"break call wall {f(cwall)} → squeeze ke {f(nxt)} ({pct(nxt)})" if nxt else f"break call wall {f(cwall)} → gamma squeeze (dealer kejar)"
+    if has_real_opts and pwall:
+        nxt = tr_lrr if (tr_lrr and tr_lrr < pwall) else None
+        breakout_down = f"break put wall {f(pwall)} → drop ke {f(nxt)} ({pct(nxt)})" if nxt else f"break put wall {f(pwall)} → support hilang, downside cepat"
 
-    # Signal label for header
-    if bull: sig_label = "🟢 Bull"
-    elif bear: sig_label = "🔴 Bear"
-    else: sig_label = "⚪ Netral"
+    sig_label = "🟢 Bull" if bull else "🔴 Bear" if bear else "⚪ Netral"
 
     return {
-        "ticker": ticker, "market": market_key, "px": px, "is_proxy": is_proxy, "has_opts": has_opts,
+        "ticker": ticker, "market": market_key, "px": px, "has_real_opts": has_real_opts,
         "instrument": instrument, "direction": direction, "conviction": conviction, "pos": pos,
         "entry_zone": entry_zone, "confluence": confluence, "target": target, "stop": stop,
-        "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note,
-        "keith": keith_note, "pcr": pcr, "expected_move": em, "net_gex": gex,
-        "by_expiry": by_expiry, "breakout_up": breakout_up, "breakout_down": breakout_down,
-        "call_wall": cwall, "put_wall": pwall, "gamma_flip": gflip, "sig_label": sig_label,
-        "fmt": f,
+        "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note, "keith": keith_note,
+        "pcr": pcr, "expected_move": em, "by_expiry": by_expiry,
+        "breakout_up": breakout_up, "breakout_down": breakout_down,
+        "call_wall": cwall, "put_wall": pwall, "sig_label": sig_label,
+        "trade_lrr": t_lrr, "trade_trr": t_trr, "trend_lrr": tr_lrr, "trend_trr": tr_trr, "fmt": f,
     }
 
 
 def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: str = "us_equity"):
-    """Render a CLEAN, SCANNABLE position report (Edward's spec):
-      Header: TICKER · price · signal · CW/PW
-      Then: position + entry/target/stop + confluence + dealer/vanna + expected move +
-            by-expiry range + breakout scenarios. Escaped $ (no LaTeX cramping)."""
+    """Clean scannable report. Plain $ inside HTML div (no LaTeX). TRR/LRR always shown.
+    Options/greeks/dark-pool/vanna-charm ONLY when real options exist."""
     rec = build_options_recommendation(rr, snap, ticker, market_key)
     if not rec:
         return False
@@ -1379,29 +1370,41 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
     bar = "#3FB950" if rec["direction"] == "long" else "#F85149" if rec["direction"] == "short" else "#8B949E"
     dir_emoji = {"long": "🟢", "short": "🔴", "flat": "⚪"}.get(rec["direction"], "⚪")
     conv = " · ⚡ high-conviction" if rec["conviction"] == "high" else ""
-    src = "📐 proxy" if rec["is_proxy"] else ("🟢 live options" if rec["has_opts"] else "TRR/LRR")
+    if rec["has_real_opts"]:
+        src = "🟢 live options + greeks"
+    elif market_key in ("commodity", "forex"):
+        src = "TRR/LRR + COT"
+    elif market_key == "ihsg":
+        src = "TRR/LRR + bandar"
+    else:
+        src = "TRR/LRR (options N/A)"
 
-    # Header line: TICKER · price · signal · walls
-    walls = []
-    if rec["call_wall"]: walls.append(f"CW {f(rec['call_wall'])}")
-    if rec["put_wall"]: walls.append(f"PW {f(rec['put_wall'])}")
-    wall_str = " · ".join(walls) if walls else "no walls"
-    header = f"📋 <b>{rec['ticker']}</b> · {f(rec['px'])} · {rec['sig_label']} · {wall_str} <span style='opacity:0.55;font-size:0.82em'>({src})</span>"
+    # Header: TICKER · price · signal · TRR/LRR · walls(if real)
+    bits = [f"📋 <b>{rec['ticker']}</b>", f"{f(rec['px'])}", rec["sig_label"],
+            f"TRADE {f(rec['trade_lrr'])}–{f(rec['trade_trr'])}"]
+    if rec["has_real_opts"] and (rec["call_wall"] or rec["put_wall"]):
+        w = []
+        if rec["call_wall"]: w.append(f"CW {f(rec['call_wall'])}")
+        if rec["put_wall"]: w.append(f"PW {f(rec['put_wall'])}")
+        bits.append(" ".join(w))
+    header = " · ".join(bits) + f" <span style='opacity:0.55;font-size:0.82em'>({src})</span>"
 
     rows = [header, f"{dir_emoji} <b>Posisi:</b> {rec['instrument']}{conv}"]
     if rec["entry_zone"]: rows.append(f"<b>Entry:</b> {rec['entry_zone']}")
     for c in rec["confluence"][:2]:
         rows.append(f"<span style='opacity:0.85'>&nbsp;&nbsp;↳ {c}</span>")
-    if rec["target"]: rows.append(f"<b>Target:</b> {rec['target']}")
-    if rec["stop"]: rows.append(f"<b>Stop:</b> {rec['stop']}")
+    if rec["target"]: rows.append(f"<b>Target:</b> {rec['target']}  ·  <b>Stop:</b> {rec['stop']}")
     if rec["by_expiry"]: rows.append(f"<b>Expected move:</b> {rec['by_expiry']}")
-    if rec["breakout_up"]: rows.append(f"<span style='opacity:0.85'>📈 Breakout: {rec['breakout_up']}</span>")
-    if rec["breakout_down"]: rows.append(f"<span style='opacity:0.85'>📉 Breakdown: {rec['breakout_down']}</span>")
+    if rec["breakout_up"]: rows.append(f"<span style='opacity:0.85'>📈 {rec['breakout_up']}</span>")
+    if rec["breakout_down"]: rows.append(f"<span style='opacity:0.85'>📉 {rec['breakout_down']}</span>")
     if rec["dealer"]: rows.append(f"<span style='opacity:0.8'><b>Dealer:</b> {rec['dealer']}</span>")
     if rec["vanna_charm"]: rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
     if rec["dark_pool"]: rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
     if rec["cot"]: rows.append(f"<span style='opacity:0.8'><b>COT:</b> {rec['cot']}</span>")
     if rec["keith"]: rows.append(f"<span style='opacity:0.65'>📌 {rec['keith']}</span>")
+    extras = []
+    if rec.get("pcr") is not None: extras.append(f"PCR {rec['pcr']:.2f}")
+    if extras: rows.append(f"<span style='opacity:0.6;font-size:0.85em'>{' · '.join(extras)}</span>")
 
     st.markdown(
         f"<div style='background:#0d1117;border:1px solid #30363d;border-left:3px solid {bar};"
