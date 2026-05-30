@@ -150,11 +150,24 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
 
     # Sub-tabs — IHSG uses "Akumulasi" instead of "Long" (buy-only market)
     # Sort longs by signal strength (strongest bull first), shorts by strongest bear
-    from components.rich_ticker_card import compute_signal_strength
-    def _ss_score(it):
-        return compute_signal_strength(it.get("rr", {})).get("score", 0)
-    longs.sort(key=_ss_score, reverse=True)
-    shorts.sort(key=_ss_score)
+    # ── KEITH ENTRY-QUALITY SORT (Hedgeye methodology) ──────────────────
+    # Keith: BUY at the LOW end of the range (LRR), SELL/TRIM at the top (TRR).
+    # "Ride the trend, but DON'T chase overbought names." So the most ACTIONABLE
+    # longs = bullish names pulled back toward LRR (low range position), NOT the
+    # ones breaking out to new highs (HH = overbought = trim, don't chase).
+    def _range_pos(it):
+        rr = it.get("rr", {})
+        t = rr.get("trade", {}) or {}
+        lrr = t.get("lrr", 0) or 0; trr = t.get("trr", 0) or 0; px = rr.get("px", 0) or 0
+        w = trr - lrr
+        return (px - lrr) / w if w > 0 else 0.5  # 0 = at LRR (best buy), 1 = at TRR (don't chase)
+    def _phase(it):
+        return it.get("rr", {}).get("phase_code", 0)
+    # Longs: actionable BUYS first → low range pos (near LRR), bullish trend as tiebreak.
+    # Overbought longs (high pos, "don't chase") sink to the bottom.
+    longs.sort(key=lambda it: (_range_pos(it), -_phase(it)))
+    # Shorts: best SHORTS first → high range pos (ripped to TRR = sell-the-rip).
+    shorts.sort(key=lambda it: (-_range_pos(it), _phase(it)))
 
     long_label = "🟢 Akumulasi" if is_ihsg else "🟢 Long"
     if is_ihsg:

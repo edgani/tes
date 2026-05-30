@@ -11,8 +11,7 @@ import streamlit as st
 
 
 def _parse_conviction_upside(upside_str: str) -> float:
-    """Extract MAX upside % from the thesis string (e.g. '+300-1000%' → 1000).
-    Used to rank true asymmetric alpha (moonshots) above large-cap appreciation."""
+    """Extract MAX upside % from the thesis string (e.g. '+300-1000%' → 1000)."""
     import re
     if not upside_str:
         return 0.0
@@ -20,6 +19,63 @@ def _parse_conviction_upside(upside_str: str) -> float:
     if not nums:
         return 0.0
     return max(float(n) for n in nums)
+
+
+def _alpha_score(cand: dict, rr: dict = None) -> dict:
+    """Operationalizes the bottleneck/Citrini methodology to surface REAL alpha
+    (next SNDK / next PLTR) — ideally BEFORE consensus. Synthesized from:
+      • Citrini: 'investing in the technology bottleneck is extremely profitable';
+        find bottleneck-owners EARLY (NVDA/CRDO before crowd); asymmetric.
+      • King Yuan/Mawer: monopoly on a mission-critical chokepoint + inflection
+        (proprietary tech, pricing power, ROIC inflection).
+      • Solo Capitalist: physical bottleneck REAL & VERIFIABLE (order book past 2027)
+        + positioning NOT yet crowded; conviction to hold through 30% drawdown.
+    Returns score + the factors that earned it (transparent 'why')."""
+    score = 0.0
+    factors = []
+    tags = [t.lower() for t in cand.get("tags", [])]
+    text = " ".join([
+        str(cand.get("bottleneck_reason", "")), str(cand.get("monopoly_strength", "")),
+        str(cand.get("thesis", "")), str(cand.get("catalysts_2026", "")),
+    ]).lower()
+
+    # 1) BOTTLENECK ownership — the core of the methodology
+    if "bottleneck" in tags or "bottleneck" in text or "chokepoint" in text:
+        score += 25; factors.append("🔬 Bottleneck")
+    # 2) MONOPOLY / pricing power on a mission-critical node
+    ms = str(cand.get("monopoly_strength", "")).lower()
+    if "monopol" in ms or "monopol" in tags or "monopol" in text:
+        score += 22; factors.append("👑 Monopoly")
+    elif any(k in ms or k in text for k in ["oligopol", "duopol", "triopol", "near-monopol"]):
+        score += 14; factors.append("👑 Oligopoly")
+    # 3) ASYMMETRY / multi-bag headroom (conviction upside)
+    conv = _parse_conviction_upside(cand.get("potential_upside", ""))
+    score += min(conv / 20.0, 45)  # 1000% → +45 (capped)
+    if conv >= 300: factors.append(f"🚀 {conv:.0f}% upside")
+    # 4) SMALL/MID-CAP headroom — room to 10x (mega-cap = capped appreciation)
+    if "small-cap" in tags or "multi-bag" in tags or "small cap" in text:
+        score += 20; factors.append("📈 Cap headroom")
+    # 5) NOT-YET-CROWDED / EARLY — find it before consensus (Solo Capitalist filter 2)
+    stage = None
+    if rr:
+        tl = rr.get("tail", {}) or {}
+        tlrr = tl.get("lrr", 0) or 0; ttrr = tl.get("trr", 0) or 0; px = rr.get("px", 0) or 0
+        w = ttrr - tlrr
+        tail_pos = (px - tlrr) / w if w > 0 else 0.5
+        if tail_pos < 0.35:
+            stage = "EARLY"; score += 18; factors.append("🌱 Early (not crowded)")
+        elif tail_pos > 0.80:
+            stage = "LATE"; score -= 12; factors.append("⏰ Late (extended)")
+        else:
+            stage = "MID"
+    # 6) CATALYST / inflection (M&A target, contract, validation, capacity)
+    if "m&a-target" in tags or any(k in text for k in ["m&a", "acquisition", "buyout", "inflection", "order book", "offtake", "contract win"]):
+        score += 12; factors.append("⚡ Catalyst")
+    # 7) PENALTY — large-cap low-conviction = appreciation, NOT moonshot alpha
+    if conv < 100 and "multi-bag" not in tags and "small-cap" not in tags:
+        score -= 25; factors.append("⚠️ Mega-cap (low asym)")
+
+    return {"score": round(score, 1), "factors": factors, "stage": stage, "conviction": conv}
 
 
 def _calc_upside_metrics(rr: dict) -> dict:
@@ -168,11 +224,13 @@ def render(snap: dict):
             if tu is None or tu >= min_upside:
                 filtered.append(e)
 
-    # Sort: CONVICTION UPSIDE DESC (biggest moonshot potential first), then stars
+    # Sort by ALPHA SCORE (bottleneck methodology): bottleneck + monopoly + early +
+    # cap headroom + catalyst + asymmetry. Surfaces real alpha (next SNDK/PLTR) first.
     def _sort_key(e):
         cand = e["candidate"]
-        conv = _parse_conviction_upside(cand.get("potential_upside", ""))
-        return (-conv, -cand.get("stars", 0), e["ticker"])
+        rr = rr_data.get(e["ticker"], {})
+        a = _alpha_score(cand, rr)
+        return (-a["score"], -a["conviction"], e["ticker"])
     filtered.sort(key=_sort_key)
 
     # Split into HAS_DATA and NO_DATA — hide NO_DATA from main list (Edward fix)
@@ -180,7 +238,7 @@ def render(snap: dict):
     no_data = [e for e in filtered if not rr_data.get(e["ticker"], {}).get("px")]
     filtered = has_data
 
-    st.caption(f"📊 **{len(filtered)}** candidates dengan price data (sorted: highest upside first)"
+    st.caption(f"📊 **{len(filtered)}** candidates dengan price data (sorted: Alpha Score — bottleneck + monopoly + early + asymmetry)"
                + (f" · ⚠️ {len(no_data)} pending (no price data — di bawah)" if no_data else ""))
     st.divider()
 
@@ -216,6 +274,10 @@ def render(snap: dict):
                 if is_ma_target: tickline += " &nbsp;🎯 M&A"
                 st.markdown(tickline)
                 st.caption(f"{market} · {cand.get('monopoly_strength', '—')}")
+                # ALPHA SCORE — why this ranks (bottleneck methodology, transparent)
+                ascore = _alpha_score(cand, rr)
+                if ascore["factors"]:
+                    st.caption(f"⚡ **Alpha Score {ascore['score']:.0f}** · " + " · ".join(ascore["factors"][:5]))
                 st.caption(f"💼 Sources: {', '.join(cand.get('sources', [])[:4])}")
             with hc2:
                 px_str = f"${(rr.get('px') or 0):.2f}" if rr.get('px') else "—"

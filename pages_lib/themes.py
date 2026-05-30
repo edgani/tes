@@ -5,6 +5,42 @@ def render(snap):
     st.title("📖 Themes & Scenarios")
     st.caption("Macro narratives (Ricky2212/MentorBaik), active scenarios, dan theme exposure.")
 
+    # ── NEXT-QUAD PLAYBOOK — position AHEAD of the transition (Keith storm-prep) ──
+    try:
+        from engines.narrative_engine import generate_next_quad_playbook
+        pb = generate_next_quad_playbook(snap)
+        if pb.get("next_quad"):
+            with st.container(border=True):
+                hdr = f"### 🧭 Next-Quad Playbook — ancang-ancang"
+                st.markdown(hdr)
+                so = pb.get("storm_or_opportunity")
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.markdown(f"**Sekarang:** {pb['current_quad']}")
+                with c2:
+                    st.markdown(f"**Berikutnya:** {pb['next_quad']} ({pb.get('next_prob',0):.0%})")
+                if so:
+                    st.markdown(f"**{so}**")
+                if pb.get("early_rotation_edge"):
+                    st.success(f"🎯 **Early edge** (next-quad winners yang masih murah krn belum quad-nya): "
+                               + ", ".join(pb["early_rotation_edge"]))
+                cc1, cc2 = st.columns(2)
+                with cc1:
+                    st.markdown("**🟢 Rotate INTO (akumulasi duluan):**")
+                    for x in pb.get("rotate_into", [])[:7]:
+                        st.markdown(f"- {x}")
+                with cc2:
+                    st.markdown("**🔴 Rotate OUT OF (kurangi sebelum shift):**")
+                    for x in pb.get("rotate_out_of", [])[:7]:
+                        st.markdown(f"- {x}")
+                if pb.get("next_quad_factor"):
+                    st.caption(f"Factor tilt berikutnya: **{pb['next_quad_factor']}**")
+                if pb.get("stag_on_lag"):
+                    st.warning("🟡 **Stag-on-a-Lag** terdeteksi — Q2→Q3 pivot building. Mulai hedge inflasi + de-risk growth.")
+        st.divider()
+    except Exception as e:
+        pass
+
     # ── RICKY2212 NARRATIVES (from narrative_universe) ───────────────────
     narrative = snap.get("narrative", {})
     if narrative and isinstance(narrative, dict):
