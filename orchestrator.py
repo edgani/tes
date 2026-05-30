@@ -3859,16 +3859,17 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
         except Exception:
             _gp = None
         vix_now = snap.get("vix", 20.0) or 20.0
-        # Cover the tickers users actually view per market (cap to keep it fast)
-        cover = []
-        for k in ("us_tickers", "crypto_tickers", "comm_tickers", "fx_tickers"):
-            cover += snap.get(k, []) if isinstance(snap.get(k), list) else []
+        # Cover ALL price tickers (us_tickers etc. are local, not snap keys — old bug
+        # made cover empty → no proxy for US names). Prioritize US + alpha + key assets.
+        cover = list(us_tickers)  # local var from above (all non-IHSG/FX/futures US names)
         try:
             from engines.alpha_center_curator import ALPHA_CENTER_CANDIDATES
-            cover += list(ALPHA_CENTER_CANDIDATES.keys())
+            cover += [t for t in ALPHA_CENTER_CANDIDATES.keys() if t in price_tickers]
         except Exception:
             pass
-        cover = [t for t in dict.fromkeys(cover) if t in price_tickers][:120]
+        # add crypto + commodity + fx so every market gets proxy coverage
+        cover += [t for t in price_tickers if any(s in t.upper() for s in ["-USD", "=F", "=X"])]
+        cover = [t for t in dict.fromkeys(cover) if t in price_tickers][:150]
         n_proxy = 0
         for t in cover:
             existing = out["options_data"].get(t, {})

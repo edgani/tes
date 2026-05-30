@@ -927,7 +927,12 @@ def render_rich_ticker(
                 fund_map = snap.get("fundamentals", {}) or {}
                 fund = fund_map.get(ticker, {}) if isinstance(fund_map, dict) else {}
 
-                st.markdown("**📈 Options + Greeks + Vanna/Charm (NVTS-style)**")
+                # ── RECOMMENDATION PANEL FIRST (plain-language dealer/vanna/levels) ──
+                shown = render_options_recommendation(rr, snap, ticker)
+                if shown:
+                    st.markdown("---")
+
+                st.markdown("**📈 Options + Greeks + Vanna/Charm — detail**")
 
                 # Vanna/Charm calendar — ALWAYS available (calendar-based)
                 try:
@@ -1196,3 +1201,151 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
         signals.insert(0, "🌑 REAL dark pool + options flow")
 
     return {"score": score, "label": label, "emoji": emoji, "signals": signals[:7], "source": src or "yfinance"}
+
+
+def build_options_recommendation(rr: dict, snap: dict, ticker: str) -> dict:
+    """Synthesize options + greeks (vanna/charm) + dark pool into a PLAIN-LANGUAGE
+    recommendation: dealer positioning, the position to take, vanna/charm outlook,
+    and key levels. Returns None if no options data.
+
+    What each input tells us (in human terms):
+      • Gamma flip — the line between calm and chaos. Above it dealers are LONG gamma
+        (they sell rips / buy dips → price pinned, low vol). Below it they're SHORT
+        gamma (they buy rips / sell dips → moves amplified, breakouts run).
+      • Net GEX — magnitude of that effect. Big positive = heavily pinned. Negative =
+        explosive fuel (squeeze risk both ways).
+      • Call wall — the biggest call OI strike = upside magnet AND resistance (dealers
+        cap there). Put wall — biggest put OI = downside support (dealers defend).
+      • Max pain — where most options expire worthless = pin target into OPEX.
+      • Vanna/charm — into OPEX, falling vol + time decay force dealers to BUY (if
+        positive-gamma, supportive drift) → the classic OPEX-week 'vanna rally'.
+      • Dark pool — institutions building below spot = quiet accumulation before a move.
+    """
+    od = (snap.get("options_data", {}) or {}).get(ticker, {})
+    if not od:
+        return None
+    px = rr.get("px", 0) or od.get("spot", 0) or 0
+    if not px:
+        return None
+
+    is_proxy = od.get("source") == "proxy"
+    gflip = od.get("gamma_flip")
+    gex = od.get("net_gex")
+    cwall = od.get("call_wall")
+    pwall = od.get("put_wall")
+    maxpain = od.get("max_pain")
+    pcr = od.get("put_call_ratio")
+    em = od.get("expected_move_pct") or od.get("expected_move")
+
+    # 1) DEALER POSITIONING (plain language)
+    above_flip = (gflip and px > gflip)
+    if gflip:
+        if above_flip:
+            dealer = (f"🟢 **Long gamma** (harga ${px:,.2f} di ATAS γ-flip ${gflip:,.2f}). "
+                      f"Dealer jual rip / beli dip → harga cenderung **stabil & nge-pin**, "
+                      f"breakout butuh tenaga ekstra. Bagus buat beli di dip, jual di rip.")
+        else:
+            dealer = (f"🔴 **Short gamma** (harga ${px:,.2f} di BAWAH γ-flip ${gflip:,.2f}). "
+                      f"Dealer beli rip / jual dip → gerakan **diperbesar**, breakout/breakdown "
+                      f"bisa cepat & liar. Reclaim ${gflip:,.2f} = sinyal flip ke stabil/bullish.")
+    elif gex is not None:
+        dealer = ("🔴 **Short gamma regime** — gerakan diperbesar (explosive)." if gex < 0
+                  else "🟢 **Long gamma regime** — gerakan teredam (pinned).")
+    else:
+        dealer = "Dealer positioning: data gamma belum cukup."
+
+    # 2) KEY LEVELS
+    levels = []
+    if cwall: levels.append(f"📈 **Call wall ${cwall:,.2f}** ({(cwall/px-1)*100:+.1f}%) — resistance + magnet upside (dealer ngecap di sini)")
+    if pwall: levels.append(f"📉 **Put wall ${pwall:,.2f}** ({(pwall/px-1)*100:+.1f}%) — support kuat (dealer defend di sini)")
+    if gflip: levels.append(f"⚖️ **Gamma flip ${gflip:,.2f}** ({(gflip/px-1)*100:+.1f}%) — garis stabil↔volatile")
+    if maxpain: levels.append(f"🎯 **Max pain ${maxpain:,.2f}** ({(maxpain/px-1)*100:+.1f}%) — target pin pas OPEX")
+
+    # 3) VANNA/CHARM OUTLOOK
+    vc_outlook = None
+    try:
+        from engines.options_greeks_engine import build_options_intelligence
+        intel = build_options_intelligence(ticker, od, px, {})
+        vc = intel.get("opex_calendar", {}).get("vanna_charm_window", {})
+        status = vc.get("status", "")
+        dto = intel.get("opex_calendar", {}).get("days_to_opex")
+        if status == "WINDOW_ACTIVE_BUILDING":
+            vc_outlook = (f"🌬️ **Vanna tailwind AKTIF** ({dto}d ke OPEX) — kalau vol turun, dealer "
+                          f"kepaksa beli → drift bullish ke OPEX (classic vanna rally). Pin ke call wall/max pain.")
+        elif status == "CHARM_MAX":
+            vc_outlook = (f"🧲 **Charm max** ({dto}d ke OPEX) — pinning kuat ke max pain ${maxpain or 0:,.2f}. "
+                          f"Gerakan terbatas sampai expiry, lalu reset.")
+        elif status == "POST_OPEX":
+            vc_outlook = ("🔄 **Post-OPEX** — gamma reset, posisi dealer unwinding → window buat gerakan baru (vol naik).")
+        elif status == "PRE_WINDOW":
+            vc_outlook = (f"⏳ Pre-vanna window ({dto}d ke OPEX) — efek vanna/charm belum dominan, fokus ke level gamma dulu.")
+        if intel.get("expected_move_pct"):
+            em = intel["expected_move_pct"]
+    except Exception:
+        pass
+
+    # 4) DARK POOL
+    dp = od.get("dark_pool", {}) or {}
+    dp_line = None
+    dp_net = dp.get("net_sentiment") or od.get("dark_pool_sentiment")
+    dp_below = dp.get("prints_below_pct") or od.get("dp_below_pct")
+    if dp_net or dp_below is not None:
+        if (dp_net and str(dp_net).lower() in ("bullish","accumulation")) or (dp_below and dp_below>60):
+            dp_line = "🌑 **Dark pool: akumulasi** — institusi beli di bawah spot diam-diam (sinyal sebelum naik)."
+        elif (dp_net and str(dp_net).lower() in ("bearish","distribution")) or (dp_below and dp_below<40):
+            dp_line = "🌑 **Dark pool: distribusi** — institusi jual di atas spot (hati-hati)."
+
+    # 5) POSITION RECOMMENDATION (synthesize all)
+    rec = None; rec_emoji = "⚪"
+    near_pwall = pwall and abs(px/pwall - 1) < 0.03
+    near_cwall = cwall and abs(px/cwall - 1) < 0.03
+    if not above_flip and gflip and (dp_line and "akumulasi" in (dp_line or "")):
+        rec_emoji = "🟢🟢"; rec = (f"**BELI CALL / akumulasi** — short gamma (explosive) + dark pool akumulasi = "
+                                   f"setup squeeze. Reclaim γ-flip ${gflip:,.2f} = konfirmasi. Target call wall ${cwall or 0:,.2f}.")
+    elif above_flip and near_pwall:
+        rec_emoji = "🟢"; rec = (f"**BELI di support** — long gamma + harga di put wall ${pwall:,.2f}. "
+                                 f"Dealer defend, downside terbatas. Stop di bawah ${pwall:,.2f}, target ${cwall or maxpain or 0:,.2f}.")
+    elif near_cwall:
+        rec_emoji = "🟠"; rec = (f"**JANGAN KEJAR / trim** — harga di call wall ${cwall:,.2f} (resistance). "
+                                 f"Dealer ngecap. Tunggu break + retest, atau ambil profit.")
+    elif not above_flip and gflip:
+        rec_emoji = "🟡"; rec = (f"**WAIT / hati-hati** — short gamma di bawah ${gflip:,.2f} (volatile). "
+                                 f"Tunggu reclaim ${gflip:,.2f} buat long, atau main range put wall ${pwall or 0:,.2f}.")
+    elif above_flip:
+        rec_emoji = "🟢"; rec = (f"**HOLD / beli dip** — long gamma stabil. Beli dekat ${pwall or gflip:,.2f}, "
+                                 f"jual dekat call wall ${cwall or 0:,.2f}. Range-bound, jangan over-chase.")
+    else:
+        rec_emoji = "⚪"; rec = "Netral — belum ada edge jelas dari struktur options."
+
+    return {
+        "is_proxy": is_proxy, "dealer": dealer, "levels": levels,
+        "vanna_charm": vc_outlook, "dark_pool": dp_line,
+        "recommendation": rec, "rec_emoji": rec_emoji,
+        "pcr": pcr, "expected_move": em, "net_gex": gex,
+    }
+
+
+def render_options_recommendation(rr: dict, snap: dict, ticker: str):
+    """Render the options/greeks/dark-pool recommendation panel (plain language)."""
+    rec = build_options_recommendation(rr, snap, ticker)
+    if not rec:
+        return False
+    src = " *(📐 proxy — price-derived, bukan real flow)*" if rec["is_proxy"] else " *(🟢 live options)*"
+    st.markdown(f"**🎲 Options / Greeks / Dark-Pool Read{src}**")
+    st.markdown(f"{rec['rec_emoji']} **Rekomendasi posisi:** {rec['recommendation']}")
+    st.caption(f"🏦 **Dealer positioning:** {rec['dealer']}")
+    if rec["vanna_charm"]:
+        st.caption(f"{rec['vanna_charm']}")
+    if rec["dark_pool"]:
+        st.caption(rec["dark_pool"])
+    if rec["levels"]:
+        st.markdown("**📐 Level penting:**")
+        for lv in rec["levels"]:
+            st.caption("• " + lv)
+    extras = []
+    if rec.get("pcr") is not None: extras.append(f"PCR {rec['pcr']:.2f}")
+    if rec.get("expected_move"): extras.append(f"Expected move ±{rec['expected_move']:.1f}%")
+    if rec.get("net_gex") is not None: extras.append(f"Net GEX {rec['net_gex']:,.0f}")
+    if extras:
+        st.caption("📊 " + " · ".join(extras))
+    return True

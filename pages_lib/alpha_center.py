@@ -137,6 +137,13 @@ def _stars_html(n: int) -> str:
 
 def render(snap: dict):
     st.title("⚡ Alpha Center — Asymmetric Moonshots")
+    # ── Card spacing + consistent typography (fix cramped/numpuk cards) ──
+    st.markdown("""<style>
+    [data-testid="stVerticalBlockBorderWrapper"] { margin-bottom: 18px !important; padding: 4px 6px !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] h4 { margin: 2px 0 4px !important; font-size: 1.05rem !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] p { margin: 3px 0 !important; line-height: 1.4 !important; }
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] { margin: 2px 0 !important; }
+    </style>""", unsafe_allow_html=True)
     st.caption("**Tempat nyari ALPHA sejati**, bukan trade 5%. Buruan buat nangkep "
                "**the next SNDK ($30→$1,500), SIVE, early PLTR** — small/mid-cap dengan thesis "
                "bottleneck/monopoly/M&A yang bisa **3x–50x** kalau theses-nya jalan. "
@@ -347,22 +354,10 @@ def render(snap: dict):
             except Exception:
                 pass
 
-            # ── OPTIONS + GREEKS detail (vanna/charm/gamma walls) if data present ──
+            # ── OPTIONS / GREEKS / DARK-POOL recommendation (if data present) ──
             try:
-                opts = (snap.get("options_data", {}) or {}).get(ticker, {})
-                if opts:
-                    from engines.options_greeks_engine import build_options_intelligence
-                    intel = build_options_intelligence(ticker, opts, rr.get("px", 0), {})
-                    g = intel.get("gamma", {})
-                    parts = []
-                    if g.get("call_wall"): parts.append(f"Call wall ${g['call_wall']:.2f}")
-                    if g.get("put_wall"): parts.append(f"Put wall ${g['put_wall']:.2f}")
-                    if g.get("gamma_flip"):
-                        parts.append(f"γ-flip ${g['gamma_flip']:.2f} ({'+' if g.get('above_flip') else '−'}gamma)")
-                    if opts.get("put_call_ratio"): parts.append(f"PCR {opts['put_call_ratio']:.2f}")
-                    src = "📐 proxy" if opts.get("source") == "proxy" else "🟢 live options"
-                    if parts:
-                        st.caption(f"📈 **Greeks ({src}):** " + " · ".join(parts))
+                from components.rich_ticker_card import render_options_recommendation
+                render_options_recommendation(rr, snap, ticker)
             except Exception:
                 pass
 
