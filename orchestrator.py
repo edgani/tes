@@ -3767,15 +3767,15 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
                               if t in price_tickers and "." not in t and "=" not in t]
         except Exception:
             pass
-        # Order matters: alpha candidates FIRST (moonshots need walls), then top US,
-        # then ETFs. Old bug: ETFs ate the 70-cap before reaching later alpha names
-        # (POET got walls, NBIS didn't). Now alpha names are never starved.
-        opt_targets = (_alpha_tickers
-                       + us_tickers[:35]
-                       + [t for t in ("SPY", "QQQ", "IBIT", "TLT", "IWM") if t in price_tickers]
-                       + _commodity_etfs + _fx_etfs)
-        opt_targets = list(dict.fromkeys(opt_targets))  # dedupe, preserve order
-        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=110)
+        # Cover the FULL US universe (alpha candidates are already inside us_tickers).
+        # Parallel fetch makes ~150 tickers take ~30-45s. This ends the "some US names
+        # have walls, some don't" inconsistency — every us_equity ticker gets real options.
+        opt_targets = list(dict.fromkeys(
+            us_tickers
+            + [t for t in ("SPY", "QQQ", "IBIT", "TLT", "IWM") if t in price_tickers]
+            + _commodity_etfs + _fx_etfs
+        ))
+        out["options_data"] = fetch_options_yf(opt_targets, max_tickers=200, max_workers=10)
     except Exception as e:
         logger.warning(f"v40: yfinance options failed: {e}")
 

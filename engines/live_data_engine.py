@@ -37,157 +37,124 @@ def _bs_gamma(S, K, T, r, sigma):
         return 0.0
 
 
-def fetch_options_yf(tickers: List[str], max_tickers: int = 30) -> Dict:
-    """Fetch real options data via yfinance + compute gamma exposure, walls, max-pain.
-
-    Returns: {ticker: {call_wall, put_wall, max_pain, gex, net_gex, put_call_ratio,
-                       atm_iv, expected_move_pct, gamma_flip, ...}}
-    """
+def _fetch_one_option_yf(ticker: str):
+    """Fetch + compute options intelligence for ONE ticker. Returns (ticker, dict|None)."""
+    import yfinance as yf
     try:
-        import yfinance as yf
+        tk = yf.Ticker(ticker)
+        exps = tk.options
+        if not exps:
+            return ticker, None
+        hist = tk.history(period="1d")
+        if hist.empty:
+            return ticker, None
+        spot = float(hist["Close"].iloc[-1])
+        if spot <= 0:
+            return ticker, None
+        today = dt.date.today()
+        near_exps = exps[:2]
+        total_call_oi = {}; total_put_oi = {}; gex_by_strike = {}
+        atm_iv = None; atm_call_price = atm_put_price = None; min_atm_dist = 1e9
+        for exp_str in near_exps:
+            try:
+                exp_date = dt.datetime.strptime(exp_str, "%Y-%m-%d").date()
+                T = max((exp_date - today).days, 1) / 365.0
+                chain = tk.option_chain(exp_str)
+                calls, puts = chain.calls, chain.puts
+                for _, row in calls.iterrows():
+                    K = float(row["strike"]); oi = float(row.get("openInterest", 0) or 0)
+                    iv = float(row.get("impliedVolatility", 0) or 0)
+                    total_call_oi[K] = total_call_oi.get(K, 0) + oi
+                    gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
+                    gex_by_strike[K] = gex_by_strike.get(K, 0) + gamma * oi * 100 * spot * spot * 0.01
+                    dist = abs(K - spot)
+                    if dist < min_atm_dist:
+                        min_atm_dist = dist; atm_iv = iv
+                        atm_call_price = float(row.get("lastPrice", 0) or 0)
+                for _, row in puts.iterrows():
+                    K = float(row["strike"]); oi = float(row.get("openInterest", 0) or 0)
+                    iv = float(row.get("impliedVolatility", 0) or 0)
+                    total_put_oi[K] = total_put_oi.get(K, 0) + oi
+                    gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
+                    gex_by_strike[K] = gex_by_strike.get(K, 0) - gamma * oi * 100 * spot * spot * 0.01
+                    if abs(K - spot) < 0.01 * spot:
+                        atm_put_price = float(row.get("lastPrice", 0) or 0)
+            except Exception:
+                continue
+        if not total_call_oi and not total_put_oi:
+            return ticker, None
+        calls_above = {k: v for k, v in total_call_oi.items() if k >= spot}
+        call_wall = max(calls_above, key=calls_above.get) if calls_above else None
+        puts_below = {k: v for k, v in total_put_oi.items() if k <= spot}
+        put_wall = max(puts_below, key=puts_below.get) if puts_below else None
+        net_gex = sum(gex_by_strike.values())
+        gamma_flip = None; cum = 0
+        for k in sorted(gex_by_strike.keys()):
+            prev_cum = cum; cum += gex_by_strike[k]
+            if prev_cum < 0 <= cum and gamma_flip is None:
+                gamma_flip = k; break
+        all_strikes = sorted(set(list(total_call_oi.keys()) + list(total_put_oi.keys())))
+        max_pain = None; min_pain = 1e18
+        for K_test in all_strikes:
+            pain = 0
+            for K, oi in total_call_oi.items():
+                if K_test > K: pain += (K_test - K) * oi
+            for K, oi in total_put_oi.items():
+                if K_test < K: pain += (K - K_test) * oi
+            if pain < min_pain:
+                min_pain = pain; max_pain = K_test
+        tot_call = sum(total_call_oi.values()); tot_put = sum(total_put_oi.values())
+        pcr = (tot_put / tot_call) if tot_call > 0 else None
+        expected_move_pct = None
+        if atm_call_price and atm_put_price:
+            expected_move_pct = (atm_call_price + atm_put_price) / spot * 100
+        elif atm_iv:
+            expected_move_pct = atm_iv / math.sqrt(52) * 100
+        return ticker, {
+            "spot": round(spot, 2),
+            "call_wall": round(call_wall, 2) if call_wall else None,
+            "call_wall_strike": round(call_wall, 2) if call_wall else None,
+            "put_wall": round(put_wall, 2) if put_wall else None,
+            "put_wall_strike": round(put_wall, 2) if put_wall else None,
+            "max_pain": round(max_pain, 2) if max_pain else None,
+            "gamma_flip": round(gamma_flip, 2) if gamma_flip else None,
+            "gex": net_gex, "net_gex": net_gex,
+            "put_call_ratio": round(pcr, 2) if pcr else None,
+            "pc_ratio": round(pcr, 2) if pcr else None,
+            "atm_iv": round(atm_iv, 4) if atm_iv else None,
+            "iv_30d": round(atm_iv, 4) if atm_iv else None,
+            "expected_move_pct": round(expected_move_pct, 2) if expected_move_pct else None,
+            "total_call_oi": int(tot_call), "total_put_oi": int(tot_put),
+            "source": "yfinance",
+        }
+    except Exception as e:
+        logger.debug(f"options fetch {ticker}: {e}")
+        return ticker, None
+
+
+def fetch_options_yf(tickers: List[str], max_tickers: int = 30, max_workers: int = 12) -> Dict:
+    """Fetch real options data via yfinance (PARALLEL) + gamma exposure, walls, max-pain.
+    Threaded so 100+ tickers complete in ~30-60s instead of minutes (yfinance is I/O-bound).
+    Returns: {ticker: {call_wall, put_wall, max_pain, gex, net_gex, put_call_ratio,
+                       atm_iv, expected_move_pct, gamma_flip, ...}}"""
+    try:
+        import yfinance as yf  # noqa: F401
     except ImportError:
         logger.warning("yfinance not installed — options unavailable")
         return {}
-
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    targets = tickers[:max_tickers]
     out = {}
-    for ticker in tickers[:max_tickers]:
-        try:
-            tk = yf.Ticker(ticker)
-            exps = tk.options
-            if not exps:
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = [ex.submit(_fetch_one_option_yf, t) for t in targets]
+        for fut in as_completed(futures):
+            try:
+                tkr, data = fut.result()
+                if data:
+                    out[tkr] = data
+            except Exception:
                 continue
-
-            # Spot price
-            hist = tk.history(period="1d")
-            if hist.empty:
-                continue
-            spot = float(hist["Close"].iloc[-1])
-            if spot <= 0:
-                continue
-
-            # Use nearest 2 expiries for gamma/wall computation
-            today = dt.date.today()
-            near_exps = exps[:2]
-
-            total_call_oi = {}  # strike → call OI
-            total_put_oi = {}   # strike → put OI
-            gex_by_strike = {}  # strike → net dealer gamma exposure
-            atm_iv = None
-            atm_call_price = atm_put_price = None
-            min_atm_dist = 1e9
-
-            for exp_str in near_exps:
-                try:
-                    exp_date = dt.datetime.strptime(exp_str, "%Y-%m-%d").date()
-                    T = max((exp_date - today).days, 1) / 365.0
-                    chain = tk.option_chain(exp_str)
-                    calls, puts = chain.calls, chain.puts
-
-                    for _, row in calls.iterrows():
-                        K = float(row["strike"])
-                        oi = float(row.get("openInterest", 0) or 0)
-                        iv = float(row.get("impliedVolatility", 0) or 0)
-                        total_call_oi[K] = total_call_oi.get(K, 0) + oi
-                        gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
-                        # Standard convention: dealers LONG call gamma → positive GEX
-                        gex_by_strike[K] = gex_by_strike.get(K, 0) + gamma * oi * 100 * spot * spot * 0.01
-                        # ATM tracking
-                        dist = abs(K - spot)
-                        if dist < min_atm_dist:
-                            min_atm_dist = dist
-                            atm_iv = iv
-                            atm_call_price = float(row.get("lastPrice", 0) or 0)
-
-                    for _, row in puts.iterrows():
-                        K = float(row["strike"])
-                        oi = float(row.get("openInterest", 0) or 0)
-                        iv = float(row.get("impliedVolatility", 0) or 0)
-                        total_put_oi[K] = total_put_oi.get(K, 0) + oi
-                        gamma = _bs_gamma(spot, K, T, 0.05, iv if iv > 0 else 0.5)
-                        # Standard convention: dealers SHORT put gamma → negative GEX
-                        gex_by_strike[K] = gex_by_strike.get(K, 0) - gamma * oi * 100 * spot * spot * 0.01
-                        if abs(K - spot) < 0.01 * spot:
-                            atm_put_price = float(row.get("lastPrice", 0) or 0)
-                except Exception:
-                    continue
-
-            if not total_call_oi and not total_put_oi:
-                continue
-
-            # Call wall = strike with max call OI above spot
-            calls_above = {k: v for k, v in total_call_oi.items() if k >= spot}
-            call_wall = max(calls_above, key=calls_above.get) if calls_above else None
-            # Put wall = strike with max put OI below spot
-            puts_below = {k: v for k, v in total_put_oi.items() if k <= spot}
-            put_wall = max(puts_below, key=puts_below.get) if puts_below else None
-
-            # Net GEX
-            net_gex = sum(gex_by_strike.values())
-
-            # Gamma flip = strike where cumulative GEX crosses from negative to positive
-            gamma_flip = None
-            sorted_strikes = sorted(gex_by_strike.keys())
-            cum = 0
-            for k in sorted_strikes:
-                prev_cum = cum
-                cum += gex_by_strike[k]
-                if prev_cum < 0 <= cum and gamma_flip is None:
-                    gamma_flip = k
-                    break
-
-            # Max pain = strike minimizing total ITM value to option holders
-            all_strikes = sorted(set(list(total_call_oi.keys()) + list(total_put_oi.keys())))
-            max_pain = None
-            min_pain = 1e18
-            for K_test in all_strikes:
-                pain = 0
-                for K, oi in total_call_oi.items():
-                    if K_test > K:
-                        pain += (K_test - K) * oi
-                for K, oi in total_put_oi.items():
-                    if K_test < K:
-                        pain += (K - K_test) * oi
-                if pain < min_pain:
-                    min_pain = pain
-                    max_pain = K_test
-
-            # PCR
-            tot_call = sum(total_call_oi.values())
-            tot_put = sum(total_put_oi.values())
-            pcr = (tot_put / tot_call) if tot_call > 0 else None
-
-            # Expected move (ATM straddle / spot)
-            expected_move_pct = None
-            if atm_call_price and atm_put_price:
-                expected_move_pct = (atm_call_price + atm_put_price) / spot * 100
-            elif atm_iv:
-                # weekly EM approx from annualized IV
-                expected_move_pct = atm_iv / math.sqrt(52) * 100
-
-            out[ticker] = {
-                "spot": round(spot, 2),
-                "call_wall": round(call_wall, 2) if call_wall else None,
-                "call_wall_strike": round(call_wall, 2) if call_wall else None,
-                "put_wall": round(put_wall, 2) if put_wall else None,
-                "put_wall_strike": round(put_wall, 2) if put_wall else None,
-                "max_pain": round(max_pain, 2) if max_pain else None,
-                "gamma_flip": round(gamma_flip, 2) if gamma_flip else None,
-                "gex": net_gex,
-                "net_gex": net_gex,
-                "put_call_ratio": round(pcr, 2) if pcr else None,
-                "pc_ratio": round(pcr, 2) if pcr else None,
-                "atm_iv": round(atm_iv, 4) if atm_iv else None,
-                "iv_30d": round(atm_iv, 4) if atm_iv else None,
-                "expected_move_pct": round(expected_move_pct, 2) if expected_move_pct else None,
-                "total_call_oi": int(tot_call),
-                "total_put_oi": int(tot_put),
-                "source": "yfinance",
-            }
-        except Exception as e:
-            logger.debug(f"options fetch {ticker}: {e}")
-            continue
-
-    logger.info(f"live_data: yfinance options fetched for {len(out)} tickers")
+    logger.info(f"live_data: yfinance options fetched for {len(out)}/{len(targets)} tickers (parallel)")
     return out
 
 
