@@ -364,3 +364,114 @@ def load_scraped_data(github_raw_url: str = None, local_path: str = None) -> Dic
     except Exception as e:
         logger.debug(f"scraped GitHub read failed (file may not exist yet): {e}")
         return {}
+
+
+def fetch_finra_short_volume(tickers: List[str], lookback_days: int = 5) -> Dict:
+    """FREE REAL dark-pool signal — FINRA Daily Short Sale Volume (off-exchange/TRF).
+    No API key. File: cdn.finra.org/equity/regsho/daily/CNMSshvol{YYYYMMDD}.txt
+    (pipe-delimited: Date|Symbol|ShortVolume|ShortExemptVolume|TotalVolume|Market).
+
+    Off-exchange short-volume ratio is a genuine dark-pool flow gauge: a HIGH ratio
+    with price holding/rising often = market-makers hedging dark-pool BUYS (accumulation);
+    a high ratio with price falling = real distribution. Returns per-ticker:
+      {short_volume, total_volume, short_pct, signal}  (signal needs price context, set later)
+    """
+    import urllib.request
+    want = {t.upper() for t in tickers if not any(s in t.upper() for s in [".JK", "=X", "=F", "-USD", "^"])}
+    if not want:
+        return {}
+    out: Dict[str, Dict] = {}
+    today = dt.date.today()
+    for back in range(1, lookback_days + 2):  # files publish with a delay; skip weekends implicitly
+        d = today - dt.timedelta(days=back)
+        if d.weekday() >= 5:
+            continue
+        url = f"https://cdn.finra.org/equity/regsho/daily/CNMSshvol{d.strftime('%Y%m%d')}.txt"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            raw = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", "ignore")
+        except Exception:
+            continue
+        lines = raw.strip().split("\n")
+        if len(lines) < 2:
+            continue
+        for ln in lines[1:]:
+            parts = ln.split("|")
+            if len(parts) < 5:
+                continue
+            sym = parts[1].strip().upper()
+            if sym not in want:
+                continue
+            try:
+                sv = float(parts[2]); tv = float(parts[4])
+            except Exception:
+                continue
+            if tv <= 0:
+                continue
+            out[sym] = {
+                "short_volume": sv, "total_volume": tv,
+                "short_pct": round(sv / tv * 100, 1), "date": parts[0].strip(),
+            }
+        if out:
+            logger.info(f"FINRA short-vol: {len(out)} tickers from {d.isoformat()}")
+            break  # got a valid day
+    return out
+
+
+def attach_finra_signal(finra: Dict, prices: Dict) -> Dict:
+    """Add an interpreted dark-pool signal using price context (5-day change)."""
+    for sym, d in finra.items():
+        ser = prices.get(sym)
+        chg = None
+        try:
+            if ser is not None and len(ser) > 6:
+                chg = (float(ser.iloc[-1]) / float(ser.iloc[-6]) - 1) * 100
+        except Exception:
+            pass
+        sp = d.get("short_pct", 50)
+        if sp >= 55 and chg is not None and chg >= 0:
+            d["signal"] = "accumulation"   # heavy off-exchange short vol + price up = MM hedging dark-pool buys
+            d["note"] = f"off-exch short {sp:.0f}% + harga +{chg:.1f}% → MM hedging dark-pool buys (akumulasi)"
+        elif sp >= 55 and chg is not None and chg < 0:
+            d["signal"] = "distribution"
+            d["note"] = f"off-exch short {sp:.0f}% + harga {chg:.1f}% → tekanan jual real (distribusi)"
+        else:
+            d["signal"] = "neutral"
+            d["note"] = f"off-exch short volume {sp:.0f}% (netral)"
+    return finra
+
+
+def fetch_flashalpha_gex(tickers: List[str], api_key: str = None, max_calls: int = 5) -> Dict:
+    """FREE REAL GEX (5 calls/day on free tier) — FlashAlpha pre-computed gamma exposure,
+    gamma-flip, call/put walls, dealer regime. Needs FLASHALPHA_KEY (free, no card).
+    Falls back silently if key absent or package not installed. Marks source='flashalpha'
+    (REAL — displayed as real dealer data, unlike the SMA proxy).
+    Limited to top `max_calls` tickers/run given the 5/day budget."""
+    import os
+    key = api_key or os.environ.get("FLASHALPHA_KEY") or os.environ.get("FLASHALPHA_API_KEY")
+    if not key:
+        return {}
+    try:
+        from flashalpha import FlashAlpha
+    except Exception:
+        logger.debug("flashalpha package not installed (pip install flashalpha)")
+        return {}
+    fa = FlashAlpha(key)
+    out: Dict[str, Dict] = {}
+    for t in [x for x in tickers if not any(s in x.upper() for s in [".JK", "=X", "=F", "-USD", "^"])][:max_calls]:
+        try:
+            g = fa.gex(t)
+            out[t] = {
+                "net_gex": g.get("net_gex") or g.get("total_gex"),
+                "gamma_flip": g.get("gamma_flip"),
+                "call_wall": g.get("call_wall"),
+                "put_wall": g.get("put_wall"),
+                "dealer_regime": g.get("dealer_regime") or g.get("regime"),
+                "source": "flashalpha",  # REAL — show as real dealer data
+            }
+        except Exception as e:
+            logger.debug(f"flashalpha {t}: {e}")
+            continue
+    if out:
+        logger.info(f"FlashAlpha GEX: {len(out)} tickers (real, free tier)")
+    return out

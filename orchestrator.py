@@ -3811,6 +3811,28 @@ def _v40_fetch_external_data(snap, prices, current_quad, cb=None):
     except Exception as e:
         logger.warning(f"v40: COT failed: {e}")
 
+    # ── FINRA daily short-sale volume (FREE real dark-pool signal, no key) ──
+    _cb("v40: Fetching FINRA dark-pool (off-exchange short vol)…", 98)
+    try:
+        from engines.live_data_engine import fetch_finra_short_volume, attach_finra_signal
+        finra = fetch_finra_short_volume(us_tickers, lookback_days=5)
+        out["finra_short"] = attach_finra_signal(finra, prices)
+    except Exception as e:
+        logger.debug(f"v40: FINRA short-vol failed: {e}")
+        out["finra_short"] = {}
+
+    # ── FlashAlpha real GEX (FREE 5/day, needs FLASHALPHA_KEY) — overrides proxy ──
+    try:
+        from engines.live_data_engine import fetch_flashalpha_gex
+        fa = fetch_flashalpha_gex(us_tickers, max_calls=5)
+        if fa:
+            out.setdefault("options_data", {})
+            for t, g in fa.items():
+                out["options_data"][t] = {**(out["options_data"].get(t, {})), **g}  # real GEX wins
+            logger.info(f"v40: FlashAlpha real GEX merged for {len(fa)} tickers")
+    except Exception as e:
+        logger.debug(f"v40: FlashAlpha failed: {e}")
+
     # ── CME OI (commodities — best effort, may fail server-side) ─────────
     try:
         from engines.cme_scraper import get_cme_volume

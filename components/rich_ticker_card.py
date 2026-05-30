@@ -1334,6 +1334,16 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
     dp_line = "🌑 Dark pool: akumulasi (institusi beli diam-diam)" if dp_acc else \
               "🌑 Dark pool: distribusi (institusi jual)" if dp_dist else None
 
+    # FINRA off-exchange short volume — REAL free dark-pool signal (all US tickers,
+    # independent of options). Overrides the (rarer) options dark_pool when present.
+    finra = (snap.get("finra_short", {}) or {}).get(ticker.upper(), {})
+    if finra.get("note"):
+        sig = finra.get("signal")
+        emoji = "🌑🟢" if sig == "accumulation" else "🌑🔴" if sig == "distribution" else "🌑"
+        dp_line = f"{emoji} Dark pool (FINRA): {finra['note']}"
+        if sig == "accumulation" and direction == "long":
+            confluence.append(f"🌑 FINRA off-exch short {finra.get('short_pct',0):.0f}% → MM hedging dark-pool buys")
+
     # Expected move / breakout (REAL options only — needs real walls/IV)
     by_expiry = None; breakout_up = None; breakout_down = None
     if has_real_opts and em:
