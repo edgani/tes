@@ -1096,6 +1096,15 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
             score += 2; signals.append("🌑 Dark pool: net buying BELOW spot → institutions accumulating")
         elif (dp_net and str(dp_net).lower() in ("bearish", "distribution")) or (dp_below and dp_below < 40):
             score -= 2; signals.append("🌑 Dark pool: selling above spot → distribution")
+
+    # ── FINRA off-exchange short volume — REAL free dark-pool signal (all US tickers) ──
+    finra = (snap.get("finra_short", {}) or {}).get(ticker.upper(), {})
+    if finra.get("signal"):
+        has_any = True
+        if finra["signal"] == "accumulation":
+            score += 2; signals.append(f"🌑🟢 FINRA dark pool: {finra.get('note','')}")
+        elif finra["signal"] == "distribution":
+            score -= 2; signals.append(f"🌑🔴 FINRA dark pool: {finra.get('note','')}")
     dex = od.get("dex") or od.get("net_dex")
     if dex is not None:
         has_any = True
