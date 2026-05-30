@@ -354,10 +354,10 @@ def render(snap: dict):
             except Exception:
                 pass
 
-            # ── OPTIONS / GREEKS / DARK-POOL recommendation (if data present) ──
+            # ── OPTIONS / GREEKS / DARK-POOL position report (if data present) ──
             try:
                 from components.rich_ticker_card import render_options_recommendation
-                render_options_recommendation(rr, snap, ticker)
+                render_options_recommendation(rr, snap, ticker, cand.get("market", "us_equity"))
             except Exception:
                 pass
 
