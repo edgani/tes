@@ -906,17 +906,20 @@ def render_rich_ticker(
         if entry_text:
             st.markdown(entry_text)
 
-        # ── ACCUMULATION READINESS — ALWAYS VISIBLE (options/greeks/dark-pool/
-        #    on-chain/institutional/13F smart-money). The key 'siap naik / akumulasi'
-        #    signal should never be buried in a collapsed expander.
-        _ar = compute_accumulation_readiness(rr, snap, ticker)
-        if _ar:
-            st.markdown(f"**{_ar['emoji']} Readiness — {_ar['label']}** ({_ar['score']:+d})")
-            for _s in _ar["signals"][:5]:
-                st.caption("📡 " + _s)
+        # ── ACCUMULATION READINESS — ALWAYS VISIBLE (guarded so a single bad
+        #    ticker can never crash the whole card) ──
+        try:
+            _ar = compute_accumulation_readiness(rr, snap, ticker)
+            if _ar:
+                st.markdown(f"**{_ar['emoji']} Readiness — {_ar['label']}** ({_ar['score']:+d})")
+                for _s in _ar["signals"][:5]:
+                    st.caption("📡 " + _s)
+        except Exception:
+            pass
 
-        # ── MARKET-SPECIFIC OVERLAYS ─────────────────────────────────────
-        with st.expander("🔍 Detail per market (options/COT/on-chain/bandar)", expanded=False):
+        # ── MARKET-SPECIFIC OVERLAYS — EXPANDED by default so options/greeks/
+        #    COT/dark-pool/OI are VISIBLE without clicking ──
+        with st.expander("🔍 Options · Greeks · Dark Pool · COT · OI · Bandar", expanded=True):
 
             if show_options:
                 opts_map = snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {}

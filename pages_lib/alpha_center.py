@@ -198,7 +198,14 @@ def render(snap: dict):
         value="0%",
         help="Edward's rule: Alpha Center = potensi surging, BUKAN udah surging. >100% = true multi-bag.",
     )
-    min_upside = {"No filter": -1e9, "0%": 0, "20%": 20, "50%": 50, "100%": 100, "200%": 200}[min_upside_str]
+    min_upside = {"No filter": -1e9, "0%": 0, "20%": 20, "50%": 50, "100%": 100, "200%": 200}.get(min_upside_str, 0)
+
+    # Defensive: never let a None filter crash the page (real Streamlit returns lists,
+    # but guard anyway so a single odd state can't blank the whole Alpha Center)
+    if not market_filter:
+        market_filter = ["us_equity", "ihsg", "crypto", "forex", "commodity"]
+    tag_filter = tag_filter or []
+    tier_filter = tier_filter or "All"
 
     def _tier_ok(c):
         s = c["candidate"].get("stars", 0)
@@ -330,13 +337,32 @@ def render(snap: dict):
             elif pot:
                 st.markdown(f"🚀 **Conviction target: {pot}** — ride-the-wave multi-bagger. (Price data pending buat entry zone.)")
 
-            # ── ACCUMULATION READINESS (options/greeks/dark pool/on-chain) — if data ──
+            # ── ACCUMULATION READINESS (options/greeks/dark pool/13F) — guarded ──
             try:
                 from components.rich_ticker_card import compute_accumulation_readiness
                 ar = compute_accumulation_readiness(rr, snap, ticker)
                 if ar:
                     st.markdown(f"**{ar['emoji']} Readiness — {ar['label']}** ({ar['score']:+d})")
-                    st.caption("📡 " + " · ".join(ar["signals"][:4]))
+                    st.caption("📡 " + " · ".join(ar["signals"][:5]))
+            except Exception:
+                pass
+
+            # ── OPTIONS + GREEKS detail (vanna/charm/gamma walls) if data present ──
+            try:
+                opts = (snap.get("options_data", {}) or {}).get(ticker, {})
+                if opts:
+                    from engines.options_greeks_engine import build_options_intelligence
+                    intel = build_options_intelligence(ticker, opts, rr.get("px", 0), {})
+                    g = intel.get("gamma", {})
+                    parts = []
+                    if g.get("call_wall"): parts.append(f"Call wall ${g['call_wall']:.2f}")
+                    if g.get("put_wall"): parts.append(f"Put wall ${g['put_wall']:.2f}")
+                    if g.get("gamma_flip"):
+                        parts.append(f"γ-flip ${g['gamma_flip']:.2f} ({'+' if g.get('above_flip') else '−'}gamma)")
+                    if opts.get("put_call_ratio"): parts.append(f"PCR {opts['put_call_ratio']:.2f}")
+                    src = "📐 proxy" if opts.get("source") == "proxy" else "🟢 live options"
+                    if parts:
+                        st.caption(f"📈 **Greeks ({src}):** " + " · ".join(parts))
             except Exception:
                 pass
 
