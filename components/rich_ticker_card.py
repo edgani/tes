@@ -88,13 +88,13 @@ def _render_oi_heatmap(snap, ticker, market_key):
         src = f" (via {proxy} proxy)" if proxy else ""
         st.markdown(
             f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}**{src}  \n"
-            f"🧱 Call Wall (resistance): **${cw}** · Put Wall (support): **${pw}** · Max Pain: **${mp}**"
+            f"🧱 Call Wall (resistance): **\\${cw}** · Put Wall (support): **\\${pw}** · Max Pain: **\\${mp}**"
         )
         # Simple visual: call wall above, put wall below current
         spot = opts.get("spot", 0)
         if spot and cw and pw:
-            st.caption(f"Price ${spot} sits between Put Wall ${pw} ↓ and Call Wall ${cw} ↑ — "
-                       f"dealers pin toward Max Pain ${mp} into OPEX.")
+            st.caption(f"Price \\${spot} sits between Put Wall \\${pw} ↓ and Call Wall \\${cw} ↑ — "
+                       f"dealers pin toward Max Pain \\${mp} into OPEX.")
     else:
         if market_key == "commodity":
             st.caption(f"OI heatmap untuk {ticker} butuh CME QuikStrike (sering ke-block server-side) "
@@ -209,30 +209,30 @@ def _entry_narrative(rr: dict) -> str:
     rr_ratio = sig.get("rr_ratio", 0) or 0
 
     if action == "BUY_DIP":
-        return (f"🎯 **BUY ZONE NOW** — price at LRR ${trade_lrr:.2f}. "
-                f"Take profit di TRR ${trade_trr:.2f} (+{((trade_trr/px-1)*100):.1f}%). "
-                f"Stop loss if breaks TAIL LRR ${tail.get('lrr', 0) or 0:.2f}. R/R: {rr_ratio:.2f}")
+        return (f"🎯 **BUY ZONE NOW** — price at LRR \\${trade_lrr:.2f}. "
+                f"Take profit di TRR \\${trade_trr:.2f} (+{((trade_trr/px-1)*100):.1f}%). "
+                f"Stop loss if breaks TAIL LRR \\${tail.get('lrr', 0) or 0:.2f}. R/R: {rr_ratio:.2f}")
     elif action == "ADD":
         return (f"🟢 **ADD ZONE** — lower 25% of TRADE range. "
-                f"Entry up to ${trade_lrr + (trade_trr-trade_lrr)*0.25:.2f}. "
-                f"Trim di ${trade_trr:.2f}. R/R: {rr_ratio:.2f}")
+                f"Entry up to \\${trade_lrr + (trade_trr-trade_lrr)*0.25:.2f}. "
+                f"Trim di \\${trade_trr:.2f}. R/R: {rr_ratio:.2f}")
     elif action == "HOLD":
         return (f"⚪ **HOLD** — mid range. Wait. "
-                f"Add jika turun ke ${trade_lrr:.2f}, trim jika naik ke ${trade_trr:.2f}.")
+                f"Add jika turun ke \\${trade_lrr:.2f}, trim jika naik ke \\${trade_trr:.2f}.")
     elif action == "TRIM":
         return (f"🟡 **TRIM ZONE** — upper 25% of TRADE range. "
-                f"Reduce exposure now. Re-add di ${trade_lrr:.2f}.")
+                f"Reduce exposure now. Re-add di \\${trade_lrr:.2f}.")
     elif action == "TRIM_RIP":
-        return (f"🟠 **TAKE PROFIT** — price at/above TRR ${trade_trr:.2f}. "
-                f"Lock in gains. Wait pullback to ${trade_lrr:.2f}.")
+        return (f"🟠 **TAKE PROFIT** — price at/above TRR \\${trade_trr:.2f}. "
+                f"Lock in gains. Wait pullback to \\${trade_lrr:.2f}.")
     elif action == "SHORT_RIP":
-        return (f"🔴 **SHORT ZONE** — bearish trend, price at TRR ${trade_trr:.2f}. "
-                f"Cover di LRR ${trade_lrr:.2f}. R/R: {rr_ratio:.2f}")
+        return (f"🔴 **SHORT ZONE** — bearish trend, price at TRR \\${trade_trr:.2f}. "
+                f"Cover di LRR \\${trade_lrr:.2f}. R/R: {rr_ratio:.2f}")
     elif action == "COVER":
-        return (f"🟣 **COVER ZONE** — bearish, price at LRR ${trade_lrr:.2f}. "
+        return (f"🟣 **COVER ZONE** — bearish, price at LRR \\${trade_lrr:.2f}. "
                 f"Lock short gains.")
     elif action == "WATCH":
-        return f"👀 **WATCH** — wait di sini. Setup unclear. LRR ${trade_lrr:.2f} / TRR ${trade_trr:.2f}"
+        return f"👀 **WATCH** — wait di sini. Setup unclear. LRR \\${trade_lrr:.2f} / TRR \\${trade_trr:.2f}"
     return ""
 
 
@@ -252,24 +252,24 @@ def _options_narrative(opts: dict, px: float, ticker: str) -> str:
 
     if call_wall:
         dist_call = (float(call_wall) - px) / px * 100 if px else 0
-        parts.append(f"**Call Wall ${float(call_wall):.2f}** ({dist_call:+.1f}% away) — major resistance, MM short-gamma above")
+        parts.append(f"**Call Wall \\${float(call_wall):.2f}** ({dist_call:+.1f}% away) — major resistance, MM short-gamma above")
     if put_wall:
         dist_put = (float(put_wall) - px) / px * 100 if px else 0
-        parts.append(f"**Put Wall ${float(put_wall):.2f}** ({dist_put:+.1f}% away) — major support, MM long-gamma below")
+        parts.append(f"**Put Wall \\${float(put_wall):.2f}** ({dist_put:+.1f}% away) — major support, MM long-gamma below")
     if max_pain:
-        parts.append(f"**Max Pain ${float(max_pain):.2f}** — pinning target for OPEX week")
+        parts.append(f"**Max Pain \\${float(max_pain):.2f}** — pinning target for OPEX week")
     if vol_trigger:
         dist_vt = (float(vol_trigger) - px) / px * 100 if px else 0
-        parts.append(f"**Vol Trigger ${float(vol_trigger):.2f}** ({dist_vt:+.1f}%) — gamma flip level")
+        parts.append(f"**Vol Trigger \\${float(vol_trigger):.2f}** ({dist_vt:+.1f}%) — gamma flip level")
 
     # GEX regime
     if gex is not None:
         try:
             gex_val = float(gex)
             if gex_val > 0:
-                parts.append(f"GEX: **+${gex_val/1e9:.2f}B** (positive) → MM long gamma → **suppressed volatility**, mean-reverting")
+                parts.append(f"GEX: **+\\${gex_val/1e9:.2f}B** (positive) → MM long gamma → **suppressed volatility**, mean-reverting")
             else:
-                parts.append(f"GEX: **${gex_val/1e9:.2f}B** (negative) → MM short gamma → **amplified moves**, volatile breakouts")
+                parts.append(f"GEX: **\\${gex_val/1e9:.2f}B** (negative) → MM short gamma → **amplified moves**, volatile breakouts")
         except (TypeError, ValueError):
             pass
 
@@ -311,7 +311,7 @@ def _mm_positioning(opts: dict, px: float) -> str:
         if gex is not None and float(gex) > 0 and call_wall and put_wall:
             summary_parts.append(
                 f"**🟢 MM LONG GAMMA → BUY DIPS WORK.** Price kemungkinan pinball "
-                f"antara Put Wall ${float(put_wall):.2f} dan Call Wall ${float(call_wall):.2f}. "
+                f"antara Put Wall \\${float(put_wall):.2f} dan Call Wall \\${float(call_wall):.2f}. "
                 f"Volatility supressed. Sell strangle/iron condor di range ini."
             )
         elif gex is not None and float(gex) < 0:
@@ -837,7 +837,7 @@ def render_rich_ticker(
             st.markdown(head)
             st.caption(f"**Quality {quality}** · Phase **{phase}** · Formation {sig.get('formation','NEUTRAL')}")
         with hc2:
-            st.metric("Price", f"${px:,.2f}" if market_key != "forex" else f"{px:.4f}")
+            st.metric("Price", f"\\${px:,.2f}" if market_key != "forex" else f"{px:.4f}")
         with hc3:
             st.markdown(
                 f"<div style='background:{color};color:#0D1117;padding:8px 12px;"
@@ -862,72 +862,46 @@ def render_rich_ticker(
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
-        # ── TIER1ALPHA-STYLE SIGNAL BOXES (color-coded) ─────────────────
+        # ── TIER1ALPHA-STYLE SIGNAL BOXES (color-coded quality/phase/gamma) ──
         _render_signal_boxes(rr, snap, market_key, show_options, ticker)
 
-        # ── TRR/LRR ───────────────────────────────────────────────────────
-        st.markdown("**📊 TRR/LRR v20.3b (Hedgeye-style)**")
-        trade = rr.get("trade", {})
-        trend = rr.get("trend", {})
-        tail = rr.get("tail", {})
-        rrc1, rrc2, rrc3 = st.columns(3)
-        with rrc1:
-            st.caption("**TRADE (15d)**")
-            st.caption(f"LRR: ${(trade.get('lrr') or 0):.2f}")
-            st.caption(f"TRR: ${(trade.get('trr') or 0):.2f}")
-        with rrc2:
-            st.caption("**TREND (63d)**")
-            st.caption(f"LRR: ${(trend.get('lrr') or 0):.2f}")
-            st.caption(f"TRR: ${(trend.get('trr') or 0):.2f}")
-        with rrc3:
-            st.caption("**TAIL (3yr)**")
-            st.caption(f"LRR: ${(tail.get('lrr') or 0):.2f}")
-            st.caption(f"TRR: ${(tail.get('trr') or 0):.2f}")
-
-        # ── PHASE NARRATIVE ───────────────────────────────────────────────
-        st.markdown(f"**🧭 Fase saat ini:** {_phase_narrative(rr)}")
-
-        # ── TARGET PRICES (nearest + farthest, Edward request) ────────────
-        _render_targets(rr, px, market_key)
-
-        # ── OPTIMAL ENTRY (market-appropriate data synthesis) ─────────────
-        oe = compute_optimal_entry(rr, snap, market_key, ticker)
-        if oe and oe.get("lines"):
-            dir_color = {"LONG": "#1a7f37", "SHORT": "#cf222e", "AVOID/WAIT": "#bf8700", "WAIT": "#57606a"}.get(oe["direction"], "#57606a")
-            st.markdown(
-                f"<div style='background:#0d1117;border-left:3px solid {dir_color};padding:8px 12px;border-radius:4px;margin:6px 0;'>"
-                f"<b>🎯 OPTIMAL ENTRY — {oe['direction']}</b></div>",
-                unsafe_allow_html=True)
-            for ln in oe["lines"]:
-                st.markdown(ln)
-
-        # ── ENTRY NARRATIVE ───────────────────────────────────────────────
-        entry_text = _entry_narrative(rr)
-        if entry_text:
-            st.markdown(entry_text)
-
-        # ── ACCUMULATION READINESS — ALWAYS VISIBLE (guarded so a single bad
-        #    ticker can never crash the whole card) ──
-        try:
-            _ar = compute_accumulation_readiness(rr, snap, ticker)
-            if _ar:
-                st.markdown(f"**{_ar['emoji']} Readiness — {_ar['label']}** ({_ar['score']:+d})")
-                for _s in _ar["signals"][:5]:
-                    st.caption("📡 " + _s)
-        except Exception:
-            pass
-
-        # ── POSITION REPORT — ALWAYS VISIBLE, all markets (instrument-appropriate:
-        #    spot/call/put for equity-crypto, long/short futures for comm-fx, akumulasi
-        #    for ihsg). This is the scannable ready-to-act summary. ──
+        # ── POSITION REPORT — the main actionable view (header+entry+target+stop+
+        #    dealer+vanna+expected move+breakout+dark pool+COT). Always visible. ──
         try:
             render_options_recommendation(rr, snap, ticker, market_key)
         except Exception:
             pass
 
-        # ── MARKET-SPECIFIC OVERLAYS — EXPANDED by default so options/greeks/
-        #    COT/dark-pool/OI are VISIBLE without clicking ──
-        with st.expander("🔍 Options · Greeks · Dark Pool · COT · OI · Bandar", expanded=True):
+        # ── ACCUMULATION READINESS — quiet-accumulation signal (always visible) ──
+        try:
+            _ar = compute_accumulation_readiness(rr, snap, ticker)
+            if _ar:
+                st.caption(f"{_ar['emoji']} **Readiness — {_ar['label']}** ({_ar['score']:+d}) · " + " · ".join(_ar["signals"][:3]))
+        except Exception:
+            pass
+
+        # ── UNIMPORTANT DETAIL — collapsed toggle (raw greeks chain, OI heatmap,
+        #    COT detail, bandar). Report above already has the actionable summary. ──
+        with st.expander("🔍 Detail tambahan (raw greeks · OI heatmap · COT · bandar)", expanded=False):
+
+            # TRR/LRR bands + phase (moved here from main view — report has the essentials)
+            trade = rr.get("trade", {}); trend = rr.get("trend", {}); tail = rr.get("tail", {})
+            st.markdown("**📊 TRR/LRR v20.3b (Hedgeye-style)**")
+            rrc1, rrc2, rrc3 = st.columns(3)
+            with rrc1:
+                st.caption("**TRADE (15d)**")
+                st.caption(f"LRR: \\${(trade.get('lrr') or 0):.2f}")
+                st.caption(f"TRR: \\${(trade.get('trr') or 0):.2f}")
+            with rrc2:
+                st.caption("**TREND (63d)**")
+                st.caption(f"LRR: \\${(trend.get('lrr') or 0):.2f}")
+                st.caption(f"TRR: \\${(trend.get('trr') or 0):.2f}")
+            with rrc3:
+                st.caption("**TAIL (3yr)**")
+                st.caption(f"LRR: \\${(tail.get('lrr') or 0):.2f}")
+                st.caption(f"TRR: \\${(tail.get('trr') or 0):.2f}")
+            st.caption(f"🧭 {_phase_narrative(rr)}")
+            st.markdown("---")
 
             if show_options:
                 opts_map = snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {}
@@ -955,14 +929,14 @@ def render_rich_ticker(
                         st.markdown(f"**🎯 Gamma Regime:** {g.get('regime_note', '')}")
                         wall_parts = []
                         if g.get("call_wall"):
-                            wall_parts.append(f"Call Wall ${g['call_wall']:.2f} ({g.get('call_wall_dist_pct', 0):+.1f}%)")
+                            wall_parts.append(f"Call Wall \\${g['call_wall']:.2f} ({g.get('call_wall_dist_pct', 0):+.1f}%)")
                         if g.get("put_wall"):
-                            wall_parts.append(f"Put Wall ${g['put_wall']:.2f} ({g.get('put_wall_dist_pct', 0):+.1f}%)")
+                            wall_parts.append(f"Put Wall \\${g['put_wall']:.2f} ({g.get('put_wall_dist_pct', 0):+.1f}%)")
                         if g.get("gamma_flip"):
                             flip_state = "ABOVE (positive gamma)" if g.get("above_flip") else "BELOW (negative gamma)"
-                            wall_parts.append(f"Gamma Flip ${g['gamma_flip']:.2f} — price {flip_state}")
+                            wall_parts.append(f"Gamma Flip \\${g['gamma_flip']:.2f} — price {flip_state}")
                         if g.get("max_pain"):
-                            wall_parts.append(f"Max Pain ${g['max_pain']:.2f}")
+                            wall_parts.append(f"Max Pain \\${g['max_pain']:.2f}")
                         if wall_parts:
                             for wp in wall_parts:
                                 st.caption(f"• {wp}")
@@ -1257,7 +1231,7 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
     dp_dist = (str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bearish", "distribution")) \
               or (0 < (dp.get("prints_below_pct") or od.get("dp_below_pct") or 100) < 40)
 
-    def f(v): return f"${v:,.2f}"
+    def f(v): return f"\\${v:,.2f}"
     def pct(v): return f"{(v/px-1)*100:+.1f}%"
 
     # ── INSTRUMENT + DIRECTION (market-appropriate, both sides) ──
@@ -1356,57 +1330,83 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
     dp_line = "🌑 Dark pool: akumulasi (institusi beli diam-diam)" if dp_acc else \
               "🌑 Dark pool: distribusi (institusi jual)" if dp_dist else None
 
+    # ── EXPECTED MOVE + BY-EXPIRY RANGE + BREAKOUT SCENARIOS ──
+    by_expiry = None; breakout_up = None; breakout_down = None
+    if em:
+        lo = px * (1 - em/100); hi = px * (1 + em/100)
+        by_expiry = f"{f(lo)} — {f(hi)} (±{em:.1f}%) sampai expiry"
+    # Breakout up: above call wall → next target = TREND TRR / TAIL TRR
+    if cwall:
+        nxt_up = tr_trr if (tr_trr and tr_trr > cwall) else (rr.get("tail", {}) or {}).get("trr")
+        if nxt_up and nxt_up > cwall:
+            breakout_up = f"break {f(cwall)} → squeeze ke {f(nxt_up)} ({pct(nxt_up)})"
+        else:
+            breakout_up = f"break {f(cwall)} → gamma squeeze, dealer kejar (akselerasi naik)"
+    # Breakout down: below put wall → next support = TREND LRR / TAIL LRR
+    if pwall:
+        nxt_dn = tr_lrr if (tr_lrr and tr_lrr < pwall) else (rr.get("tail", {}) or {}).get("lrr")
+        if nxt_dn and nxt_dn < pwall:
+            breakout_down = f"break {f(pwall)} → drop ke {f(nxt_dn)} ({pct(nxt_dn)})"
+        else:
+            breakout_down = f"break {f(pwall)} → support hilang, downside cepat"
+
+    # Signal label for header
+    if bull: sig_label = "🟢 Bull"
+    elif bear: sig_label = "🔴 Bear"
+    else: sig_label = "⚪ Netral"
+
     return {
         "ticker": ticker, "market": market_key, "px": px, "is_proxy": is_proxy, "has_opts": has_opts,
         "instrument": instrument, "direction": direction, "conviction": conviction, "pos": pos,
         "entry_zone": entry_zone, "confluence": confluence, "target": target, "stop": stop,
         "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note,
         "keith": keith_note, "pcr": pcr, "expected_move": em, "net_gex": gex,
+        "by_expiry": by_expiry, "breakout_up": breakout_up, "breakout_down": breakout_down,
+        "call_wall": cwall, "put_wall": pwall, "gamma_flip": gflip, "sig_label": sig_label,
+        "fmt": f,
     }
 
 
 def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: str = "us_equity"):
-    """Render a CLEAN POSITION REPORT (Tier1Alpha-style). Unimportant raw data stays
-    in the background — this is the scannable, ready-to-act summary."""
+    """Render a CLEAN, SCANNABLE position report (Edward's spec):
+      Header: TICKER · price · signal · CW/PW
+      Then: position + entry/target/stop + confluence + dealer/vanna + expected move +
+            by-expiry range + breakout scenarios. Escaped $ (no LaTeX cramping)."""
     rec = build_options_recommendation(rr, snap, ticker, market_key)
     if not rec:
         return False
+    f = rec["fmt"]
+    bar = "#3FB950" if rec["direction"] == "long" else "#F85149" if rec["direction"] == "short" else "#8B949E"
     dir_emoji = {"long": "🟢", "short": "🔴", "flat": "⚪"}.get(rec["direction"], "⚪")
-    conv_badge = {"high": " · ⚡ high-conviction", "medium": "", "low": ""}.get(rec["conviction"], "")
-    src = "📐 proxy (price-derived)" if rec["is_proxy"] else ("🟢 live options" if rec["has_opts"] else "TRR/LRR only")
+    conv = " · ⚡ high-conviction" if rec["conviction"] == "high" else ""
+    src = "📐 proxy" if rec["is_proxy"] else ("🟢 live options" if rec["has_opts"] else "TRR/LRR")
 
-    # Clean report (bordered, scannable rows)
-    lines = [f"**📋 {rec['ticker']} — Position Report** &nbsp;<span style='opacity:0.6;font-size:0.85em'>({src})</span>"]
-    lines.append(f"{dir_emoji} **Posisi:** {rec['instrument']}{conv_badge}")
-    if rec["entry_zone"]:
-        lines.append(f"**Entry:** {rec['entry_zone']}")
-    for c in rec["confluence"][:3]:
-        lines.append(f"&nbsp;&nbsp;↳ {c}")
-    if rec["target"]:
-        lines.append(f"**Target:** {rec['target']}")
-    if rec["stop"]:
-        lines.append(f"**Stop:** {rec['stop']}")
-    if rec["dealer"]:
-        lines.append(f"**Dealer:** {rec['dealer']}")
-    if rec["vanna_charm"]:
-        lines.append(f"**Vanna/charm:** {rec['vanna_charm']}")
-    if rec["dark_pool"]:
-        lines.append(rec["dark_pool"])
-    if rec["cot"]:
-        lines.append(f"**COT:** {rec['cot']}")
-    if rec["keith"]:
-        lines.append(f"<span style='opacity:0.7'>📌 {rec['keith']}</span>")
-    extras = []
-    if rec.get("pcr") is not None: extras.append(f"PCR {rec['pcr']:.2f}")
-    if rec.get("expected_move"): extras.append(f"Exp move ±{rec['expected_move']:.1f}%")
-    if extras:
-        lines.append(f"<span style='opacity:0.6;font-size:0.85em'>{' · '.join(extras)}</span>")
+    # Header line: TICKER · price · signal · walls
+    walls = []
+    if rec["call_wall"]: walls.append(f"CW {f(rec['call_wall'])}")
+    if rec["put_wall"]: walls.append(f"PW {f(rec['put_wall'])}")
+    wall_str = " · ".join(walls) if walls else "no walls"
+    header = f"📋 <b>{rec['ticker']}</b> · {f(rec['px'])} · {rec['sig_label']} · {wall_str} <span style='opacity:0.55;font-size:0.82em'>({src})</span>"
+
+    rows = [header, f"{dir_emoji} <b>Posisi:</b> {rec['instrument']}{conv}"]
+    if rec["entry_zone"]: rows.append(f"<b>Entry:</b> {rec['entry_zone']}")
+    for c in rec["confluence"][:2]:
+        rows.append(f"<span style='opacity:0.85'>&nbsp;&nbsp;↳ {c}</span>")
+    if rec["target"]: rows.append(f"<b>Target:</b> {rec['target']}")
+    if rec["stop"]: rows.append(f"<b>Stop:</b> {rec['stop']}")
+    if rec["by_expiry"]: rows.append(f"<b>Expected move:</b> {rec['by_expiry']}")
+    if rec["breakout_up"]: rows.append(f"<span style='opacity:0.85'>📈 Breakout: {rec['breakout_up']}</span>")
+    if rec["breakout_down"]: rows.append(f"<span style='opacity:0.85'>📉 Breakdown: {rec['breakout_down']}</span>")
+    if rec["dealer"]: rows.append(f"<span style='opacity:0.8'><b>Dealer:</b> {rec['dealer']}</span>")
+    if rec["vanna_charm"]: rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
+    if rec["dark_pool"]: rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
+    if rec["cot"]: rows.append(f"<span style='opacity:0.8'><b>COT:</b> {rec['cot']}</span>")
+    if rec["keith"]: rows.append(f"<span style='opacity:0.65'>📌 {rec['keith']}</span>")
 
     st.markdown(
-        "<div style='background:#0d1117;border:1px solid #30363d;border-left:3px solid "
-        + ("#3FB950" if rec["direction"] == "long" else "#F85149" if rec["direction"] == "short" else "#8B949E")
-        + ";border-radius:6px;padding:10px 13px;margin:6px 0;font-size:0.85rem;line-height:1.6;'>"
-        + "<br>".join(lines) + "</div>",
+        f"<div style='background:#0d1117;border:1px solid #30363d;border-left:3px solid {bar};"
+        f"border-radius:7px;padding:11px 14px;margin:7px 0;font-size:0.86rem;line-height:1.7;'>"
+        + "<br>".join(rows) + "</div>",
         unsafe_allow_html=True,
     )
     return True

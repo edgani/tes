@@ -48,6 +48,10 @@ hr { margin: 0.4rem 0 !important; opacity: 0.08; border-color: #30363D; }
 .stTabs [data-baseweb="tab"] { padding: 4px 10px !important; font-size: 0.78rem !important; font-weight: 600 !important; border-radius: 6px 6px 0 0 !important; }
 [data-testid="stExpander"] { border: 1px solid #30363D !important; border-radius: 8px !important; margin-bottom: 5px !important; }
 [data-testid="stExpander"] > details > summary { padding: 7px 10px !important; font-size: 0.78rem !important; font-weight: 600 !important; }
+/* Card spacing — prevent cramped/numpuk ticker cards across ALL tabs */
+[data-testid="stVerticalBlockBorderWrapper"] { margin-bottom: 16px !important; }
+[data-testid="stVerticalBlockBorderWrapper"] p { line-height: 1.5 !important; margin: 3px 0 !important; }
+[data-testid="stVerticalBlockBorderWrapper"] [data-testid="stCaptionContainer"] { margin: 2px 0 !important; line-height: 1.45 !important; }
 [data-testid="stSidebar"] .block-container { padding-top: 0.6rem !important; }
 .hy-card { background: #161B22; border: 1px solid #30363D; border-radius: 10px; margin: 4px 0; overflow: hidden; }
 .metric-card { background: #161B22; border: 1px solid #30363D; border-radius: 8px; padding: 10px 12px; }

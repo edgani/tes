@@ -300,7 +300,7 @@ def render(snap: dict):
                 st.markdown(f"#### {ticker} {stars}{badges}")
                 st.caption(f"{market} · {cand.get('monopoly_strength', '—')}")
             with hc2:
-                px_str = f"${(rr.get('px') or 0):.2f}" if rr.get('px') else "—"
+                px_str = f"\\${(rr.get('px') or 0):.2f}" if rr.get('px') else "—"
                 st.metric("Price", px_str)
                 st.caption(f"{action_emoji} {action}")
             with hc3:
@@ -330,16 +330,16 @@ def render(snap: dict):
                 acc_lo = lrr
                 acc_hi = lrr + width * 0.35 if width else px_now
                 if pos < 0.35:
-                    acc_note = f"🟢 **AKUMULASI SEKARANG** — harga ${px_now:,.2f} di zona bawah, ideal mulai bangun posisi."
+                    acc_note = f"🟢 **AKUMULASI SEKARANG** — harga \\${px_now:,.2f} di zona bawah, ideal mulai bangun posisi."
                 elif pos < 0.65:
-                    acc_note = f"🟡 **Scale-in** — mulai sebagian sekarang (${px_now:,.2f}), tambah di dip ke ${acc_lo:,.2f}–${acc_hi:,.2f}."
+                    acc_note = f"🟡 **Scale-in** — mulai sebagian sekarang (\\${px_now:,.2f}), tambah di dip ke \\${acc_lo:,.2f}–\\${acc_hi:,.2f}."
                 else:
-                    acc_note = f"🟠 **Sabar** — harga ${px_now:,.2f} udah di atas range. Tunggu pullback ke ${acc_lo:,.2f}–${acc_hi:,.2f} buat entry asimetris."
+                    acc_note = f"🟠 **Sabar** — harga \\${px_now:,.2f} udah di atas range. Tunggu pullback ke \\${acc_lo:,.2f}–\\${acc_hi:,.2f} buat entry asimetris."
                 # Conviction target = big thesis upside (NOT the 5% TRADE band)
                 conv_price = px_now * (1 + conv_max/100) if conv_max else None
                 conv_line = ""
                 if conv_price:
-                    conv_line = f"  \n🚀 **Conviction target: {pot}** → ~${conv_price:,.2f} kalau thesis full. Ini RIDE multi-tahun, bukan scalp."
+                    conv_line = f"  \n🚀 **Conviction target: {pot}** → ~\\${conv_price:,.2f} kalau thesis full. Ini RIDE multi-tahun, bukan scalp."
                 st.markdown(f"**🎯 Entry:** {acc_note}{conv_line}")
             elif pot:
                 st.markdown(f"🚀 **Conviction target: {pot}** — ride-the-wave multi-bagger. (Price data pending buat entry zone.)")
@@ -389,9 +389,9 @@ def render(snap: dict):
                         t = rr.get("trade", {})
                         tr = rr.get("trend", {})
                         tl = rr.get("tail", {})
-                        st.caption(f"TRADE: ${(t.get('lrr') or 0):.2f} → ${(t.get('trr') or 0):.2f}")
-                        st.caption(f"TREND: ${(tr.get('lrr') or 0):.2f} → ${(tr.get('trr') or 0):.2f}")
-                        st.caption(f"TAIL:  ${(tl.get('lrr') or 0):.2f} → ${(tl.get('trr') or 0):.2f}")
+                        st.caption(f"TRADE: \\${(t.get('lrr') or 0):.2f} → \\${(t.get('trr') or 0):.2f}")
+                        st.caption(f"TREND: \\${(tr.get('lrr') or 0):.2f} → \\${(tr.get('trr') or 0):.2f}")
+                        st.caption(f"TAIL:  \\${(tl.get('lrr') or 0):.2f} → \\${(tl.get('trr') or 0):.2f}")
                         sig = rr.get("signals", {})
                         if sig.get("reason"):
                             st.caption(f"💡 {sig['reason']}")
