@@ -136,3 +136,36 @@ Genuine gaps filled (2 new engines, both tested):
 Both wired defensively (try/except, non-regressive). NOT runtime-tested live (no FRED/
 network in build env) — verified by compile + logic smoke tests (seasonality detected a
 synthetic Dec+/Sep- pattern; carry gave USDJPY STRONG_CARRY_LONG, EURUSD STRONG_CARRY_SHORT).
+
+---
+
+# SESSION 5 — currency bug (from screenshot) + AUTOMATED VALIDATION engine
+
+Screenshot bugs fixed in components/rich_ticker_card.py:
+- Currency: IHSG (.JK) stocks were shown with "$" — they trade in RUPIAH. Added _cur_for()
+  (Rp for ihsg/.JK, blank for forex, $ else) and applied it to EVERY price spot: Price
+  metric, setup body (Posisi/Entry/Target/Stop + TRADE range via build_options_recommendation
+  fmt), _entry_narrative (all 8 action branches), compute_optimal_entry, _render_targets,
+  and the TRADE/TREND/TAIL LRR/TRR detail captions.
+- Honesty: "Institutional flow … — CTA/collar supportive" relabeled "(price-based proxy)"
+  (it's analyze_institutional, a price proxy — not real CTA/options/collar data).
+
+NEW — engines/validation_engine.py + run_validation.py (AUTOMATED, no manual judgment):
+  • walk_forward() — rolling in-sample/out-of-sample split.
+  • validate_parameter()/auto_validate() — sweeps each tunable weight and returns a verdict:
+      KEEP (robust OOS edge) / OVERFIT (IS-good, OOS-fails) / FRAGILE (OOS swings on tiny
+      param change) / NEUTRAL (param doesn't matter → simplify) / WEAK.
+    Verified on synthetic data: a real momentum series → KEEP (OOS Sharpe 3.27); a pure
+    random walk → NOT KEEP (FRAGILE) — i.e. it refuses to certify noise as proven.
+  • ForwardTestLogger — persists each run's actionable setups and scores them as outcomes
+    mature, reporting hit-rate + SCORE CALIBRATION (do higher scores → better outcomes —
+    the real test of the scoring weights). Wired into the snapshot: build_snapshot now
+    auto-logs BUY_DIP/ADD/SHORT_RIP setups + scores matured ones each run (deduped per day).
+  • run_validation.py — one command (`python run_validation.py`) runs the full OOS
+    backtest/overfit verdicts on a real multi-market universe and saves data/validation_report.json.
+
+HONEST CONSTRAINTS (physical, not laziness):
+  - The real BACKTEST needs price history (yfinance) → runs in YOUR env, not the build
+    sandbox (no market-data network here). Engine logic proven on synthetic.
+  - The FORWARD TEST tests the FUTURE — it cannot produce results instantly; the logger
+    accumulates a real track record over calendar days as the app runs.

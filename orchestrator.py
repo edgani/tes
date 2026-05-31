@@ -3347,6 +3347,30 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         except Exception as e:
             logger.warning(f"Snapshot save failed: {e}")
 
+        # ── FORWARD TEST: auto-log today's actionable setups + score matured ones ──
+        # (Accumulates a real OOS track record over calendar time — the honest forward
+        # test. Fully defensive; never affects the snapshot if anything is off.)
+        try:
+            from engines.validation_engine import ForwardTestLogger
+            import datetime as _dt
+            _ftl = ForwardTestLogger()
+            _ar = (result.get("risk_range") or {}).get("asset_ranges", {}) or {}
+            _qscore = {"A+": 90, "A": 72, "short_A+": 90, "short_A": 72, "B": 55, "short_B": 55, "C": 40}
+            _sigs = []
+            for _t, _rr in _ar.items():
+                _sig = (_rr.get("signals") or {})
+                _act = _sig.get("action", "")
+                if _act in ("BUY_DIP", "ADD", "SHORT_RIP"):
+                    _sigs.append({"ticker": _t, "score": _qscore.get(_sig.get("quality"), 50),
+                                  "direction": "SHORT" if _act == "SHORT_RIP" else "LONG",
+                                  "entry": _rr.get("entry") or _rr.get("px"),
+                                  "target": _rr.get("target1"), "stop": _rr.get("stop")})
+            _today = _dt.date.today().isoformat()
+            _ftl.score(prices, _today)   # mature/score prior signals vs fresh prices
+            _ftl.log(_today, _sigs)      # log today's (deduped per ticker/day)
+        except Exception as e:
+            logger.debug(f"forward-test log skipped: {e}")
+
     except Exception as e:
         logger.exception("Orchestrator fatal error")
         result["errors"].append(f"fatal: {e}")
