@@ -1367,6 +1367,43 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
 
     sig_label = "🟢 Bull" if bull else "🔴 Bear" if bear else "⚪ Netral"
 
+    # ── MULTI-POSITIONING: how to express this trade via SPOT vs LEVERAGE ──
+    # Only for markets with real long/short. IHSG = buy-only (spot only, no leverage section).
+    positions = []
+    if direction in ("long", "short"):
+        is_long = direction == "long"
+        e_txt = entry_zone or "—"
+        # 1) SPOT / CASH (no leverage)
+        if market_key == "ihsg":
+            positions.append({"type": "💵 Spot (cash)", "detail":
+                f"Akumulasi bertahap · entry {e_txt} · target {target or '—'} · stop {stop or '—'} · size penuh, hold sampai fase berubah"})
+        elif market_key in ("us_equity", "crypto"):
+            lbl = "Long shares/spot" if is_long else "Short shares (borrow)"
+            positions.append({"type": "💵 Spot (cash, no leverage)", "detail":
+                f"{lbl} · entry {e_txt} · target {target or '—'} · stop {stop or '—'} · size penuh, stop lebih longgar, hold lebih lama"})
+        # 2) LEVERAGE via OPTIONS (real options + equity/crypto only)
+        if has_real_opts and market_key in ("us_equity", "crypto"):
+            if is_long:
+                strike = gflip if (gflip and gflip <= px) else round(px, 2)
+                fuel = "short-gamma = dealer kejar (gamma fuel) ✓" if short_gamma else "long-gamma = theta drag, pilih expiry ≥45d"
+                positions.append({"type": "⚡ Leverage — BUY CALL", "detail":
+                    f"Strike ~{f(strike)} (ATM/slightly-ITM), expiry ≥30-45d · risiko = premium (defined, ga kena likuidasi) · target call wall {f(cwall) if cwall else (target or '—')} · {fuel}"})
+            else:
+                strike = gflip if (gflip and gflip >= px) else round(px, 2)
+                positions.append({"type": "⚡ Leverage — BUY PUT", "detail":
+                    f"Strike ~{f(strike)} (ATM/slightly-ITM), expiry ≥30-45d · risiko = premium (defined) · target put wall {f(pwall) if pwall else (target or '—')}"})
+        elif market_key in ("us_equity", "crypto"):
+            # No real options → margin leverage is still available for the spot-vs-leverage choice
+            positions.append({"type": "⚡ Leverage — Margin", "detail":
+                f"{'Long' if is_long else 'Short'} margin 1.5-2x · entry {e_txt} · stop {stop or '—'} (lebih ketat dari spot) · size lebih kecil, awas margin call (options N/A buat ticker ini)"})
+        # 3) LEVERAGE via FUTURES / PERP
+        if market_key in ("commodity", "forex"):
+            positions.append({"type": "⚡ Leverage — Futures", "detail":
+                f"{'Long' if is_long else 'Short'} futures · entry {e_txt} · stop {stop or '—'} (di balik LRR/TRR) · size kecil (margin), stop ketat krn likuidasi"})
+        elif market_key == "crypto":
+            positions.append({"type": "⚡ Leverage — Perp/Futures", "detail":
+                f"{'Long' if is_long else 'Short'} perp 2-5x · entry {e_txt} · stop {stop or '—'} · awas funding rate + likuidasi, size kecil"})
+
     return {
         "ticker": ticker, "market": market_key, "px": px, "has_real_opts": has_real_opts,
         "instrument": instrument, "direction": direction, "conviction": conviction, "pos": pos,
@@ -1374,7 +1411,7 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         "dealer": dealer, "vanna_charm": vc, "dark_pool": dp_line, "cot": cot_note, "keith": keith_note,
         "pcr": pcr, "expected_move": em, "by_expiry": by_expiry,
         "breakout_up": breakout_up, "breakout_down": breakout_down,
-        "call_wall": cwall, "put_wall": pwall, "sig_label": sig_label,
+        "call_wall": cwall, "put_wall": pwall, "sig_label": sig_label, "positions": positions,
         "trade_lrr": t_lrr, "trade_trr": t_trr, "trend_lrr": tr_lrr, "trend_trr": tr_trr, "fmt": f,
     }
 
@@ -1416,6 +1453,11 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
     if rec["by_expiry"]: rows.append(f"<b>Expected move:</b> {rec['by_expiry']}")
     if rec["breakout_up"]: rows.append(f"<span style='opacity:0.85'>📈 {rec['breakout_up']}</span>")
     if rec["breakout_down"]: rows.append(f"<span style='opacity:0.85'>📉 {rec['breakout_down']}</span>")
+    # Multi-positioning: spot vs leverage (only when ≥2 ways exist)
+    if rec.get("positions") and len(rec["positions"]) >= 2:
+        rows.append("<b>🎚️ Cara masuk (pilih sesuai gaya):</b>")
+        for p in rec["positions"]:
+            rows.append(f"<span style='opacity:0.9'>&nbsp;&nbsp;{p['type']}: {p['detail']}</span>")
     if rec["dealer"]: rows.append(f"<span style='opacity:0.8'><b>Dealer:</b> {rec['dealer']}</span>")
     if rec["vanna_charm"]: rows.append(f"<span style='opacity:0.8'><b>Vanna/charm:</b> {rec['vanna_charm']}</span>")
     if rec["dark_pool"]: rows.append(f"<span style='opacity:0.8'>{rec['dark_pool']}</span>")
