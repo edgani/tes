@@ -105,12 +105,36 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
             "dist_to_lrr": sig.get("distance_to_lrr_pct", 0) or 0,
         })
 
+    # ── ELEVATION: regime-gated confluence score (quad-fit × structure × timing ×
+    # overlays, with hard vetoes). Fully optional — any failure leaves items unscored
+    # and the page falls back to the existing R/R sort (non-regressive). ──
+    try:
+        from engines.confluence_scorer import score_ticker
+        _sm = snap.get("summary", {}) if isinstance(snap, dict) else {}
+        _q = _sm.get("structural_quad", "Q3")
+        _qm = _sm.get("monthly_quad") or _sm.get("monthly", "Q2")
+        _vix = (snap.get("vix", 20.0) or 20.0) if isinstance(snap, dict) else 20.0
+        _gexmap = snap.get("gex", {}) if isinstance(snap, dict) else {}
+        for it in items:
+            try:
+                sc = score_ticker(it["ticker"], _q, _qm, _vix,
+                                  rr=it["rr"], gex=_gexmap.get(it["ticker"]))
+                it["confluence"] = sc["score"]
+                it["confluence_verdict"] = sc["verdict"]
+            except Exception:
+                it["confluence"] = None
+    except Exception:
+        pass
+
     # Sort options
     sort_by = st.selectbox(
-        "Sort", ["Best R/R", "Distance to LRR (closest first)", "Quality (A+ first)"],
+        "Sort", ["🎯 Confluence (regime-gated)", "Best R/R",
+                 "Distance to LRR (closest first)", "Quality (A+ first)"],
         key=f"sort_picks_{market_key}",
     )
-    if sort_by == "Best R/R":
+    if sort_by == "🎯 Confluence (regime-gated)":
+        items.sort(key=lambda x: -(x.get("confluence") if x.get("confluence") is not None else -1))
+    elif sort_by == "Best R/R":
         items.sort(key=lambda x: -x["rr_ratio"])
     elif sort_by == "Distance to LRR (closest first)":
         items.sort(key=lambda x: abs(x["dist_to_lrr"]))

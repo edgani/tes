@@ -1982,6 +1982,11 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             result["errors"].append(f"gip: {e}")
             raise
         result["gip"] = gip
+        try:
+            from engines.fx_carry_engine import analyze_fx_carry
+            result["fx_carry"] = analyze_fx_carry(fred=fred)
+        except Exception as e:
+            logger.debug(f"fx_carry skipped: {e}")
         quad = getattr(gip, "structural_quad", "Q3")
         monthly_quad = getattr(gip, "monthly_quad", "Q2")
         gip_features = getattr(gip, "features", {})
@@ -2292,6 +2297,20 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             result["structure_data"] = structure_analyze_multi(key_tickers, prices)
         except Exception as e:
             logger.warning(f"Structure failed: {e}"); result["errors"].append(f"structure: {e}")
+        try:
+            from engines.seasonality_engine import seasonality_for_display
+            _sd = result.get("structure_data") or {}
+            for _t in key_tickers:
+                if _t in prices:
+                    try:
+                        _row = dict(_sd.get(_t) or {}) if isinstance(_sd.get(_t), dict) else {}
+                        _row.update(seasonality_for_display(prices[_t]))
+                        _sd[_t] = _row
+                    except Exception:
+                        continue
+            result["structure_data"] = _sd
+        except Exception as e:
+            logger.debug(f"seasonality enrich skipped: {e}")
         try:
             result["afternoon_data"] = afternoon_analyze_multi(key_tickers, prices, result.get("charm_data"), result.get("vanna_data"), vix_last, result.get("gex_data"), result.get("structure_data"))
         except Exception as e:

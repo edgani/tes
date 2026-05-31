@@ -85,16 +85,26 @@ def _render_oi_heatmap(snap, ticker, market_key):
         mp = opts.get("max_pain")
         tot_c = opts.get("total_call_oi", 0)
         tot_p = opts.get("total_put_oi", 0)
-        src = f" (via {proxy} proxy)" if proxy else ""
-        st.markdown(
-            f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}**{src}  \n"
-            f"🧱 Call Wall (resistance): **\\${cw}** · Put Wall (support): **\\${pw}** · Max Pain: **\\${mp}**"
-        )
-        # Simple visual: call wall above, put wall below current
         spot = opts.get("spot", 0)
-        if spot and cw and pw:
-            st.caption(f"Price \\${spot} sits between Put Wall \\${pw} ↓ and Call Wall \\${cw} ↑ — "
-                       f"dealers pin toward Max Pain \\${mp} into OPEX.")
+        if proxy and spot and cw and pw:
+            # Proxy strikes live in the PROXY's price domain (e.g. GLD ≈ 1/10 of GC=F),
+            # so absolute $ levels are misleading next to the underlying. Express as %
+            # from proxy spot — percentage levels transfer cleanly to the underlying.
+            def _pct(x):
+                return f"{(x/spot - 1) * 100:+.1f}%" if (x and spot) else "n/a"
+            st.markdown(
+                f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}** (via {proxy} proxy)  \n"
+                f"🧱 Call Wall **{_pct(cw)}** · Put Wall **{_pct(pw)}** · Max Pain **{_pct(mp)}** "
+                f"— shown as % vs proxy spot (proxy strikes ≠ {ticker} price scale; % transfers to {ticker})."
+            )
+        else:
+            st.markdown(
+                f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}**  \n"
+                f"🧱 Call Wall (resistance): **\\${cw}** · Put Wall (support): **\\${pw}** · Max Pain: **\\${mp}**"
+            )
+            if spot and cw and pw:
+                st.caption(f"Price \\${spot} sits between Put Wall \\${pw} ↓ and Call Wall \\${cw} ↑ — "
+                           f"dealers pin toward Max Pain \\${mp} into OPEX.")
     else:
         if market_key == "commodity":
             st.caption(f"OI heatmap untuk {ticker} butuh CME QuikStrike (sering ke-block server-side) "
@@ -331,6 +341,20 @@ def _mm_positioning(opts: dict, px: float) -> str:
     return "\n".join(summary_parts)
 
 
+def _cot_pair_polarity(ticker: str) -> int:
+    """+1 if a NET-LONG foreign-currency COT aligns with a LONG on this ticker, -1 if
+    it inverts. CFTC FX futures are quoted USD-per-foreign → spec NET LONG = bullish the
+    FOREIGN currency. For USD-BASE pairs (USDJPY/USDCAD/USDCHF) that is BEARISH the pair,
+    so the COT must be inverted before comparing to a TRR/LRR bias on the pair itself.
+    DXY/UUP track the dollar directly (+1). Commodities & foreign-base pairs: +1."""
+    t = (ticker or "").upper().replace("=X", "")
+    if t in ("DX-Y.NYB", "DXY", "UUP", "USD"):
+        return 1
+    if t.startswith("USD") and len(t) >= 6:   # USDJPY, USDCAD, USDCHF, ...
+        return -1
+    return 1
+
+
 def _cot_narrative(cot: dict, ticker: str) -> str:
     """COT data interpretation for Forex/Commodities."""
     if not cot: return ""
@@ -342,10 +366,15 @@ def _cot_narrative(cot: dict, ticker: str) -> str:
     if nc_net is not None:
         try:
             nn = float(nc_net)
-            if nn > 0:
-                parts.append(f"**Non-commercial NET LONG: {nn:+,.0f}** contracts (large specs bullish)")
+            pol = _cot_pair_polarity(ticker)
+            raw = "NET LONG" if nn > 0 else "NET SHORT"
+            specs = "bullish" if nn > 0 else "bearish"
+            if pol < 0:
+                pair_imp = "BEARISH" if nn > 0 else "BULLISH"
+                parts.append(f"**Non-commercial {raw}: {nn:+,.0f}** (large specs {specs} the foreign ccy) "
+                             f"→ {pair_imp} for {ticker} — USD-base pair, COT is on the quote ccy (inverted).")
             else:
-                parts.append(f"**Non-commercial NET SHORT: {nn:+,.0f}** contracts (large specs bearish)")
+                parts.append(f"**Non-commercial {raw}: {nn:+,.0f}** contracts (large specs {specs})")
         except (TypeError, ValueError): pass
 
     if nc_chg is not None:
@@ -646,9 +675,15 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
         if cot and cot.get("noncomm_net") is not None:
             net = cot.get("noncomm_net")
             chg = cot.get("noncomm_change_wow")
-            parts.append(f"📋 **COT confirm:** non-comm net {net:+,.0f}"
+            pol = _cot_pair_polarity(ticker)
+            eff = (net or 0) * pol               # pair-aligned net (inverts USD-base pairs)
+            inv = " (inverted: USD-base pair)" if pol < 0 else ""
+            align = ('Selaras sama long bias' if (bull and eff > 0)
+                     else 'Selaras sama short bias' if (bear and eff < 0)
+                     else 'Hati-hati: COT divergence dari TRR/LRR')
+            parts.append(f"📋 **COT confirm:** non-comm net {net:+,.0f}{inv}"
                          + (f" (Δ {chg:+,.0f} WoW)" if chg is not None else "")
-                         + f". {'Selaras sama long bias' if (bull and (net or 0) > 0) else 'Selaras sama short bias' if (bear and (net or 0) < 0) else 'Hati-hati: COT divergence dari TRR/LRR'}.")
+                         + f". {align}.")
         else:
             parts.append("📋 COT belum ter-fetch — entry pakai TRR/LRR. (COT confirm positioning saat live.)")
 

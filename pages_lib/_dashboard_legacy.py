@@ -434,7 +434,7 @@ def _catalyst_monitor_v2(snap, sq="Q3", mq="Q2", next_q=None):
     """v44: Catalyst detail dengan proyeksi transisi + trigger ekonomi.
     Return: items + transition_projection dict."""
     items = []
-    vix_val = vix_now if 'vix_now' in globals() else 20
+    vix_val = (snap.get("vix", 20) or 20) if isinstance(snap, dict) else 20
 
     # 1. VIX
     if vix_val > 25:

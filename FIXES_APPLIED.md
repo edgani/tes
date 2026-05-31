@@ -39,3 +39,100 @@ compute (rr_map, gex_map, vanna_map, charm_map, keith_map).
 - 8 changed/new engines compiled + behavior smoke-tested (veto gates, envelope, proxy
   gate, charm imbalance, skew sign, risk-range shim shape).
 - NOT done: full Streamlit boot (needs full dep stack + FRED/Gemini keys + live server).
+
+---
+
+# SESSION 2 — RESTORE + WIRE PASS (from old macroregime.zip)
+
+The old zip supplied 20 of the 21 modules the v40 refactor had dropped. Restored
+(compiled, zero missing cascade-deps, API verified against orchestrator's call sites):
+  vix_bucket_engine, vanna_charm_flows, bottleneck_engine, odte_monitor,
+  conviction_sizing, news_nlp_engine_v3, odte_enhanced, bottleneck_discovery_v3,
+  supply_chain_graph_real, ust_auction_tracker, ihsg_specialist_v38,
+  walkforward_backtest_engine, walkforward_engine, signal_decay_engine,
+  reflexivity_coefficient, anti_fragility_engine, fractional_kelly_engine,
+  bayesian_fusion_engine, duration_hmm_engine, cri_v2_engine.
+→ Missing-module imports dropped 21 → 1 (only curated_picks_engine remains; guarded).
+
+IHSG specialist (your primary market) — was double-broken: orchestrator imported a
+missing v38 AND called `.analyze(prices)` which no version shipped. Restored v38 + added
+a defensive `analyze()` adapter mapping to the real methods (detect_goreng_phase +
+get_conglomerate_context + check_indonesia_quad), returning the exact
+{goreng_phases, conglomerate_flows, hedgeye_check} shape. Smoke-tested: detects goreng
+phases + conglomerate flows, never raises. Data file data/ihsg_conglomerates.json present.
+
+ELEVATION WIRED — confluence_scorer is now called by pages_lib/market_page_base.py:
+the picks tab has a new default sort "🎯 Confluence (regime-gated)" that ranks each
+market's tickers by the gated score (quad-fit × GEX structure × risk-range timing ×
+overlays, hard vetoes). Fully wrapped in try/except → if anything is off it silently
+falls back to the existing R/R sort (non-regressive). confluence_scorer is no longer dead.
+
+COT/OI re-audit fixes (session 2): COT forex polarity (USD-base pairs inverted),
+OI heatmap proxy scale (% instead of misleading absolute $), GEX wall regression
+(position-anchored walls for all-negative equity books).
+
+REMAINING (needs your Streamlit env to runtime-verify; I cannot boot it here):
+- First-run smoke of the wired confluence sort + restored engines with live data/keys.
+- curated_picks_engine (1 module not in old zip) — still stubbed in alpha_synthesis_v37.
+- ihsg_specialist_v39.py is now an unused orphan (harmless); delete if you want.
+- Optional: surface the confluence score as a visible column (currently drives sort only).
+
+---
+
+# SESSION 3 — DEEP SCAN (pyflakes) + ARTICLE METHODOLOGY ENCODING
+
+Deep static scan (pyflakes) across engines/components/pages/orchestrator. Findings:
+- LIVE bug fixed: pages_lib/_dashboard_legacy.py used `vix_now` via a broken globals()
+  check that ALWAYS fell back to 20 → catalyst-monitor VIX row was always "20". Now reads
+  real VIX from snap.
+- Dead-file latent bugs (NOT live → not fixed, documented): unified_supply_chain_engine.py
+  and unified_macro_engine.py have many undefined names; unified_greeks_engine.py (a v40
+  consolidation of 11 engines that was never wired in — referenced only in a comment) is
+  missing `import math`/`import pandas as pd`. These are imported nowhere so they can't
+  crash anything; fix the imports only if you ever revive the consolidated engine.
+- ~100 "f-string missing placeholders" — virtually all harmless (wasted f-prefix), not bugs.
+- The 20 restored modules: clean (no undefined-name findings).
+
+NEW ENGINE — engines/maker_framework.py (encodes the "goreng menggoreng saham" essay):
+  Detects the IDX maker ROADMAP phase (AKUMULASI → MARKUP → DISTRIBUSI) from PRICE+VOLUME
+  structure — faithful to the essay's thesis that broker-summary is *semu* and must NOT be
+  read day-to-day. Surfaces per-phase tells, the 'looks-cheap' distribution trap, an
+  action (ACCUMULATE_WITH_MAKER / RIDE_DONT_CHASE / AVOID_DISTRIBUTION), and a thought-
+  process narrative. Broker-summary, IF provided, is used ONLY for wash-circulation FLAGS
+  (net≈0 vs gross, top-buyer==top-seller, broker-buy > shares-outstanding, foreign-in-
+  small-cap=nominee) — never as a directional signal. Wired into IHSGSpecialistEngine.
+  analyze() → result["ihsg_specialist"]["maker_framework"][ticker].
+  (Self-audit caught + fixed a real bug pre-ship: deceleration was computed on cumulative
+  returns, which mislabeled steady markups as distribution; now uses per-bar pace.)
+
+CROSS-MARKET: the PRICE/VOLUME phase+trap core is market-agnostic and applies to other
+thin, maker-driven markets (US small/micro-cap, low-cap crypto). NOT wired there yet —
+awaiting your go (the IDX broksum/nominee specifics are IDX-only; the phase logic ports).
+
+---
+
+# SESSION 4 — POSITIONING DATA (forex/commodities/US) audit + 2 new engines
+
+Audit first: most of what was asked ALREADY EXISTS — did NOT rebuild:
+- US stocks: options (yfinance_options), GEX (gex_engine, spotgamma_gex_engine), greeks
+  (greeks_proxy, options_greeks_engine), charm/vanna, 0DTE — AND dark pool via
+  live_data_engine.fetch_finra_short_volume() + attach_finra_signal() + the dark-pool
+  block in rich_ticker_card (FINRA off-exchange short volume = the real free dark-pool
+  signal; plus a hook for scraped Unusual-Whales dark-pool prints).
+- Forex/Commodities: COT fully built (cftc_cot_scraper: fetch_all_reports, get_signal,
+  get_crowded_trades, institutional_flow_summary).
+
+Genuine gaps filled (2 new engines, both tested):
+- engines/fx_carry_engine.py — per-pair rate-differential (CARRY), the major FX
+  positioning driver that was missing. Uses FRED harmonized G10 long rates
+  (IRLTLT01<CC>M156N); accepts a pre-fetched fred dict OR self-fetches via FRED_API_KEY,
+  else neutral. Returns per-pair carry_diff + 3M trend + bias (STRONG_CARRY_LONG …
+  STRONG_CARRY_SHORT, in the pair's direction). Wired: result["fx_carry"] in the snapshot.
+- engines/seasonality_engine.py — calendar seasonality from price history (avg return for
+  the current month across prior years + hit-rate + bias). Fills the slot the commodity
+  structure panel already displays (was defaulted to 2.8). Wired: enriches
+  result["structure_data"][ticker] with seasonality_month/avg/hit_rate/bias.
+
+Both wired defensively (try/except, non-regressive). NOT runtime-tested live (no FRED/
+network in build env) — verified by compile + logic smoke tests (seasonality detected a
+synthetic Dec+/Sep- pattern; carry gave USDJPY STRONG_CARRY_LONG, EURUSD STRONG_CARRY_SHORT).

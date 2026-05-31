@@ -120,13 +120,17 @@ def analyze_gex(ticker, prices, vix=20.0, risk_free=0.045):
             flip_level = strike
 
     if flip_level is None:
-        flip_level = strikes[len(strikes)//2] if strikes else spot
+        # No sign change (single-regime book, common for negative-gamma equities):
+        # default the flip to the strike nearest spot rather than an arbitrary middle.
+        flip_level = min(strikes, key=lambda k: abs(k - spot)) if strikes else spot
 
-    # Call Wall: highest positive GEX strike (dealer long gamma = resistance)
-    call_wall = max(gex_by_strike.items(), key=lambda x: x[1])[0] if gex_by_strike else spot * 1.05
-
-    # Put Wall: lowest negative GEX strike (dealer short gamma = support)
-    put_wall = min(gex_by_strike.items(), key=lambda x: x[1])[0] if gex_by_strike else spot * 0.95
+    # Walls — position-anchored so they stay meaningful even for single-stock
+    # all-negative (negative-gamma) books: call wall = the dominant-GEX strike ABOVE
+    # spot, put wall = the most-negative-GEX strike BELOW spot.
+    above = {k: v for k, v in gex_by_strike.items() if k >= spot}
+    below = {k: v for k, v in gex_by_strike.items() if k <= spot}
+    call_wall = max(above.items(), key=lambda x: x[1])[0] if above else spot * 1.05
+    put_wall = min(below.items(), key=lambda x: x[1])[0] if below else spot * 0.95
 
     # Speed: rate of gamma change near spot
     near_strikes = [k for k in strikes if abs(k - spot) / spot < 0.05]
