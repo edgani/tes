@@ -9,7 +9,11 @@ Upgraded from v20.2 with:
   • Spring/Upthrust/Coiled Spring detection
   • Composite vPOC + VAH/VAL (when intraday OHLCV available)
 
-CALIBRATION VERIFIED against 4 Hedgeye public data points (avg error 0.4%):
+CALIBRATION (⚠️ IN-SAMPLE / anecdotal — NOT walk-forward validated):
+  Multipliers were tuned to match these 4 public Hedgeye prints. With only 4
+  points and no out-of-sample test, "avg error 0.4%" is a fit statistic, not
+  validation. Treat as plausible-but-unproven until OOS-tested across many
+  dates × assets (TODO: see S2 backlog).
   SPX Feb 27, 2024:  predicted 4965/5114 vs actual 4950/5119 → 0.3% / 0.1%
   SPX Apr 13, 2020:  predicted 2718/2957 vs actual 2726/2959 → 0.3% / 0.07%
   Gold Oct 16, 2025: predicted 4127/4346 vs actual 4092/4362 → 0.8% / 0.4%
@@ -373,9 +377,17 @@ def calculate_trr_lrr_v20(
     trend_mid_width = (trend_lower + trend_upper) * 0.5
     tail_mid_width = (tail_lower + tail_upper) * 0.5
 
-    trade_score = (px - basis) / max(trade_mid_width, px * 0.001)
-    trend_score = (px - basis) / max(trend_mid_width, px * 0.001)
-    tail_score = (px - basis) / max(tail_mid_width, px * 0.001)
+    # FIX S1-a: anchor phase score to each duration's MEAN, not prev-close.
+    # (px - basis) is a ~1-day move ≈ 0 vs a multi-day width → score ≈ 0 → phase
+    # always neutral → engine silently collapsed to a 21/63 MA cross. Anchoring to
+    # each duration's mean makes TRADE/TREND/TAIL phase genuinely independent.
+    anchor_trade = float(s.tail(TRADE_LEN).mean())
+    anchor_trend = float(s.tail(min(TREND_LEN, len(s))).mean())
+    anchor_tail = float(s.tail(min(TAIL_LEN, len(s))).mean())
+
+    trade_score = (px - anchor_trade) / max(trade_mid_width, px * 0.001)
+    trend_score = (px - anchor_trend) / max(trend_mid_width, px * 0.001)
+    tail_score = (px - anchor_tail) / max(tail_mid_width, px * 0.001)
 
     # Vol regime modifier (for thresholds)
     rv_base = float(pd.Series(log_ret).rolling(50).std().mean() * np.sqrt(252)) if len(log_ret) >= 50 else realized_vol
@@ -389,12 +401,26 @@ def calculate_trr_lrr_v20(
     trend_phase = _hysteresis(trend_score, eff_trend_thresh, PHASE_NEUTRAL_TREND, phase)
     tail_phase = _hysteresis(tail_score, eff_tail_thresh, PHASE_NEUTRAL_TAIL, phase)
 
-    # ATR for breakout confirmation
+    # ATR for breakout confirmation — S3-b: true ATR (H/L/C) when OHLCV is
+    # available, else an HONEST close-to-close range (old code labelled C2C 'atr').
     atr_window = min(VOL_LEN, len(s) - 1)
-    tr = pd.concat([
-        (s - s.shift(1)).abs(),
-    ], axis=1).max(axis=1)
-    atr = float(tr.tail(atr_window).mean()) if atr_window > 0 else px * 0.01
+    atr_kind = "c2c"
+    atr = float((s - s.shift(1)).abs().tail(atr_window).mean()) if atr_window > 0 else px * 0.01
+    if ohlcv is not None and len(ohlcv) >= atr_window + 1:
+        try:
+            _cmap = {c.lower(): c for c in ohlcv.columns}
+            _h = pd.to_numeric(ohlcv[_cmap["high"]], errors="coerce")
+            _l = pd.to_numeric(ohlcv[_cmap["low"]], errors="coerce")
+            _cl = pd.to_numeric(ohlcv[_cmap["close"]], errors="coerce")
+            _tr = pd.concat([(_h - _l), (_h - _cl.shift(1)).abs(),
+                             (_l - _cl.shift(1)).abs()], axis=1).max(axis=1)
+            _atr = float(_tr.tail(atr_window).mean())
+            if math.isfinite(_atr) and _atr > 0:
+                atr, atr_kind = _atr, "true_atr"
+        except Exception:
+            pass
+    if not math.isfinite(atr) or atr <= 0:
+        atr, atr_kind = px * 0.01, "fallback"
 
     # Trend breakout confirmation
     trend_break_up = px > trend_trr + 0.50 * atr
@@ -459,6 +485,7 @@ def calculate_trr_lrr_v20(
             "vasp_mult": round(vasp_mult, 4),
             "daily_vol": round(daily_vol, 6),
             "atr": round(atr, 6),
+            "atr_kind": atr_kind,
         },
         "quad_applied": current_quad,
         "bsi": bsi_data,
@@ -480,9 +507,9 @@ def _derive_signals_v20_3b(rr: Dict) -> Dict:
     trend_phase = tr["phase_state"]
     tail_phase = tl["phase_state"]
 
-    # MA-based trend bias (21v63) — used as fallback when hysteresis phase is neutral.
-    # Without this, trade/trend phase_state ≈ 0 always (since score = (px−basis)/width,
-    # and basis = prev-close → ~1-day return ≈ 0) → no longs/shorts ever fire.
+    # Safety net: fall back to 21v63 MA bias ONLY when a duration is genuinely neutral.
+    # (Phase score is now anchored to each duration's mean — see S1-a — so this rarely
+    # fires; previously it fired ALWAYS because score ≈ 0 with a prev-close basis.)
     ma_phase = rr.get("phase_code", 0)
     if trade_phase == 0:
         trade_phase = ma_phase
