@@ -54,6 +54,16 @@ def compute_signal_strength(rr: dict) -> dict:
     return {"score": 0, "label": "NEUTRAL", "detail": "Mid-range, no trend - no edge"}
 
 
+def _cur_for(market_key=None, ticker=None):
+    """Currency symbol for display: '' for forex (4-dp), 'Rp' for IHSG (.JK stocks),
+    '$' otherwise. IHSG stocks trade in Rupiah — showing '$' was a bug."""
+    if market_key == "forex":
+        return ""
+    if market_key == "ihsg" or (ticker and str(ticker).upper().endswith(".JK")):
+        return "Rp"
+    return "$"
+
+
 def _render_oi_heatmap(snap, ticker, market_key):
     """OI heatmap (open interest by strike). Uses yfinance options OI when available.
     Futures (CL=F etc) → ETF proxy (USO etc). FX → currency ETF proxy."""
@@ -218,31 +228,35 @@ def _entry_narrative(rr: dict) -> str:
     trend_trr = trend.get("trr", 0) or 0
     rr_ratio = sig.get("rr_ratio", 0) or 0
 
+    cur = _cur_for(None, rr.get("ticker"))
+    def _m(v):
+        return f"\\${(v or 0):.2f}" if cur == "$" else f"{cur}{(v or 0):.2f}"
+
     if action == "BUY_DIP":
-        return (f"🎯 **BUY ZONE NOW** — price at LRR \\${trade_lrr:.2f}. "
-                f"Take profit di TRR \\${trade_trr:.2f} (+{((trade_trr/px-1)*100):.1f}%). "
-                f"Stop loss if breaks TAIL LRR \\${tail.get('lrr', 0) or 0:.2f}. R/R: {rr_ratio:.2f}")
+        return (f"🎯 **BUY ZONE NOW** — price at LRR {_m(trade_lrr)}. "
+                f"Take profit di TRR {_m(trade_trr)} (+{((trade_trr/px-1)*100):.1f}%). "
+                f"Stop loss if breaks TAIL LRR {_m(tail.get('lrr', 0) or 0)}. R/R: {rr_ratio:.2f}")
     elif action == "ADD":
         return (f"🟢 **ADD ZONE** — lower 25% of TRADE range. "
-                f"Entry up to \\${trade_lrr + (trade_trr-trade_lrr)*0.25:.2f}. "
-                f"Trim di \\${trade_trr:.2f}. R/R: {rr_ratio:.2f}")
+                f"Entry up to {_m(trade_lrr + (trade_trr-trade_lrr)*0.25)}. "
+                f"Trim di {_m(trade_trr)}. R/R: {rr_ratio:.2f}")
     elif action == "HOLD":
         return (f"⚪ **HOLD** — mid range. Wait. "
-                f"Add jika turun ke \\${trade_lrr:.2f}, trim jika naik ke \\${trade_trr:.2f}.")
+                f"Add jika turun ke {_m(trade_lrr)}, trim jika naik ke {_m(trade_trr)}.")
     elif action == "TRIM":
         return (f"🟡 **TRIM ZONE** — upper 25% of TRADE range. "
-                f"Reduce exposure now. Re-add di \\${trade_lrr:.2f}.")
+                f"Reduce exposure now. Re-add di {_m(trade_lrr)}.")
     elif action == "TRIM_RIP":
-        return (f"🟠 **TAKE PROFIT** — price at/above TRR \\${trade_trr:.2f}. "
-                f"Lock in gains. Wait pullback to \\${trade_lrr:.2f}.")
+        return (f"🟠 **TAKE PROFIT** — price at/above TRR {_m(trade_trr)}. "
+                f"Lock in gains. Wait pullback to {_m(trade_lrr)}.")
     elif action == "SHORT_RIP":
-        return (f"🔴 **SHORT ZONE** — bearish trend, price at TRR \\${trade_trr:.2f}. "
-                f"Cover di LRR \\${trade_lrr:.2f}. R/R: {rr_ratio:.2f}")
+        return (f"🔴 **SHORT ZONE** — bearish trend, price at TRR {_m(trade_trr)}. "
+                f"Cover di LRR {_m(trade_lrr)}. R/R: {rr_ratio:.2f}")
     elif action == "COVER":
-        return (f"🟣 **COVER ZONE** — bearish, price at LRR \\${trade_lrr:.2f}. "
+        return (f"🟣 **COVER ZONE** — bearish, price at LRR {_m(trade_lrr)}. "
                 f"Lock short gains.")
     elif action == "WATCH":
-        return f"👀 **WATCH** — wait di sini. Setup unclear. LRR \\${trade_lrr:.2f} / TRR \\${trade_trr:.2f}"
+        return f"👀 **WATCH** — wait di sini. Setup unclear. LRR {_m(trade_lrr)} / TRR {_m(trade_trr)}"
     return ""
 
 
@@ -597,7 +611,7 @@ def compute_optimal_entry(rr: dict, snap: dict, market_key: str, ticker: str) ->
         parts.append(keith_note)
     is_fx = market_key == "forex"
     fmt = ".4f" if is_fx else ",.2f"
-    cur = "" if is_fx else "$"
+    cur = _cur_for(market_key, ticker)
     def _f(v): return f"{cur}{format(v, fmt)}"
 
     if bull:
@@ -779,7 +793,7 @@ def _render_targets(rr: dict, px: float, market_key: str):
 
     is_fx = market_key == "forex"
     fmt = ".4f" if is_fx else ",.2f"
-    cur_sym = "" if is_fx else "$"
+    cur_sym = "" if is_fx else ("Rp" if market_key == "ihsg" else "$")
 
     if nearest and px:
         d_near = (nearest/px - 1) * 100
@@ -872,7 +886,14 @@ def render_rich_ticker(
             st.markdown(head)
             st.caption(f"**Quality {quality}** · Phase **{phase}** · Formation {sig.get('formation','NEUTRAL')}")
         with hc2:
-            st.metric("Price", f"\\${px:,.2f}" if market_key != "forex" else f"{px:.4f}")
+            _cur = _cur_for(market_key, ticker)
+            if market_key == "forex":
+                _pv = f"{px:.4f}"
+            elif _cur == "Rp":
+                _pv = f"Rp{px:,.2f}"
+            else:
+                _pv = f"\\${px:,.2f}"
+            st.metric("Price", _pv)
         with hc3:
             st.markdown(
                 f"<div style='background:{color};color:#0D1117;padding:8px 12px;"
@@ -923,18 +944,21 @@ def render_rich_ticker(
             trade = rr.get("trade", {}); trend = rr.get("trend", {}); tail = rr.get("tail", {})
             st.markdown("**📊 TRR/LRR v20.3b (Hedgeye-style)**")
             rrc1, rrc2, rrc3 = st.columns(3)
+            _c = _cur_for(market_key, ticker)
+            def _rrm(v):
+                return f"\\${(v or 0):.2f}" if _c == "$" else f"{_c}{(v or 0):.2f}"
             with rrc1:
                 st.caption("**TRADE (15d)**")
-                st.caption(f"LRR: \\${(trade.get('lrr') or 0):.2f}")
-                st.caption(f"TRR: \\${(trade.get('trr') or 0):.2f}")
+                st.caption(f"LRR: {_rrm(trade.get('lrr'))}")
+                st.caption(f"TRR: {_rrm(trade.get('trr'))}")
             with rrc2:
                 st.caption("**TREND (63d)**")
-                st.caption(f"LRR: \\${(trend.get('lrr') or 0):.2f}")
-                st.caption(f"TRR: \\${(trend.get('trr') or 0):.2f}")
+                st.caption(f"LRR: {_rrm(trend.get('lrr'))}")
+                st.caption(f"TRR: {_rrm(trend.get('trr'))}")
             with rrc3:
                 st.caption("**TAIL (3yr)**")
-                st.caption(f"LRR: \\${(tail.get('lrr') or 0):.2f}")
-                st.caption(f"TRR: \\${(tail.get('trr') or 0):.2f}")
+                st.caption(f"LRR: {_rrm(tail.get('lrr'))}")
+                st.caption(f"TRR: {_rrm(tail.get('trr'))}")
             st.caption(f"🧭 {_phase_narrative(rr)}")
             st.markdown("---")
 
@@ -1177,7 +1201,7 @@ def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
                 fs = inst.get("flow_score", 0)
                 bias = inst.get("bias", "NEUTRAL")
                 if bias == "BULLISH" or fs > 0:
-                    score += 1; signals.append(f"🏦 Institutional flow {bias} (score {fs}) — CTA/collar supportive")
+                    score += 1; signals.append(f"🏦 Institutional flow {bias} (score {fs}, price-based proxy)")
                 elif bias == "BEARISH" or fs < 0:
                     score -= 1; signals.append(f"🏦 Institutional flow {bias} (score {fs})")
         except Exception:
@@ -1280,7 +1304,8 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
     dp_acc = has_real_opts and ((str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bullish","accumulation")) or ((dp.get("prints_below_pct") or od.get("dp_below_pct") or 0) > 60))
     dp_dist = has_real_opts and ((str(dp.get("net_sentiment") or od.get("dark_pool_sentiment") or "").lower() in ("bearish","distribution")) or (0 < (dp.get("prints_below_pct") or od.get("dp_below_pct") or 100) < 40))
 
-    def f(v): return f"${v:,.2f}"   # plain $ — rendered inside HTML div (no LaTeX)
+    _cur = _cur_for(market_key, ticker)
+    def f(v): return f"{_cur}{v:,.2f}"   # market-aware symbol; rendered inside HTML div
     def pct(v): return f"{(v/px-1)*100:+.1f}%"
 
     # ── INSTRUMENT + DIRECTION ──
