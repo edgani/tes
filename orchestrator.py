@@ -2627,6 +2627,19 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
                 logger.warning(f"IHSG specialist failed: {e}")
                 result["errors"].append(f"ihsg_specialist: {e}")
 
+        # Bandarmetrics (LPM/DTE/VolRotation/Intensity) — needs OHLCV+Volume (Close-only insufficient).
+        # Defensive: fetches OHLCV for IHSG tickers only; absent if fetch/engine fails (non-breaking).
+        try:
+            from engines.bandarmetrics_engine import analyze_universe as _bm_universe
+            from data.loader import load_ohlcv as _load_ohlcv
+            _ihsg_t = [t for t in (prices or {}) if str(t).upper().endswith(".JK")]
+            if _ihsg_t:
+                _ohlcv = _load_ohlcv(_ihsg_t, days=756)
+                if _ohlcv:
+                    result["bandarmetrics"] = _bm_universe(_ohlcv)
+        except Exception as e:
+            logger.debug(f"bandarmetrics skipped: {e}")
+
         if _V39_TIER_S.get("chain_reaction"):
             _safe_progress(progress_cb, "Running chain reaction engine...", 0.756)
             try:

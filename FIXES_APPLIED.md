@@ -262,3 +262,20 @@ Greeks numeric chart skipped (vanna/charm not exposed as numbers; the regime is 
 main GEX chart). IHSG broker-flow and crypto on-chain charts intentionally NOT built — they need
 data the user doesn't have (paid broker API) or that's too sparse; empty shells would look broken.
 All verified via full plotly serialization + data-gating (return None when empty).
+
+---
+
+# SESSION 12 — Bandarmetrics (OHLCV) engine + OHLCV loader + IHSG chart
+
+- data/loader.py: load_ohlcv(tickers) — fetches FULL OHLCV+Volume (load_prices kept Close only,
+  so volume-based engines couldn't run). Parallel/non-breaking; flattens yfinance MultiIndex.
+- engines/bandarmetrics_engine.py (NEW): LPM (cumulative VWAP-delta, EMA), DTE/Real-DTE (ADV),
+  Volume Rotation (efficiency green/yellow/red), Intensity (LPM-ROC z-spikes), rule-based Wyckoff
+  phase, 0-100 composite + series for charting. From the reverse-engineered formulas. HONEST: phase/
+  score are unvalidated heuristics (synthetic test was noisy); foreign-flow + broker clustering need
+  IDX broker data the user lacks. Series/formulas are the solid part.
+- orchestrator: result["bandarmetrics"] — fetches OHLCV for .JK tickers + runs the engine (defensive).
+- components/rich_ticker_card.py: _bandarmetrics_chart — DARK 3-panel (Price+AvgCost / LPM filled /
+  Intensity bars), rendered on IHSG cards with an honest "read the pattern, not the raw score" caption.
+NOTE: TradingView-API (Mathieu2301) NOT wired — Node.js + ToS/ban risk + untestable here; advised
+additive Python tvdatafeed for missing symbols instead of replacing yfinance.
