@@ -251,6 +251,43 @@ def _cot_bar(cot):
     return fig
 
 
+def _bandarmetrics_chart(bm, ticker, cur="Rp"):
+    """DARK 3-panel BM-style chart: Price (+AvgCost) / LPM (filled) / Intensity bars."""
+    from plotly.subplots import make_subplots
+    import plotly.graph_objects as go
+    s = (bm or {}).get("series") or {}
+    idx, price, lpm, inten = s.get("index"), s.get("price"), s.get("lpm"), s.get("intensity")
+    if not (idx and price and lpm) or len(idx) < 10:
+        return None
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.3, 0.2],
+                        vertical_spacing=0.045,
+                        subplot_titles=("Price", "LPM — liquidity pressure", "Intensity"))
+    fig.add_trace(go.Scatter(x=idx, y=price, mode="lines", line={"color": "#e6edf3", "width": 1.5},
+                             name="Price"), row=1, col=1)
+    if bm.get("avgcost"):
+        fig.add_hline(y=bm["avgcost"], line={"color": "#f0b429", "width": 1, "dash": "dot"}, row=1, col=1,
+                      annotation_text=f"AvgCost {cur}{bm['avgcost']:,.0f}",
+                      annotation_font={"size": 8, "color": "#f0b429"})
+    up = (bm.get("lpm_slope_20", 0) or 0) > 0
+    fig.add_trace(go.Scatter(x=idx, y=lpm, mode="lines",
+                             line={"color": "#3FB950" if up else "#F85149", "width": 1.5},
+                             fill="tozeroy",
+                             fillcolor="rgba(63,185,80,0.12)" if up else "rgba(248,81,73,0.12)",
+                             name="LPM"), row=2, col=1)
+    if inten:
+        fig.add_trace(go.Bar(x=idx, y=inten, marker_color="#A371F7", name="Intensity"), row=3, col=1)
+    fig.update_layout(height=430, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
+                      margin={"t": 42, "b": 18, "l": 50, "r": 12}, bargap=0.1,
+                      title={"text": f"{ticker} — Bandarmetrics (LPM · Intensity)",
+                             "font": {"size": 13, "color": "#c9d1d9"}})
+    fig.update_xaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
+    fig.update_yaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
+    for ann in fig.layout.annotations:
+        ann.font.size = 10; ann.font.color = "#c9d1d9"
+    return fig
+
+
 def _render_oi_heatmap(snap, ticker, market_key):
     """OI heatmap (open interest by strike). Uses yfinance options OI when available.
     Futures (CL=F etc) → ETF proxy (USO etc). FX → currency ETF proxy."""
@@ -1163,6 +1200,24 @@ def render_rich_ticker(
                     for _col, _f in zip(_cols, _figs):
                         with _col:
                             st.plotly_chart(_f, width='stretch', config={"displayModeBar": False})
+            except Exception:
+                pass
+
+            # ── IHSG bandarmetrics chart (LPM · Intensity) — needs OHLCV (loaded for .JK) ──
+            try:
+                if market_key == "ihsg":
+                    _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
+                    if _bm.get("ok"):
+                        _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
+                        if _bfig is not None:
+                            st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
+                            st.caption(
+                                f"📊 **Bandarmetrics (OHLCV approx):** LPM {'naik' if _bm.get('lpm_rising') else 'turun'} "
+                                f"(slope {_bm.get('lpm_slope_20', 0):+,.0f}) · DTE {_bm.get('dte')} (real {_bm.get('real_dte')}) · "
+                                f"rotation {_bm.get('rotation')} · phase {_bm.get('phase')} · score {_bm.get('score')}/100. "
+                                f"⚠️ Heuristik dari OHLCV — foreign-flow + broker clustering butuh data IDX (lu gak punya). "
+                                f"Baca **polanya** (LPM naik pas harga flat = akumulasi senyap; Intensity spike = sebelum gerak), "
+                                f"jangan telan phase/score mentah (belom tervalidasi).")
             except Exception:
                 pass
             st.markdown("---")
