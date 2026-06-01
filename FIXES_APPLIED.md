@@ -201,3 +201,18 @@ HONEST CONSTRAINTS (physical, not laziness):
 - pages_lib/dashboard.py: _render_quad_explainer panel rendered after the legacy dashboard
   (fully guarded; never breaks the page). Stage badge (RIPE/BUILDING/DORMANT), why, what-changes,
   where-it-goes + action, dual playbook (now vs implied-next), caveat expander, Ricky scenarios.
+
+---
+
+# SESSION 8 — Bias Guard / Perspektif (debiasing layer)
+
+- engines/perspective_engine.py (NEW): bias_guard(quad_explainer, gip, vix) embeds the
+  cognitive-debiasing playbook (Kahneman/Tversky + consider-an-alternative) into the macro
+  call: STEELMAN the opposite, OUTSIDE-VIEW/base-rate caveat (model confidence = hypothesis
+  while weights un-validated), context-tuned ACTIVE-BIAS watchlist (confirmation, overconfidence,
+  recency, herding, anchoring, loss-aversion; +panic if VIX>28), and a PRE-MORTEM (likeliest
+  reason the call fails). Verified on the Q3->Q2 RIPE call.
+- Wired result["perspective"] in orchestrator after quad_explainer; rendered as a collapsible
+  "🪞 Bias Guard" panel under the Quad Decoder on the dashboard.
+NOTE for user: chain-reaction setups (Front-Run tabs + Themes causal chains) and multi-domain
+bottlenecks (Power Grid / Uranium / Defense / Fiscal, not just AI) ALREADY exist in-app.

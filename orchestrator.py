@@ -2268,6 +2268,13 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         except Exception as e:
             logger.debug(f"quad_explainer skipped: {e}")
 
+        try:
+            from engines.perspective_engine import bias_guard
+            _vix_bg = locals().get("vix_last") or locals().get("vix_now")
+            result["perspective"] = bias_guard(result.get("quad_explainer"), gip, vix=_vix_bg)
+        except Exception as e:
+            logger.debug(f"perspective skipped: {e}")
+
         # ---- News NLP v3 ----
         _safe_progress(progress_cb, "News NLP v3...", 0.66)
         try:

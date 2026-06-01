@@ -95,6 +95,25 @@ def _render_quad_explainer(snap: dict):
     else:
         st.caption("📚 Belum ada skenario Ricky yang nge-match quad/transisi ini.")
 
+    _render_bias_guard(snap)
+
+
+def _render_bias_guard(snap: dict):
+    """🪞 Bias Guard — steelman the opposite, base rate, active biases, pre-mortem."""
+    bg = snap.get("perspective") or {}
+    if not bg or not bg.get("ok"):
+        return
+    st.divider()
+    with st.expander(f"🪞 Bias Guard / Perspektif — lawan view sendiri (lean: {bg.get('current_lean','')})",
+                     expanded=False):
+        st.markdown(f"**🔄 Steelman ({bg.get('opposite','')} case):** {bg.get('steelman','')}")
+        st.info(f"📏 Outside view: {bg.get('outside_view','')}")
+        st.markdown("**⚠️ Bias yang aktif sekarang (cek sebelum entry):**")
+        for b in bg.get("active_biases", []):
+            st.caption(f"• **{b['bias']}** — {b['why']} → _{b['check']}_")
+        st.markdown(f"**💀 Pre-mortem:** {bg.get('pre_mortem','')}")
+        st.caption(bg.get("note", ""))
+
 
 def _render_tier1alpha_panel(snap: dict):
     """Tier1Alpha-style 4-signal market structure — COMPACT horizontal strip at top.
