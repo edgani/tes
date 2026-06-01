@@ -216,3 +216,16 @@ HONEST CONSTRAINTS (physical, not laziness):
   "🪞 Bias Guard" panel under the Quad Decoder on the dashboard.
 NOTE for user: chain-reaction setups (Front-Run tabs + Themes causal chains) and multi-domain
 bottlenecks (Power Grid / Uranium / Defense / Fiscal, not just AI) ALREADY exist in-app.
+
+---
+
+# SESSION 9 — Quad Map (visual): 2x2 GIP grid with position + transition arrow
+
+- pages_lib/dashboard.py: _quad_map_figure(qe) — a Plotly 2x2 Hedgeye GIP map (x=inflation RoC,
+  y=growth RoC). Four colored quadrants (Q1 Goldilocks / Q2 Reflation / Q3 Stagflation / Q4
+  Deflation), a white "Structural" dot + a cyan "Monthly/leading" dot placed in their quads, and
+  a dashed amber arrow toward the implied-next quad when a transition is forming. Rendered at the
+  top of the Quad Decoder panel with a plain-language "cara baca" caption. Replaces scattered text
+  with one canonical picture tying structural + monthly + transition together.
+  Caught + fixed a real plotly bug in testing (deprecated `titlefont` → nested `title.font`).
+  Verified via full figure serialization across transition / stable / cross-quad cases.

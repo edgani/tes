@@ -36,6 +36,66 @@ def render(snap: dict):
         st.caption(f"Quad decoder unavailable: {e}")
 
 
+_QM_CENTER = {"Q1": (-0.5, 0.5), "Q2": (0.5, 0.5), "Q3": (0.5, -0.5), "Q4": (-0.5, -0.5)}
+_QM_FILL = {"Q1": "rgba(63,185,80,0.16)", "Q2": "rgba(210,153,34,0.16)",
+            "Q3": "rgba(248,81,73,0.15)", "Q4": "rgba(88,166,255,0.15)"}
+_QM_NAME = {"Q1": "Q1 · Goldilocks", "Q2": "Q2 · Reflation", "Q3": "Q3 · Stagflation", "Q4": "Q4 · Deflation"}
+
+
+def _quad_map_figure(qe: dict):
+    """2×2 Hedgeye GIP map: x=inflation RoC, y=growth RoC. Plots structural + monthly
+    position and the transition arrow — the whole regime story in one picture."""
+    import plotly.graph_objects as go
+    sq = qe.get("structural_quad", "Q3")
+    mq = qe.get("monthly_quad", sq)
+    nq = (qe.get("where_it_goes", {}) or {}).get("implied_next", sq)
+
+    fig = go.Figure()
+    # quadrant backgrounds
+    rects = {"Q1": (-1, 0, 0, 1), "Q2": (0, 1, 0, 1), "Q3": (0, 1, -1, 0), "Q4": (-1, 0, -1, 0)}
+    for q, (x0, x1, y0, y1) in rects.items():
+        fig.add_shape(type="rect", x0=x0, x1=x1, y0=y0, y1=y1, line={"width": 0},
+                      fillcolor=_QM_FILL[q], layer="below")
+        cx, cy = _QM_CENTER[q]
+        fig.add_annotation(x=cx, y=cy + 0.34, text=_QM_NAME[q], showarrow=False,
+                           font={"size": 10, "color": "#8b949e"})
+    # zero axes
+    fig.add_shape(type="line", x0=0, x1=0, y0=-1, y1=1, line={"color": "#30363d", "width": 1})
+    fig.add_shape(type="line", x0=-1, x1=1, y0=0, y1=0, line={"color": "#30363d", "width": 1})
+
+    sx, sy = _QM_CENTER.get(sq, (0.5, -0.5))
+    mx, my = _QM_CENTER.get(mq, (sx, sy))
+    if (sx, sy) == (mx, my):  # same quad → small offset so both dots are visible
+        mx, my = mx + 0.12, my + 0.12
+        sx, sy = sx - 0.12, sy - 0.12
+    # projected path toward implied-next quad (dashed) if it differs from structural
+    if nq != sq:
+        nx, ny = _QM_CENTER.get(nq, (mx, my))
+        fig.add_annotation(x=nx, y=ny, ax=sx, ay=sy, xref="x", yref="y", axref="x", ayref="y",
+                           showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=2,
+                           arrowcolor="#f0b429", opacity=0.8)
+    fig.add_trace(go.Scatter(x=[sx], y=[sy], mode="markers+text", text=["Structural"],
+                             textposition="bottom center", textfont={"color": "#e6edf3", "size": 11},
+                             marker={"size": 18, "color": "#e6edf3", "line": {"color": "#0d1117", "width": 2}},
+                             hovertemplate=f"Structural: {sq}<extra></extra>", showlegend=False))
+    fig.add_trace(go.Scatter(x=[mx], y=[my], mode="markers+text", text=["Monthly (leading)"],
+                             textposition="top center", textfont={"color": "#39d0d8", "size": 11},
+                             marker={"size": 14, "color": "#39d0d8", "line": {"color": "#0d1117", "width": 2}},
+                             hovertemplate=f"Monthly: {mq}<extra></extra>", showlegend=False))
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
+        margin={"t": 10, "b": 34, "l": 44, "r": 10}, height=300, showlegend=False,
+        xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
+                         "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
+               "zeroline": False, "showgrid": False, "tickvals": []},
+        yaxis={"title": {"text": "← Growth ↓      Growth (RoC)      Growth ↑ →",
+                         "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
+               "zeroline": False, "showgrid": False, "tickvals": []},
+    )
+    return fig
+
+
 def _render_quad_explainer(snap: dict):
     """🧭 Quad Decoder — why this quad, what changes it, where it goes, + Ricky scenarios."""
     qe = snap.get("quad_explainer") or {}
@@ -55,6 +115,15 @@ def _render_quad_explainer(snap: dict):
                 unsafe_allow_html=True)
     c2.metric("Structural", qe.get("structural_quad", "?"), qe.get("structural_name", ""))
     c3.metric("Monthly (leading)", qe.get("monthly_quad", "?"), qe.get("monthly_name", ""))
+
+    try:
+        st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
+        st.caption("🗺️ **Cara baca:** sumbu X = inflasi (rate-of-change), sumbu Y = growth. "
+                   "Titik putih = posisi **structural** (lambat), cyan = **monthly/leading** (cepat). "
+                   "Panah kuning = arah transisi yang lagi kebentuk. Kalau dua titik beda kuadran → "
+                   "horizon cepat udah turn duluan = sinyal awal.")
+    except Exception:
+        pass
 
     st.markdown(f"**Kenapa:** {qe.get('why','')}")
 
