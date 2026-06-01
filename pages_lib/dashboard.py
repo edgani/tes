@@ -30,6 +30,71 @@ def render(snap: dict):
             st.code(traceback.format_exc())
         _fallback_dashboard(snap)
 
+    try:
+        _render_quad_explainer(snap)
+    except Exception as e:
+        st.caption(f"Quad decoder unavailable: {e}")
+
+
+def _render_quad_explainer(snap: dict):
+    """🧭 Quad Decoder — why this quad, what changes it, where it goes, + Ricky scenarios."""
+    qe = snap.get("quad_explainer") or {}
+    if not qe or not qe.get("ok"):
+        return
+
+    st.divider()
+    st.markdown("#### 🧭 Quad Decoder — kenapa, apa yang ngubah, ke mana")
+
+    wig = qe.get("where_it_goes", {})
+    stage = wig.get("stage", "—")
+    color = {"RIPE": "#cf222e", "BUILDING": "#bf8700", "DORMANT": "#1a7f37"}.get(stage, "#57606a")
+    c1, c2, c3 = st.columns([1.1, 1, 1])
+    c1.markdown(f"<div style='background:{color};color:white;padding:8px;border-radius:6px;"
+                f"text-align:center;font-weight:700'>Transition: {stage}<br>"
+                f"<span style='font-size:0.9rem'>{wig.get('label','')}</span></div>",
+                unsafe_allow_html=True)
+    c2.metric("Structural", qe.get("structural_quad", "?"), qe.get("structural_name", ""))
+    c3.metric("Monthly (leading)", qe.get("monthly_quad", "?"), qe.get("monthly_name", ""))
+
+    st.markdown(f"**Kenapa:** {qe.get('why','')}")
+
+    wc = qe.get("what_changes", [])
+    if wc:
+        st.markdown("**Apa yang ngubah quad:**")
+        for w in wc:
+            st.markdown(f"- Kalau **{w['trigger']}** → **{w['to']}** ({w['to_name']})")
+
+    if wig.get("summary"):
+        st.markdown(f"**Ke mana:** {wig['summary']}")
+    if wig.get("action_hint"):
+        st.info(f"🎯 {wig['action_hint']}")
+
+    pb = qe.get("playbook", {})
+    cur, nxt = pb.get("current", {}), pb.get("next", {})
+    if cur:
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            st.caption(f"**Playbook {qe.get('structural_quad','')} (sekarang)**")
+            st.caption(f"🟢 Strong: {cur.get('strong','')}")
+            st.caption(f"🔴 Weak: {cur.get('weak','')}")
+        with pc2:
+            if nxt and wig.get("implied_next") != qe.get("structural_quad"):
+                st.caption(f"**Playbook {wig.get('implied_next','')} (kalau transisi kejadian)**")
+                st.caption(f"🟢 Strong: {nxt.get('strong','')}")
+                st.caption(f"🔴 Weak: {nxt.get('weak','')}")
+        with st.expander("⚠️ Kenapa 'strong' belom tentu strong (caveat)", expanded=False):
+            for cav in pb.get("caveats", []):
+                st.caption(f"• {cav}")
+
+    scen = qe.get("scenarios", [])
+    if scen:
+        st.markdown(f"**📚 Skenario Ricky relevan ({len(scen)}):**")
+        for s in scen:
+            tick = " · ".join(s.get("tickers", [])) if s.get("tickers") else ""
+            st.caption(f"**{s['title']}** — _{s.get('signal','')}_ {('· ' + tick) if tick else ''}")
+    else:
+        st.caption("📚 Belum ada skenario Ricky yang nge-match quad/transisi ini.")
+
 
 def _render_tier1alpha_panel(snap: dict):
     """Tier1Alpha-style 4-signal market structure — COMPACT horizontal strip at top.

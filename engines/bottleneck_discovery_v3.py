@@ -2,6 +2,7 @@
 Deep bottleneck detection: supply chain, capacity constraints, margin pressure, order book analysis.
 """
 import logging, math
+import pandas as pd
 from typing import Dict, List
 from datetime import datetime
 

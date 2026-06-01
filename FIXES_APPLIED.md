@@ -169,3 +169,35 @@ HONEST CONSTRAINTS (physical, not laziness):
     sandbox (no market-data network here). Engine logic proven on synthetic.
   - The FORWARD TEST tests the FUTURE — it cannot produce results instantly; the logger
     accumulates a real track record over calendar days as the app runs.
+
+---
+
+# SESSION 6 — bottleneck import bug + Treasury liquidity source + REAL transition engine
+
+- engines/bottleneck_discovery_v3.py: used `pd` with pandas imported only locally (line 73)
+  -> module-level `import pandas as pd`. Fixed a live module that silently failed at line 158.
+  Re-scanned all 20 restored modules: clean.
+- engines/treasury_liquidity.py (NEW, free/no-key): US Treasury fiscaldata TGA + NY Fed RRP/SOFR
+  + net-liquidity (Fed BS - TGA - RRP) -> RISK_ON/NEUTRAL/RISK_OFF. Wired result["liquidity"].
+  Parse logic verified on mock payloads. Fills the stubbed UST tracker conceptually.
+- engines/regime_transition_engine.py: REPLACED 18-line broken stub. The orchestrator called it
+  with 4 args while the stub took 1 -> TypeError every run -> regime_transition was ALWAYS empty
+  (feature dead). New engine = inflection/ripeness detector built from GIP's existing signals
+  (monthly vs structural quad, flip_hazard, growth/inflation acceleration, feature ROC drivers):
+  stages DORMANT -> BUILDING -> RIPE -> (CONFIRMED). RIPE = leading horizon turned, structural
+  not yet = the front-run window. Call-site fixed to pass the gip object. Verified across stages.
+
+---
+
+# SESSION 7 — Quad Decoder panel (why / what-changes / where) + Ricky scenarios per quad
+
+- engines/quad_explainer.py (NEW): explain_quad(gip, transition, narrative_module) → data-driven
+  WHY (growth/inflation direction + driver features), WHAT CHANGES IT (the two adjacent-quad
+  triggers via quad coordinates), WHERE IT GOES (from regime_transition ripeness stage +
+  action hint), per-quad strong/weak playbook + honest caveats (crowding/GEX/divergence/bandar/
+  liquidity), and the Ricky2212 narratives matching the current quad OR the transition label
+  (e.g. Q3->Q2). Verified end-to-end on the real Q3-structural/Q2-monthly divergence.
+- Wired result["quad_explainer"] in orchestrator after regime_transition.
+- pages_lib/dashboard.py: _render_quad_explainer panel rendered after the legacy dashboard
+  (fully guarded; never breaks the page). Stage badge (RIPE/BUILDING/DORMANT), why, what-changes,
+  where-it-goes + action, dual playbook (now vs implied-next), caveat expander, Ricky scenarios.

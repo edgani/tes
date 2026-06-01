@@ -1987,6 +1987,11 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
             result["fx_carry"] = analyze_fx_carry(fred=fred)
         except Exception as e:
             logger.debug(f"fx_carry skipped: {e}")
+        try:
+            from engines.treasury_liquidity import analyze_liquidity
+            result["liquidity"] = analyze_liquidity(fred=fred)
+        except Exception as e:
+            logger.debug(f"liquidity skipped: {e}")
         quad = getattr(gip, "structural_quad", "Q3")
         monthly_quad = getattr(gip, "monthly_quad", "Q2")
         gip_features = getattr(gip, "features", {})
@@ -2249,11 +2254,19 @@ def run_orchestrator(progress_cb=None, use_cache: bool = True, max_age_hours: fl
         # ---- Regime Transition ----
         _safe_progress(progress_cb, "Regime transition...", 0.64)
         try:
-            regime_transition = run_regime_transition(prices, fred, quad, getattr(gip, "structural_probs", {}) if gip else {})
+            regime_transition = run_regime_transition(gip, prices, fred)
             result["regime_transition"] = regime_transition
         except Exception as e:
             logger.debug(f"Regime transition failed: {e}")
             result["errors"].append(f"regime_transition: {e}")
+            regime_transition = {}
+
+        try:
+            from engines.quad_explainer import explain_quad
+            from config import narrative_universe as _nu
+            result["quad_explainer"] = explain_quad(gip, regime_transition, _nu)
+        except Exception as e:
+            logger.debug(f"quad_explainer skipped: {e}")
 
         # ---- News NLP v3 ----
         _safe_progress(progress_cb, "News NLP v3...", 0.66)
