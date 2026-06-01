@@ -166,6 +166,8 @@ def analyze_gex(ticker, prices, vix=20.0, risk_free=0.045):
         "label": label,
         "color": color,
         "expiry": expiry,
+        "strikes": [round(float(k), 2) for k in strikes],
+        "gex_by_strike": [round(float(v), 0) for v in gex_values],
         "source": "YF_OPTIONS"
     }
 

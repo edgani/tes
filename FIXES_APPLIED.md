@@ -229,3 +229,36 @@ bottlenecks (Power Grid / Uranium / Defense / Fiscal, not just AI) ALREADY exist
   with one canonical picture tying structural + monthly + transition together.
   Caught + fixed a real plotly bug in testing (deprecated `titlefont` → nested `title.font`).
   Verified via full figure serialization across transition / stable / cross-quad cases.
+
+---
+
+# SESSION 10 — Unified DARK GEX + Risk-Range chart (SpotGamma-style) on ticker cards
+
+- engines/gex_engine.py: YF_OPTIONS return now exposes per-strike data (strikes + gex_by_strike)
+  so the chart can draw GEX bars + an aggregate cumulative curve (was computed then discarded).
+- components/rich_ticker_card.py: _gex_levels_chart(ticker, px, rr, opts, cur) — one DARK chart on
+  a price x-axis combining: GEX-by-strike bars (green +gamma / orange -gamma), aggregate gamma curve
+  (secondary y), positive/negative gamma shaded regions split at the gamma flip, put/call walls +
+  gamma flip + max pain vertical lines, TRADE/TREND/TAIL bands, and Entry/Target/SL as X-markers.
+  Degrades gracefully: no options data → bands + last price + entry/target/SL still drawn (futures-
+  proxy/forex/IHSG); nothing usable → returns None. Rendered at the top of each card's detail
+  expander with a plain-language "cara baca" caption. Verified via full plotly serialization
+  (full / degraded / empty cases).
+- Quad map markers already differentiated (circle-open=Structural, X=Monthly) + color — left as is.
+NOTE: companion charts (vol skew, put/call ratio, greeks mini, expected move; per-market on-chain /
+COT / broker) intentionally deferred — cramming all into one chart would kill the clarity that makes
+the SpotGamma reference readable.
+
+---
+
+# SESSION 11 — Companion mini-charts (data-gated) under the GEX chart
+
+components/rich_ticker_card.py — three compact DARK charts rendered in a row below the main
+GEX+levels chart in each card's detail expander, each shown ONLY when its data exists:
+- _expected_move_chart(px, em%, target, entry) — ±1σ/±2σ cone vs target distance (options tickers).
+- _pc_oi_chart(opts) — Put/Call OI bars + P/C ratio in title (options tickers).
+- _cot_bar(cot) — non-commercial (specs) vs commercial (hedgers) net positioning (forex/commodities).
+Greeks numeric chart skipped (vanna/charm not exposed as numbers; the regime is already on the
+main GEX chart). IHSG broker-flow and crypto on-chain charts intentionally NOT built — they need
+data the user doesn't have (paid broker API) or that's too sparse; empty shells would look broken.
+All verified via full plotly serialization + data-gating (return None when empty).

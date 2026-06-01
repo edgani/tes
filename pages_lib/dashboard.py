@@ -76,12 +76,14 @@ def _quad_map_figure(qe: dict):
                            arrowcolor="#f0b429", opacity=0.8)
     fig.add_trace(go.Scatter(x=[sx], y=[sy], mode="markers+text", text=["Structural"],
                              textposition="bottom center", textfont={"color": "#e6edf3", "size": 11},
-                             marker={"size": 18, "color": "#e6edf3", "line": {"color": "#0d1117", "width": 2}},
-                             hovertemplate=f"Structural: {sq}<extra></extra>", showlegend=False))
+                             marker={"symbol": "circle-open", "size": 22, "color": "#e6edf3",
+                                     "line": {"color": "#e6edf3", "width": 3}},
+                             hovertemplate=f"Structural (O): {sq}<extra></extra>", showlegend=False))
     fig.add_trace(go.Scatter(x=[mx], y=[my], mode="markers+text", text=["Monthly (leading)"],
                              textposition="top center", textfont={"color": "#39d0d8", "size": 11},
-                             marker={"size": 14, "color": "#39d0d8", "line": {"color": "#0d1117", "width": 2}},
-                             hovertemplate=f"Monthly: {mq}<extra></extra>", showlegend=False))
+                             marker={"symbol": "x", "size": 18, "color": "#39d0d8",
+                                     "line": {"color": "#39d0d8", "width": 2}},
+                             hovertemplate=f"Monthly (X): {mq}<extra></extra>", showlegend=False))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},

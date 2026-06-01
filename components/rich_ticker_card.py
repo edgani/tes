@@ -64,6 +64,193 @@ def _cur_for(market_key=None, ticker=None):
     return "$"
 
 
+def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
+    """Unified DARK chart on a price x-axis: GEX-by-strike bars + aggregate gamma curve +
+    put/call walls + gamma flip + max pain + TRADE/TREND/TAIL bands + Entry/Target/SL X-marks.
+    Returns a plotly Figure, or None if there isn't enough to draw."""
+    import plotly.graph_objects as go
+    import itertools
+    try:
+        px = float(px or 0)
+    except (TypeError, ValueError):
+        px = 0.0
+    rr = rr or {}
+    opts = opts or {}
+    trade = rr.get("trade", {}) or {}; trend = rr.get("trend", {}) or {}; tail = rr.get("tail", {}) or {}
+
+    def _f(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    strikes = opts.get("strikes") or []
+    gexvals = opts.get("gex_by_strike") or []
+    cw, pw = _f(opts.get("call_wall")), _f(opts.get("put_wall"))
+    flip, mp = _f(opts.get("flip_level")), _f(opts.get("max_pain"))
+    # entry/target/stop derived from the risk-range bands (always available)
+    entry = _f(trade.get("lrr")); target = _f(trade.get("trr")); stop = _f(tail.get("lrr"))
+
+    levels = [v for v in [px, _f(trade.get("lrr")), _f(trade.get("trr")), _f(trend.get("lrr")),
+                          _f(trend.get("trr")), _f(tail.get("lrr")), _f(tail.get("trr")),
+                          cw, pw, flip, mp, entry, target, stop] if v]
+    if strikes:
+        levels += [min(strikes), max(strikes)]
+    levels = [v for v in levels if v and v > 0]
+    if len(levels) < 2:
+        return None
+    lo, hi = min(levels), max(levels)
+    pad = (hi - lo) * 0.05 or (px * 0.05) or 1.0
+    x0, x1 = lo - pad, hi + pad
+
+    fig = go.Figure()
+    # positive / negative gamma shaded regions, split at the flip
+    if flip:
+        fig.add_vrect(x0=x0, x1=flip, fillcolor="rgba(248,81,73,0.06)", line_width=0)
+        fig.add_vrect(x0=flip, x1=x1, fillcolor="rgba(63,185,80,0.06)", line_width=0)
+    # TRR/LRR bands (wide→narrow so TRADE sits on top)
+    for band, color, lbl in [(tail, "rgba(139,148,158,0.06)", "TAIL"),
+                             (trend, "rgba(88,166,255,0.07)", "TREND"),
+                             (trade, "rgba(210,153,34,0.12)", "TRADE")]:
+        l, t = _f(band.get("lrr")), _f(band.get("trr"))
+        if l and t:
+            fig.add_vrect(x0=l, x1=t, fillcolor=color, line_width=0,
+                          annotation_text=lbl, annotation_position="top left",
+                          annotation_font={"size": 9, "color": "#8b949e"})
+    # GEX bars + aggregate cumulative curve (only when real per-strike data exists)
+    if strikes and gexvals and len(strikes) == len(gexvals):
+        colors = ["#3FB950" if v >= 0 else "#F0883E" for v in gexvals]
+        fig.add_trace(go.Bar(x=strikes, y=gexvals, marker_color=colors, opacity=0.75,
+                             name="GEX by strike",
+                             hovertemplate="Strike %{x}<br>GEX %{y:,.0f}<extra></extra>"))
+        cum = list(itertools.accumulate(gexvals))
+        fig.add_trace(go.Scatter(x=strikes, y=cum, mode="lines", name="Aggregate GEX",
+                                 line={"color": "#58A6FF", "width": 2}, yaxis="y2",
+                                 hovertemplate="Strike %{x}<br>Cumulative %{y:,.0f}<extra></extra>"))
+    # vertical reference lines
+    for x, color, lbl, dash in [(px, "#3FB950", f"Last {cur}{px:,.2f}", "solid"),
+                                (flip, "#F85149", "Gamma Flip", "dot"),
+                                (cw, "#A371F7", "Call Wall", "solid"),
+                                (pw, "#A371F7", "Put Wall", "solid"),
+                                (mp, "#8B949E", "Max Pain", "dot")]:
+        if x:
+            fig.add_vline(x=x, line={"color": color, "width": 1.4, "dash": dash},
+                          annotation_text=lbl, annotation_position="top",
+                          annotation_font={"size": 9, "color": color})
+    # entry / target / stop as X markers on the baseline
+    for x, color, lbl in [(entry, "#3FB950", "Entry"), (target, "#58A6FF", "Target"), (stop, "#F85149", "SL")]:
+        if x:
+            fig.add_trace(go.Scatter(x=[x], y=[0], mode="markers+text", text=[lbl],
+                          textposition="bottom center", textfont={"size": 10, "color": color},
+                          marker={"symbol": "x", "size": 13, "color": color, "line": {"width": 2, "color": color}},
+                          showlegend=False, hovertemplate=f"{lbl} {cur}%{{x:,.2f}}<extra></extra>"))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(13,17,23,0.5)",
+        font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 11},
+        margin={"t": 34, "b": 38, "l": 52, "r": 52}, height=330,
+        legend={"orientation": "h", "y": 1.14, "x": 0, "font": {"size": 9}, "bgcolor": "rgba(0,0,0,0)"},
+        title={"text": f"{ticker} — GEX + Risk Range + Entry/Target/SL", "font": {"size": 13, "color": "#c9d1d9"}},
+        xaxis={"title": {"text": f"Price ({cur})", "font": {"size": 10, "color": "#8b949e"}},
+               "range": [x0, x1], "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}, "zeroline": False},
+        yaxis={"title": {"text": "GEX by strike", "font": {"size": 10, "color": "#8b949e"}},
+               "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}, "zeroline": True, "zerolinecolor": "#30363d"},
+        yaxis2={"title": {"text": "Aggregate", "font": {"size": 10, "color": "#8b949e"}},
+                "overlaying": "y", "side": "right", "showgrid": False, "tickfont": {"color": "#8b949e"}},
+    )
+    return fig
+
+
+def _expected_move_chart(px, em_pct, target, entry):
+    """Compact DARK expected-move cone (±1σ / ±2σ) vs target distance."""
+    import plotly.graph_objects as go
+    try:
+        em = float(em_pct)
+        px = float(px)
+    except (TypeError, ValueError):
+        return None
+    if em <= 0 or px <= 0:
+        return None
+    fig = go.Figure()
+    fig.add_hrect(y0=-em * 100, y1=em * 100, fillcolor="rgba(210,153,34,0.16)", line_width=0, layer="below")
+    fig.add_hrect(y0=-em * 200, y1=em * 200, fillcolor="rgba(248,81,73,0.07)", line_width=0, layer="below")
+    try:
+        if target and entry and float(entry) > 0:
+            dist = (float(target) - float(entry)) / float(entry) * 100
+            fig.add_hline(y=dist, line_color="#3FB950", line_dash="dash", line_width=2,
+                          annotation_text=f"Target {dist:+.1f}%", annotation_position="right",
+                          annotation_font={"size": 9, "color": "#3FB950"})
+    except (TypeError, ValueError):
+        pass
+    fig.add_trace(go.Scatter(x=[0, 1], y=[0, 0], mode="lines", line={"color": "#E6EDF3", "width": 3}, showlegend=False))
+    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
+                      margin={"t": 28, "b": 10, "l": 40, "r": 72},
+                      title={"text": "Expected move (±1σ / ±2σ)", "font": {"size": 11, "color": "#c9d1d9"}},
+                      xaxis={"showgrid": False, "showticklabels": False, "zeroline": False},
+                      yaxis={"title": {"text": "% move", "font": {"size": 9, "color": "#8b949e"}},
+                             "gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"}})
+    return fig
+
+
+def _pc_oi_chart(opts, cur="$"):
+    """Compact DARK put/call OI bars + P/C ratio in title."""
+    import plotly.graph_objects as go
+    opts = opts or {}
+    tc, tp = opts.get("total_call_oi"), opts.get("total_put_oi")
+    pc = opts.get("put_call_ratio") or opts.get("pc_ratio")
+    if not (tc or tp or pc):
+        return None
+    if pc is None and tc and tp:
+        try:
+            pc = float(tp) / float(tc) if float(tc) else None
+        except (TypeError, ValueError):
+            pc = None
+    fig = go.Figure(go.Bar(x=["Call OI", "Put OI"], y=[tc or 0, tp or 0],
+                           marker_color=["#3FB950", "#F85149"],
+                           text=[f"{(tc or 0):,.0f}", f"{(tp or 0):,.0f}"],
+                           textposition="outside", textfont={"size": 10, "color": "#E6EDF3"}))
+    title = "Put/Call OI" + (f" · P/C {pc:.2f}" if pc else "")
+    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
+                      margin={"t": 28, "b": 10, "l": 38, "r": 10},
+                      title={"text": title, "font": {"size": 11, "color": "#c9d1d9"}},
+                      xaxis={"showgrid": False, "tickfont": {"color": "#8b949e"}},
+                      yaxis={"gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}})
+    return fig
+
+
+def _cot_bar(cot):
+    """Compact DARK COT net positioning: non-commercial (specs) vs commercial (hedgers)."""
+    import plotly.graph_objects as go
+    cot = cot or {}
+    nc = (cot.get("noncomm_net") or cot.get("non_commercial_net") or
+          cot.get("noncommercial_net") or cot.get("net_position"))
+    cm = cot.get("comm_net") or cot.get("commercial_net")
+    labels, vals, colors = [], [], []
+    for v, lbl, pos_c, neg_c in [(nc, "Non-comm (specs)", "#58A6FF", "#F0883E"),
+                                 (cm, "Commercial (hedgers)", "#3FB950", "#F85149")]:
+        if v is not None:
+            try:
+                fv = float(v)
+            except (TypeError, ValueError):
+                continue
+            labels.append(lbl); vals.append(fv); colors.append(pos_c if fv >= 0 else neg_c)
+    if not vals:
+        return None
+    fig = go.Figure(go.Bar(x=labels, y=vals, marker_color=colors,
+                           text=[f"{v:+,.0f}" for v in vals], textposition="outside",
+                           textfont={"size": 10, "color": "#E6EDF3"}))
+    fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
+                      margin={"t": 28, "b": 10, "l": 42, "r": 10},
+                      title={"text": "COT net positioning", "font": {"size": 11, "color": "#c9d1d9"}},
+                      xaxis={"showgrid": False, "tickfont": {"color": "#8b949e", "size": 9}},
+                      yaxis={"gridcolor": "#21262d", "zeroline": True, "zerolinecolor": "#30363d",
+                             "tickfont": {"color": "#8b949e"}})
+    return fig
+
+
 def _render_oi_heatmap(snap, ticker, market_key):
     """OI heatmap (open interest by strike). Uses yfinance options OI when available.
     Futures (CL=F etc) → ETF proxy (USO etc). FX → currency ETF proxy."""
@@ -939,6 +1126,46 @@ def render_rich_ticker(
         # ── UNIMPORTANT DETAIL — collapsed toggle (raw greeks chain, OI heatmap,
         #    COT detail, bandar). Report above already has the actionable summary. ──
         with st.expander("🔍 Detail tambahan (raw greeks · OI heatmap · COT · bandar)", expanded=False):
+
+            _opts_c = (snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {})
+            _opts_c = _opts_c.get(ticker, {}) if isinstance(_opts_c, dict) else {}
+
+            # ── unified DARK chart: GEX + Risk Range + Entry/Target/SL (one picture) ──
+            try:
+                _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker))
+                if _fig is not None:
+                    st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
+                    st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
+                               "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
+                               "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
+                               "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
+            except Exception:
+                pass
+
+            # ── companion mini-charts (data-gated): expected move · P/C OI · COT ──
+            try:
+                _em = _opts_c.get("expected_move_pct") or _opts_c.get("expected_move")
+                _tr = rr.get("trade", {}) or {}
+                _cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
+                _cot_t = _cot_map.get(ticker, {}) if isinstance(_cot_map, dict) else {}
+                _figs = []
+                _f1 = _expected_move_chart(px, _em, _tr.get("trr"), _tr.get("lrr"))
+                if _f1 is not None:
+                    _figs.append(_f1)
+                _f2 = _pc_oi_chart(_opts_c, _cur_for(market_key, ticker))
+                if _f2 is not None:
+                    _figs.append(_f2)
+                _f3 = _cot_bar(_cot_t)
+                if _f3 is not None:
+                    _figs.append(_f3)
+                if _figs:
+                    _cols = st.columns(len(_figs))
+                    for _col, _f in zip(_cols, _figs):
+                        with _col:
+                            st.plotly_chart(_f, width='stretch', config={"displayModeBar": False})
+            except Exception:
+                pass
+            st.markdown("---")
 
             # TRR/LRR bands + phase (moved here from main view — report has the essentials)
             trade = rr.get("trade", {}); trend = rr.get("trend", {}); tail = rr.get("tail", {})
