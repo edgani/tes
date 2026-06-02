@@ -361,3 +361,23 @@ no OHLCV metric can read acquisition/insider INTENT (only the footprint).
 - pages_lib/dashboard.py: quad map height 300→230; Quad Decoder playbook + Ricky scenarios moved into
   a collapsed expander → dashboard much shorter (full 1-frame still needs a tabs restructure or content
   cuts — flagged to user).
+
+---
+
+# SESSION 17 — Hidden-accumulation filter (all markets) + dashboard tabs (1-frame) + card merge
+
+- engines/bandarmetrics_engine.py: detect_stealth_accumulation() — HIDDEN accumulation detector
+  (A/D rising + CMF>0 + price flat/down + not-yet-ignited = money in while price suppressed). Verified
+  on synthetic: stealth score 82/is_stealth=True vs boring-sideways 57/False. Folded into compute()
+  output + signal_adjustment (boost).
+- orchestrator.py: bandarmetrics now computed for the FULL universe (was IHSG-only) so the filter
+  works on every market tab. (Extra OHLCV fetch at build time — defensive.)
+- pages_lib/market_page_base.py: bandarmetrics rank-injection now applies to ALL markets (was ihsg
+  only); added a "🤫 Hidden Accumulation" sort option (ranks by stealth score); tags is_stealth/
+  ignition on items.
+- components/rich_ticker_card.py: bandarmetrics chart now shows for ALL markets (was ihsg-only);
+  caption surfaces 🤫 HIDDEN ACCUMULATION + 🚨 IGNITION badges. Cara-masuk position lines condensed
+  (dropped the entry/target/stop numbers already shown above + on the chart; kept style guidance).
+- pages_lib/dashboard.py: dashboard wrapped in 3 TABS (📊 Snapshot / 🧭 Quad Decoder / 🪞 Bias Guard)
+  so only one section renders at a time → fits one frame. Quad explainer gets in_tab flag (skips
+  divider/heading + avoids double-rendering the bias guard).

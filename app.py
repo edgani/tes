@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-02-s16 — ignition detector + foreign-flow interface + compact dashboard")
+    st.caption("v40 · build 2026-06-02-s17 — hidden-accumulation filter (all markets) + dashboard tabs (1-frame)")
     st.divider()
     
     page = st.radio("Navigation", [

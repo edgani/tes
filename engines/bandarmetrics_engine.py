@@ -118,6 +118,7 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
 
     ignition = detect_ignition(df)
     ff = foreign_flow_metrics(foreign, price=c.dropna().tolist()) if foreign is not None else {"available": False}
+    stealth = detect_stealth_accumulation(adl_slope, cmf_now, price_slope, ignition.get("ignition_score", 0), obv_slope)
 
     # normalized ADL for charting (z-score so multiple tickers comparable)
     adl_n = ((adl - adl.rolling(120).mean()) / adl.rolling(120).std().replace(0, np.nan)).fillna(0)
@@ -144,7 +145,7 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
         "price_slope_20": round(price_slope, 4),
         "phase": phase, "score": int(round(score)),
         "avgcost": round(avgcost, 2),
-        "ignition": ignition, "foreign_flow": ff,
+        "ignition": ignition, "foreign_flow": ff, "stealth_accumulation": stealth,
         "series": {
             "index": [str(x)[:10] for x in idx],
             "price": _ser(c), "adl": _ser(adl_n), "cmf": _ser(cmf),
@@ -211,6 +212,10 @@ def signal_adjustment(bm: Dict) -> float:
     ig = bm.get("ignition") or {}
     if ig.get("ignition") and base > -0.1:
         base += min(0.3, ig.get("ignition_score", 0) / 250.0)
+    # hidden accumulation: the manipulation-aware tell — money in while price suppressed
+    stl = bm.get("stealth_accumulation") or {}
+    if stl.get("is_stealth"):
+        base += min(0.35, stl.get("score", 0) / 200.0)
     # real foreign-flow divergence (only when Type-F data is plugged in) dominates when present
     ff = bm.get("foreign_flow") or {}
     if ff.get("available"):
@@ -296,6 +301,29 @@ def foreign_flow_metrics(foreign, price=None):
         else:
             out["divergence"] = "ALIGNED" if (p_slope * ff_slope) > 0 else "FLAT"
     return out
+
+
+def detect_stealth_accumulation(adl_slope, cmf, price_slope, ignition_score, obv_slope):
+    """HIDDEN accumulation — money flowing in while price stays flat/down and hasn't ignited yet.
+    This is the manipulation-aware tell: smart money absorbs supply quietly (A/D + CMF up) while
+    keeping price suppressed, BEFORE the markup. Returns {is_stealth, score 0-100, reason}."""
+    score = 0.0
+    reasons = []
+    if adl_slope > 0.005:
+        score += 30; reasons.append("A/D rising")
+    if obv_slope > 0:
+        score += 8; reasons.append("OBV confirms")
+    if cmf > 0.05:
+        score += min(25, cmf * 100); reasons.append(f"CMF +{cmf:.2f}")
+    if price_slope < 0.03:
+        score += 17; reasons.append("price flat/down")
+    if price_slope < -0.005:
+        score += 10; reasons.append("price actually falling (divergence)")
+    if ignition_score < 40:
+        score += 10; reasons.append("not yet ignited")  # still stealth, not already running
+    score = max(0, min(100, score))
+    is_stealth = bool(score >= 62 and adl_slope > 0 and cmf > 0 and price_slope < 0.03)
+    return {"is_stealth": is_stealth, "score": int(round(score)), "reason": " · ".join(reasons)}
 
 
 def analyze_universe(ohlcv: Dict, **kw) -> Dict:

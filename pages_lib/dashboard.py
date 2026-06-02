@@ -21,19 +21,28 @@ def render(snap: dict):
         except Exception:
             vix_now = 20.0
 
-    try:
-        _legacy_render(snap, prices, vix_now)
-    except Exception as e:
-        import traceback
-        st.error(f"Legacy dashboard error: {e}")
-        with st.expander("Traceback"):
-            st.code(traceback.format_exc())
-        _fallback_dashboard(snap)
-
-    try:
-        _render_quad_explainer(snap)
-    except Exception as e:
-        st.caption(f"Quad decoder unavailable: {e}")
+    # Tabs keep the dashboard to ONE frame — only one section renders at a time.
+    _t_overview, _t_quad, _t_bias = st.tabs(["📊 Snapshot", "🧭 Quad Decoder", "🪞 Bias Guard"])
+    with _t_overview:
+        try:
+            _legacy_render(snap, prices, vix_now)
+        except Exception as e:
+            import traceback
+            st.error(f"Legacy dashboard error: {e}")
+            with st.expander("Traceback"):
+                st.code(traceback.format_exc())
+            _fallback_dashboard(snap)
+    with _t_quad:
+        try:
+            _render_quad_explainer(snap, in_tab=True)
+        except Exception:
+            pass
+    with _t_bias:
+        try:
+            _render_bias_guard(snap)
+        except Exception:
+            pass
+    return
 
 
 _QM_CENTER = {"Q1": (-0.5, 0.5), "Q2": (0.5, 0.5), "Q3": (0.5, -0.5), "Q4": (-0.5, -0.5)}
@@ -98,14 +107,17 @@ def _quad_map_figure(qe: dict):
     return fig
 
 
-def _render_quad_explainer(snap: dict):
+def _render_quad_explainer(snap: dict, in_tab: bool = False):
     """🧭 Quad Decoder — why this quad, what changes it, where it goes, + Ricky scenarios."""
     qe = snap.get("quad_explainer") or {}
     if not qe or not qe.get("ok"):
+        if in_tab:
+            st.caption("Quad Decoder belum tersedia (rebuild snapshot).")
         return
 
-    st.divider()
-    st.markdown("#### 🧭 Quad Decoder — kenapa, apa yang ngubah, ke mana")
+    if not in_tab:
+        st.divider()
+        st.markdown("#### 🧭 Quad Decoder — kenapa, apa yang ngubah, ke mana")
 
     wig = qe.get("where_it_goes", {})
     stage = wig.get("stage", "—")
@@ -164,7 +176,8 @@ def _render_quad_explainer(snap: dict):
                 tick = " · ".join(s.get("tickers", [])) if s.get("tickers") else ""
                 st.caption(f"**{s['title']}** — _{s.get('signal','')}_ {('· ' + tick) if tick else ''}")
 
-    _render_bias_guard(snap)
+    if not in_tab:
+        _render_bias_guard(snap)
 
 
 def _render_bias_guard(snap: dict):

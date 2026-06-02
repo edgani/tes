@@ -345,30 +345,32 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
     except Exception:
         pass
 
-    # IHSG bandarmetrics chart (LPM · Intensity)
+    # Bandarmetrics chart (A/D · CMF) + stealth/ignition — now available for all markets
     try:
-        if market_key == "ihsg":
-            _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
-            if _bm.get("ok"):
-                _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
-                if _bfig is not None:
-                    st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
-                    _ig = _bm.get("ignition") or {}
-                    _ff = _bm.get("foreign_flow") or {}
-                    _ig_txt = ""
-                    if _ig.get("ignition"):
-                        _ig_txt = (f"  \n🚨 **IGNITION (score {_ig.get('ignition_score')})** — {' · '.join(_ig.get('signals', []))}. "
-                                   f"Ada aktivitas gak wajar di sini → **selidiki katalisnya** (news/akuisisi/insider). "
-                                   f"Metrik cuma liat jejak, gak tau alasannya.")
-                    _ff_txt = ("" if _ff.get("available")
-                               else "  \n🌐 Foreign Flow (sinyal yang nangkep EURO/MSIN) = **butuh data Type-F IDX** (gak ada di yfinance).")
-                    st.caption(
-                        f"📊 **Bandarmetrics v2 (A/D-based):** **{_bm.get('divergence', 'FLAT').replace('_', ' ')}** · "
-                        f"CMF {_bm.get('cmf', 0):+.2f} ({_bm.get('cmf_state')}) · A/D {'naik' if _bm.get('adl_rising') else 'turun'} · "
-                        f"DTE {_bm.get('dte')} · rotation {_bm.get('rotation')} · phase {_bm.get('phase')} · score {_bm.get('score')}/100. "
-                        f"💡 **BULLISH_DIV** = harga turun tapi A/D naik = akumulasi senyap (sinyal beli)."
-                        f"{_ig_txt}{_ff_txt}  \n"
-                        f"⚠️ Approx OHLCV — phase/score belom tervalidasi (jalanin `validate_bandarmetrics.py`).")
+        _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
+        if _bm.get("ok"):
+            _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
+            if _bfig is not None:
+                st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
+                _ig = _bm.get("ignition") or {}
+                _ff = _bm.get("foreign_flow") or {}
+                _stl = _bm.get("stealth_accumulation") or {}
+                _stl_txt = ""
+                if _stl.get("is_stealth"):
+                    _stl_txt = (f"  \n🤫 **HIDDEN ACCUMULATION (score {_stl.get('score')})** — {_stl.get('reason')}. "
+                                f"Uang masuk diam-diam sementara harga ditahan = jejak akumulasi sebelum markup.")
+                _ig_txt = ""
+                if _ig.get("ignition"):
+                    _ig_txt = (f"  \n🚨 **IGNITION (score {_ig.get('ignition_score')})** — {' · '.join(_ig.get('signals', []))}. "
+                               f"Ada aktivitas gak wajar → **selidiki katalisnya** (news/akuisisi/insider). Metrik liat jejak, bukan alasan.")
+                _ff_txt = ("" if _ff.get("available")
+                           else "  \n🌐 Foreign Flow (sinyal yang nangkep EURO/MSIN) = **butuh data Type-F IDX** (gak ada di yfinance).")
+                st.caption(
+                    f"📊 **Bandarmetrics v2 (A/D-based):** **{_bm.get('divergence', 'FLAT').replace('_', ' ')}** · "
+                    f"CMF {_bm.get('cmf', 0):+.2f} ({_bm.get('cmf_state')}) · A/D {'naik' if _bm.get('adl_rising') else 'turun'} · "
+                    f"phase {_bm.get('phase')} · score {_bm.get('score')}/100."
+                    f"{_stl_txt}{_ig_txt}{_ff_txt}  \n"
+                    f"⚠️ Approx OHLCV — phase/score belom tervalidasi (jalanin `validate_bandarmetrics.py`).")
     except Exception:
         pass
 
@@ -1724,11 +1726,11 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         # 1) SPOT / CASH (no leverage)
         if market_key == "ihsg":
             positions.append({"type": "💵 Spot (cash)", "detail":
-                f"Akumulasi bertahap · entry {e_txt} · target {target or '—'} · stop {stop or '—'} · size penuh, hold sampai fase berubah"})
+                f"Akumulasi bertahap · size penuh, hold sampai fase berubah"})
         elif market_key in ("us_equity", "crypto"):
             lbl = "Long shares/spot" if is_long else "Short shares (borrow)"
             positions.append({"type": "💵 Spot (cash, no leverage)", "detail":
-                f"{lbl} · entry {e_txt} · target {target or '—'} · stop {stop or '—'} · size penuh, stop lebih longgar, hold lebih lama"})
+                f"{lbl} · size penuh · stop lebih longgar, hold lebih lama"})
         # 2) LEVERAGE via OPTIONS (real options + equity/crypto only)
         if has_real_opts and market_key in ("us_equity", "crypto"):
             if is_long:
@@ -1743,14 +1745,14 @@ def build_options_recommendation(rr: dict, snap: dict, ticker: str, market_key: 
         elif market_key in ("us_equity", "crypto"):
             # No real options → margin leverage is still available for the spot-vs-leverage choice
             positions.append({"type": "⚡ Leverage — Margin", "detail":
-                f"{'Long' if is_long else 'Short'} margin 1.5-2x · entry {e_txt} · stop {stop or '—'} (lebih ketat dari spot) · size lebih kecil, awas margin call (options N/A buat ticker ini)"})
+                f"{'Long' if is_long else 'Short'} margin 1.5-2x · stop lebih ketat dari spot · size lebih kecil, awas margin call"})
         # 3) LEVERAGE via FUTURES / PERP
         if market_key in ("commodity", "forex"):
             positions.append({"type": "⚡ Leverage — Futures", "detail":
-                f"{'Long' if is_long else 'Short'} futures · entry {e_txt} · stop {stop or '—'} (di balik LRR/TRR) · size kecil (margin), stop ketat krn likuidasi"})
+                f"{'Long' if is_long else 'Short'} futures · stop di balik LRR/TRR · size kecil (margin), stop ketat krn likuidasi"})
         elif market_key == "crypto":
             positions.append({"type": "⚡ Leverage — Perp/Futures", "detail":
-                f"{'Long' if is_long else 'Short'} perp 2-5x · entry {e_txt} · stop {stop or '—'} · awas funding rate + likuidasi, size kecil"})
+                f"{'Long' if is_long else 'Short'} perp 2-5x · awas funding rate + likuidasi, size kecil"})
 
     return {
         "ticker": ticker, "market": market_key, "px": px, "has_real_opts": has_real_opts,

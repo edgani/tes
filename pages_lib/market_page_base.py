@@ -123,27 +123,32 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
                 it["confluence_verdict"] = sc["verdict"]
             except Exception:
                 it["confluence"] = None
-            # IHSG: fold bandarmetrics accumulation/distribution into the rank (±12 pts)
-            if market_key == "ihsg":
-                try:
-                    from engines.bandarmetrics_engine import signal_adjustment
-                    _bm = (snap.get("bandarmetrics", {}) or {}).get(it["ticker"], {})
-                    if _bm.get("ok"):
-                        _adj = signal_adjustment(_bm) * 12.0
-                        it["confluence"] = (it.get("confluence") if it.get("confluence") is not None else 50.0) + _adj
-                        it["bandarmetrics_adj"] = round(_adj, 1)
-                        it["bandarmetrics_div"] = _bm.get("divergence")
-                except Exception:
-                    pass
+            # All markets: fold bandarmetrics accumulation/stealth into the rank (±12 pts) + tag stealth
+            try:
+                from engines.bandarmetrics_engine import signal_adjustment
+                _bm = (snap.get("bandarmetrics", {}) or {}).get(it["ticker"], {})
+                if _bm.get("ok"):
+                    _adj = signal_adjustment(_bm) * 12.0
+                    it["confluence"] = (it.get("confluence") if it.get("confluence") is not None else 50.0) + _adj
+                    it["bandarmetrics_adj"] = round(_adj, 1)
+                    it["bandarmetrics_div"] = _bm.get("divergence")
+                    _stl = _bm.get("stealth_accumulation") or {}
+                    it["stealth_score"] = _stl.get("score", 0)
+                    it["is_stealth"] = _stl.get("is_stealth", False)
+                    it["ignition"] = (_bm.get("ignition") or {}).get("ignition", False)
+            except Exception:
+                pass
     except Exception:
         pass
 
     # Sort options
     sort_by = st.selectbox(
-        "Sort", ["🎯 Confluence (regime-gated)", "Best R/R",
+        "Sort", ["🎯 Confluence (regime-gated)", "🤫 Hidden Accumulation", "Best R/R",
                  "Distance to LRR (closest first)", "Quality (A+ first)"],
         key=f"sort_picks_{market_key}",
     )
+    if sort_by == "🤫 Hidden Accumulation":
+        items.sort(key=lambda x: -(x.get("stealth_score") or 0))
     if sort_by == "🎯 Confluence (regime-gated)":
         items.sort(key=lambda x: -(x.get("confluence") if x.get("confluence") is not None else -1))
     elif sort_by == "Best R/R":
