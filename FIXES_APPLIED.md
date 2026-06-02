@@ -335,3 +335,29 @@ Center. The market tabs were correct; Alpha Center was stale. Fix:
   actually beat BEARISH_DIV / low-score?). Run in YOUR env (needs network); writes
   data/bandarmetrics_validation.json. THIS is the accuracy gate — phase/score stay "unvalidated"
   until this shows a real edge.
+
+---
+
+# SESSION 16 — Ignition detector + foreign-flow interface + compact dashboard
+
+Reverse-engineered from the user's 4 real bandarmetrics.com screenshots (KETR/BBCA/EURO/MSIN). KEY
+FINDING: in the "mystery rips" (EURO 10×, MSIN spike) the signal that caught the move was the
+FOREIGN FLOW line + foreign participation %, NOT the LPM — and foreign flow needs IDX Type-F broker
+data we don't have. Our OHLCV LPM was negative/useless in both. So the gap is DATA, not formula; and
+no OHLCV metric can read acquisition/insider INTENT (only the footprint).
+
+- engines/bandarmetrics_engine.py:
+  · detect_ignition(df) — OHLCV regime-break / "ignition" detector (volume + range/ATR expansion +
+    breakout from base + momentum acceleration → score 0-100). Verified on synthetic: fires score
+    72-100 at breakout ONSET, 0 before, decays once mature. Honest framing: flags "abnormal activity,
+    investigate the catalyst" — does NOT claim to know why.
+  · foreign_flow_metrics(foreign, price) — INTERFACE for IDX Type-F foreign net-flow (the signal that
+    actually caught EURO/MSIN). Computes cumulative FF + slope + FF↔price divergence
+    (FOREIGN_ACCUM_DIV = price down + foreign buying). Returns available=False when no data (degrades).
+  · compute() now returns ignition + foreign_flow; signal_adjustment() folds in ignition (amplifies a
+    bullish read) + real foreign-flow divergence when Type-F data is plugged in.
+- components/rich_ticker_card.py: bandarmetrics caption now shows a 🚨 IGNITION badge + signals, and a
+  note that Foreign Flow needs Type-F data.
+- pages_lib/dashboard.py: quad map height 300→230; Quad Decoder playbook + Ricky scenarios moved into
+  a collapsed expander → dashboard much shorter (full 1-frame still needs a tabs restructure or content
+  cuts — flagged to user).

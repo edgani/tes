@@ -41,7 +41,8 @@ def _slope(s, n=20):
         return 0.0
 
 
-def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf_win: int = 20) -> Dict:
+def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf_win: int = 20,
+            foreign=None) -> Dict:
     """df: DataFrame with Open, High, Low, Close, Volume (daily). Returns indicator dict."""
     import pandas as pd
     import numpy as np
@@ -115,6 +116,9 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     green = int((rot_tail > 0.15).sum()); red = int((rot_tail < -0.15).sum())
     yellow = int(len(rot_tail) - green - red)
 
+    ignition = detect_ignition(df)
+    ff = foreign_flow_metrics(foreign, price=c.dropna().tolist()) if foreign is not None else {"available": False}
+
     # normalized ADL for charting (z-score so multiple tickers comparable)
     adl_n = ((adl - adl.rolling(120).mean()) / adl.rolling(120).std().replace(0, np.nan)).fillna(0)
 
@@ -140,6 +144,7 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
         "price_slope_20": round(price_slope, 4),
         "phase": phase, "score": int(round(score)),
         "avgcost": round(avgcost, 2),
+        "ignition": ignition, "foreign_flow": ff,
         "series": {
             "index": [str(x)[:10] for x in idx],
             "price": _ser(c), "adl": _ser(adl_n), "cmf": _ser(cmf),
@@ -194,7 +199,7 @@ def _score_v2(divergence, cmf, adl_slope, obv_slope, intensity, dte, phase):
 
 
 def signal_adjustment(bm: Dict) -> float:
-    """Score nudge (−1..+1) for the IHSG pick filter/ranking. + = accumulation, − = distribution."""
+    """Score nudge (−1..+1) for the IHSG pick filter/ranking. + = accumulation/ignition, − = distribution."""
     if not bm or not bm.get("ok"):
         return 0.0
     div = bm.get("divergence", "FLAT")
@@ -202,7 +207,95 @@ def signal_adjustment(bm: Dict) -> float:
     base += max(-0.3, min(0.3, (bm.get("cmf") or 0) * 1.2))
     if bm.get("intensity_firing") and base > 0:
         base += 0.1
+    # ignition: abnormal activity amplifies an existing bullish read (don't fire bearish on ignition alone)
+    ig = bm.get("ignition") or {}
+    if ig.get("ignition") and base > -0.1:
+        base += min(0.3, ig.get("ignition_score", 0) / 250.0)
+    # real foreign-flow divergence (only when Type-F data is plugged in) dominates when present
+    ff = bm.get("foreign_flow") or {}
+    if ff.get("available"):
+        fdiv = ff.get("divergence")
+        base += {"FOREIGN_ACCUM_DIV": 0.5, "FOREIGN_DISTRIB_DIV": -0.5}.get(fdiv, 0.0)
     return max(-1.0, min(1.0, base))
+
+
+def detect_ignition(df, base_win: int = 90, vol_win: int = 20):
+    """OHLCV regime-break / 'ignition' detector — the honest version of 'catch the EURO rip'.
+
+    Flags ABNORMAL activity worth investigating (volume + range expansion + breakout from a base +
+    momentum acceleration). It does NOT and CANNOT know WHY (acquisition, insider, news) — it only
+    sees the footprint. Use it as: 'something is igniting here → go find the catalyst.'
+    Returns {ignition, ignition_score 0-100, signals:[...], vol_ratio, range_expansion, breakout, accel}.
+    """
+    import pandas as pd
+    import numpy as np
+    out = {"ignition": False, "ignition_score": 0, "signals": [],
+           "vol_ratio": 0.0, "range_expansion": 0.0, "breakout": False, "accel": 0.0}
+    if df is None or len(df) < base_win + 10:
+        return out
+    try:
+        h, l, c, v = (pd.to_numeric(df[k], errors="coerce") for k in ("High", "Low", "Close", "Volume"))
+    except (KeyError, TypeError):
+        return out
+
+    # 1) volume expansion: recent 5d avg vs trailing base
+    v5 = v.tail(5).mean(); vbase = v.iloc[-base_win:-5].mean()
+    vol_ratio = float(v5 / vbase) if vbase else 0.0
+    # 2) range/volatility expansion: ATR(14) now vs base
+    tr = (h - l).combine((h - c.shift()).abs(), max).combine((l - c.shift()).abs(), max)
+    atr = tr.rolling(14).mean()
+    atr_now = float(atr.iloc[-1] or 0); atr_base = float(atr.iloc[-base_win:-14].mean() or 0)
+    range_expansion = (atr_now / atr_base) if atr_base else 0.0
+    # 3) breakout from base: close above prior base-window high
+    base_high = float(c.iloc[-base_win:-3].max() or 0)
+    cN = float(c.iloc[-1] or 0)
+    breakout = bool(cN > base_high * 1.005) if base_high else False
+    # 4) momentum acceleration: ROC(10) now vs ROC(10) 10d ago
+    roc = c.pct_change(10)
+    accel = float((roc.iloc[-1] or 0) - (roc.iloc[-11] or 0))
+
+    score = 0.0; sig = []
+    if vol_ratio > 2.0:
+        score += min(30, (vol_ratio - 1) * 15); sig.append(f"volume {vol_ratio:.1f}× base")
+    if range_expansion > 1.5:
+        score += min(25, (range_expansion - 1) * 18); sig.append(f"range/ATR {range_expansion:.1f}× base")
+    if breakout:
+        score += 25; sig.append(f"breakout > {base_win}d base high")
+    if accel > 0.05:
+        score += min(20, accel * 120); sig.append(f"momentum accelerating (+{accel*100:.0f}pp)")
+    score = max(0, min(100, score))
+    out.update({"ignition": score >= 50, "ignition_score": int(round(score)), "signals": sig,
+                "vol_ratio": round(vol_ratio, 2), "range_expansion": round(range_expansion, 2),
+                "breakout": breakout, "accel": round(accel, 4)})
+    return out
+
+
+def foreign_flow_metrics(foreign, price=None):
+    """Foreign-flow signal — INTERFACE for IDX Type-F data (the signal that actually caught EURO/MSIN).
+
+    foreign: a daily series/list of foreign NET buy (+) / sell (−) value (Type-F). We do NOT have this
+    from yfinance; plug in from a paid IDX API / scrape. If None/empty → returns unavailable=True so the
+    rest of the engine degrades cleanly. When provided, computes cumulative FF, 20d slope, and FF↔price
+    divergence (foreign accumulating into weakness = the strongest IDX tell)."""
+    import pandas as pd
+    import numpy as np
+    if foreign is None or len(foreign) < 30:
+        return {"available": False, "note": "needs IDX Type-F foreign net-flow (paid API / scrape)."}
+    ff = pd.Series(list(foreign), dtype="float64")
+    cum = ff.cumsum()
+    ff_slope = float((cum.iloc[-1] - cum.iloc[-21]) / (abs(cum.iloc[-21]) + 1e-9)) if len(cum) > 21 else 0.0
+    out = {"available": True, "ff_cum": round(float(cum.iloc[-1]), 0), "ff_slope_20": round(ff_slope, 4),
+           "ff_state": "inflow" if ff_slope > 0 else "outflow"}
+    if price is not None and len(price) >= len(ff) and len(ff) > 21:
+        p = pd.Series(list(price[-len(ff):]), dtype="float64")
+        p_slope = float((p.iloc[-1] - p.iloc[-21]) / (abs(p.iloc[-21]) + 1e-9))
+        if p_slope < -0.005 and ff_slope > 0.01:
+            out["divergence"] = "FOREIGN_ACCUM_DIV"   # price down, foreign buying = strongest accumulation
+        elif p_slope > 0.005 and ff_slope < -0.01:
+            out["divergence"] = "FOREIGN_DISTRIB_DIV"
+        else:
+            out["divergence"] = "ALIGNED" if (p_slope * ff_slope) > 0 else "FLAT"
+    return out
 
 
 def analyze_universe(ohlcv: Dict, **kw) -> Dict:

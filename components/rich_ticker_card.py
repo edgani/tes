@@ -353,13 +353,22 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
                 _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
                 if _bfig is not None:
                     st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
+                    _ig = _bm.get("ignition") or {}
+                    _ff = _bm.get("foreign_flow") or {}
+                    _ig_txt = ""
+                    if _ig.get("ignition"):
+                        _ig_txt = (f"  \n🚨 **IGNITION (score {_ig.get('ignition_score')})** — {' · '.join(_ig.get('signals', []))}. "
+                                   f"Ada aktivitas gak wajar di sini → **selidiki katalisnya** (news/akuisisi/insider). "
+                                   f"Metrik cuma liat jejak, gak tau alasannya.")
+                    _ff_txt = ("" if _ff.get("available")
+                               else "  \n🌐 Foreign Flow (sinyal yang nangkep EURO/MSIN) = **butuh data Type-F IDX** (gak ada di yfinance).")
                     st.caption(
                         f"📊 **Bandarmetrics v2 (A/D-based):** **{_bm.get('divergence', 'FLAT').replace('_', ' ')}** · "
                         f"CMF {_bm.get('cmf', 0):+.2f} ({_bm.get('cmf_state')}) · A/D {'naik' if _bm.get('adl_rising') else 'turun'} · "
                         f"DTE {_bm.get('dte')} · rotation {_bm.get('rotation')} · phase {_bm.get('phase')} · score {_bm.get('score')}/100. "
-                        f"💡 **BULLISH_DIV** = harga turun tapi A/D naik = akumulasi senyap (sinyal beli). "
-                        f"⚠️ Approx OHLCV — foreign-flow/broker butuh data IDX (gak ada); phase/score belom tervalidasi "
-                        f"(jalanin `validate_bandarmetrics.py` buat ukur akurasi vs forward-return real).")
+                        f"💡 **BULLISH_DIV** = harga turun tapi A/D naik = akumulasi senyap (sinyal beli)."
+                        f"{_ig_txt}{_ff_txt}  \n"
+                        f"⚠️ Approx OHLCV — phase/score belom tervalidasi (jalanin `validate_bandarmetrics.py`).")
     except Exception:
         pass
 

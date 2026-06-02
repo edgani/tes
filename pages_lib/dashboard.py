@@ -87,7 +87,7 @@ def _quad_map_figure(qe: dict):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-        margin={"t": 10, "b": 34, "l": 44, "r": 10}, height=300, showlegend=False,
+        margin={"t": 10, "b": 34, "l": 44, "r": 10}, height=230, showlegend=False,
         xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},
@@ -140,31 +140,29 @@ def _render_quad_explainer(snap: dict):
     if wig.get("action_hint"):
         st.info(f"🎯 {wig['action_hint']}")
 
-    pb = qe.get("playbook", {})
-    cur, nxt = pb.get("current", {}), pb.get("next", {})
-    if cur:
-        pc1, pc2 = st.columns(2)
-        with pc1:
-            st.caption(f"**Playbook {qe.get('structural_quad','')} (sekarang)**")
-            st.caption(f"🟢 Strong: {cur.get('strong','')}")
-            st.caption(f"🔴 Weak: {cur.get('weak','')}")
-        with pc2:
-            if nxt and wig.get("implied_next") != qe.get("structural_quad"):
-                st.caption(f"**Playbook {wig.get('implied_next','')} (kalau transisi kejadian)**")
-                st.caption(f"🟢 Strong: {nxt.get('strong','')}")
-                st.caption(f"🔴 Weak: {nxt.get('weak','')}")
-        with st.expander("⚠️ Kenapa 'strong' belom tentu strong (caveat)", expanded=False):
+    with st.expander("📖 Detail — playbook per-quad + skenario Ricky", expanded=False):
+        pb = qe.get("playbook", {})
+        cur, nxt = pb.get("current", {}), pb.get("next", {})
+        if cur:
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                st.caption(f"**Playbook {qe.get('structural_quad','')} (sekarang)**")
+                st.caption(f"🟢 Strong: {cur.get('strong','')}")
+                st.caption(f"🔴 Weak: {cur.get('weak','')}")
+            with pc2:
+                if nxt and wig.get("implied_next") != qe.get("structural_quad"):
+                    st.caption(f"**Playbook {wig.get('implied_next','')} (kalau transisi kejadian)**")
+                    st.caption(f"🟢 Strong: {nxt.get('strong','')}")
+                    st.caption(f"🔴 Weak: {nxt.get('weak','')}")
             for cav in pb.get("caveats", []):
-                st.caption(f"• {cav}")
+                st.caption(f"⚠️ {cav}")
 
-    scen = qe.get("scenarios", [])
-    if scen:
-        st.markdown(f"**📚 Skenario Ricky relevan ({len(scen)}):**")
-        for s in scen:
-            tick = " · ".join(s.get("tickers", [])) if s.get("tickers") else ""
-            st.caption(f"**{s['title']}** — _{s.get('signal','')}_ {('· ' + tick) if tick else ''}")
-    else:
-        st.caption("📚 Belum ada skenario Ricky yang nge-match quad/transisi ini.")
+        scen = qe.get("scenarios", [])
+        if scen:
+            st.markdown(f"**📚 Skenario Ricky relevan ({len(scen)}):**")
+            for s in scen:
+                tick = " · ".join(s.get("tickers", [])) if s.get("tickers") else ""
+                st.caption(f"**{s['title']}** — _{s.get('signal','')}_ {('· ' + tick) if tick else ''}")
 
     _render_bias_guard(snap)
 
