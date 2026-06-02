@@ -279,3 +279,17 @@ All verified via full plotly serialization + data-gating (return None when empty
   Intensity bars), rendered on IHSG cards with an honest "read the pattern, not the raw score" caption.
 NOTE: TradingView-API (Mathieu2301) NOT wired — Node.js + ToS/ban risk + untestable here; advised
 additive Python tvdatafeed for missing symbols instead of replacing yfinance.
+
+---
+
+# SESSION 13 — Declutter / merge (cards + dashboard) per user visual feedback
+
+- components/rich_ticker_card.py: the GEX chart already draws TRR/LRR bands + walls + flip +
+  max pain + entry/target/SL, so the duplicated TEXT was removed:
+  · TRR/LRR 3-column numeric block (12 lines) → one compact line ("bands on chart above").
+  · Call/Put Wall + Gamma Flip + Max Pain bullet list → removed (drawn on chart); kept the
+    Gamma Regime interpretation (what the chart can't say). Applies to ALL market tabs (shared card).
+- pages_lib/_dashboard_legacy.py: removed the "PROYEKSI TRANSISI 1M" block — fully superseded by
+  the Quad Decoder + Quad Map panel (from→implied quad, ripeness stage, triggers). Verified the
+  removed locals (qc/target_q/...) weren't used downstream.
+- IHSG bandarmetrics chart (session 12) is already wired in this build — deploy + Rebuild to see it.

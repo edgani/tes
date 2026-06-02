@@ -1101,43 +1101,8 @@ def render(snap, prices=None, vix_now=20.0):
     with r1_left:
         st.markdown(_regime_left_cards(snap, s_vals), unsafe_allow_html=True)
 
-        # Proyeksi Transisi
-        qc = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
-        target_q = next_q or (mq if mq != sq_current else None)
-        if not target_q:
-            sq_qs = sorted([(q, v) for q, v in zip(["Q1","Q2","Q3","Q4"], s_vals) if q != sq_current], key=lambda x: -x[1])
-            target_q = sq_qs[0][0] if sq_qs else mq
-
-        if next_prob > 0:
-            prob_val, est_val = next_prob, next_est or proj.get("days", "")
-        else:
-            if mq != sq_current:
-                gap = abs(s_vals[["Q1","Q2","Q3","Q4"].index(mq)] - s_vals[["Q1","Q2","Q3","Q4"].index(sq_current)])
-                prob_val = min(0.95, max(0.15, gap * 2))
-                est_val = "~14-30 hari" if gap > 0.3 else "~30-60 hari" if gap > 0.15 else "~60-90 hari"
-            else:
-                prob_val, est_val = 0, "Stabil"
-
-        markov = snap.get("markov_v3") or {}
-        f1m = (markov.get("forecast_1m") or {}) if isinstance(markov, dict) else {}
-        f1m_html = ""
-        if f1m:
-            f1m_items = sorted([(q, p) for q, p in f1m.items() if isinstance(p, (int, float)) and p > 0], key=lambda x: -x[1])[:3]
-            f1m_html = ''.join([f'<span style="color:{qc.get(q, "#8b949e")};margin-right:6px;"><b>{q}</b>: {p:.0%}</span>' for q, p in f1m_items])
-
-        tq = target_q or mq
-        tqc = qc.get(tq, "#8b949e")
-        triggers = proj.get("triggers", [])
-        trig_html = ''.join([f'<div style="margin:1px 0;font-size:0.75rem;color:#8b949e;">• {t}</div>' for t in triggers[:3]]) if triggers else '<div style="font-size:0.75rem;color:#484f58;">Regime stabil</div>'
-
-        st.markdown(
-            f'<div style="background:#161b22;border:1px solid {tqc}40;border-radius:5px;padding:9px 12px;margin-top:8px;">'
-            f'<div style="font-size:0.75rem;color:#58A6FF;font-weight:600;letter-spacing:0.5px;">📅 PROYEKSI TRANSI 1M</div>'
-            f'<div style="font-size:1.0rem;font-weight:800;color:{tqc};line-height:1.1;">{sq_current} → {tq}</div>'
-            f'<div style="font-size:0.75rem;color:#c9d1d9;margin-top:1px;">Prob: <b>{prob_val:.0%}</b> · Est: <b>{est_val}</b></div>'
-            f'<div style="font-size:0.7rem;color:#8b949e;margin-top:1px;">🔮 Forward 1M: {f1m_html or "Belum tersedia"}</div>'
-            f'<div style="font-size:0.7rem;color:#58A6FF;margin-top:1px;border-top:1px solid #21262d;padding-top:1px;">📰 Trigger:</div>'
-            f'{trig_html}</div>', unsafe_allow_html=True)
+        # Proyeksi Transisi block removed — superseded by the Quad Decoder + Quad Map panel
+        # (lower on the dashboard), which shows from→implied quad, ripeness stage, and triggers.
 
         # Catalyst
         cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:5px;padding:4px 6px;margin-top:3px;">'

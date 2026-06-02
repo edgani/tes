@@ -1222,25 +1222,13 @@ def render_rich_ticker(
                 pass
             st.markdown("---")
 
-            # TRR/LRR bands + phase (moved here from main view — report has the essentials)
+            # TRR/LRR — the chart above already shows these as bands; one compact line + phase
             trade = rr.get("trade", {}); trend = rr.get("trend", {}); tail = rr.get("tail", {})
-            st.markdown("**📊 TRR/LRR v20.3b (Hedgeye-style)**")
-            rrc1, rrc2, rrc3 = st.columns(3)
             _c = _cur_for(market_key, ticker)
             def _rrm(v):
                 return f"\\${(v or 0):.2f}" if _c == "$" else f"{_c}{(v or 0):.2f}"
-            with rrc1:
-                st.caption("**TRADE (15d)**")
-                st.caption(f"LRR: {_rrm(trade.get('lrr'))}")
-                st.caption(f"TRR: {_rrm(trade.get('trr'))}")
-            with rrc2:
-                st.caption("**TREND (63d)**")
-                st.caption(f"LRR: {_rrm(trend.get('lrr'))}")
-                st.caption(f"TRR: {_rrm(trend.get('trr'))}")
-            with rrc3:
-                st.caption("**TAIL (3yr)**")
-                st.caption(f"LRR: {_rrm(tail.get('lrr'))}")
-                st.caption(f"TRR: {_rrm(tail.get('trr'))}")
+            st.caption(f"📊 **TRR/LRR** (bands on chart above) — TRADE {_rrm(trade.get('lrr'))}–{_rrm(trade.get('trr'))} · "
+                       f"TREND {_rrm(trend.get('lrr'))}–{_rrm(trend.get('trr'))} · TAIL {_rrm(tail.get('lrr'))}–{_rrm(tail.get('trr'))}")
             st.caption(f"🧭 {_phase_narrative(rr)}")
             st.markdown("---")
 
@@ -1268,19 +1256,7 @@ def render_rich_ticker(
                     g = intel["gamma"]
                     if g.get("available") and g.get("regime"):
                         st.markdown(f"**🎯 Gamma Regime:** {g.get('regime_note', '')}")
-                        wall_parts = []
-                        if g.get("call_wall"):
-                            wall_parts.append(f"Call Wall \\${g['call_wall']:.2f} ({g.get('call_wall_dist_pct', 0):+.1f}%)")
-                        if g.get("put_wall"):
-                            wall_parts.append(f"Put Wall \\${g['put_wall']:.2f} ({g.get('put_wall_dist_pct', 0):+.1f}%)")
-                        if g.get("gamma_flip"):
-                            flip_state = "ABOVE (positive gamma)" if g.get("above_flip") else "BELOW (negative gamma)"
-                            wall_parts.append(f"Gamma Flip \\${g['gamma_flip']:.2f} — price {flip_state}")
-                        if g.get("max_pain"):
-                            wall_parts.append(f"Max Pain \\${g['max_pain']:.2f}")
-                        if wall_parts:
-                            for wp in wall_parts:
-                                st.caption(f"• {wp}")
+                        # walls / gamma-flip / max-pain are drawn on the GEX chart above — text removed (redundant)
 
                     # Short squeeze
                     sq = intel["squeeze"]
