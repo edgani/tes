@@ -252,40 +252,116 @@ def _cot_bar(cot):
 
 
 def _bandarmetrics_chart(bm, ticker, cur="Rp"):
-    """DARK 3-panel BM-style chart: Price (+AvgCost) / LPM (filled) / Intensity bars."""
+    """DARK 3-panel chart: Price (+AvgCost) / A-D Line (accumulation, filled) / Chaikin Money Flow."""
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
     s = (bm or {}).get("series") or {}
-    idx, price, lpm, inten = s.get("index"), s.get("price"), s.get("lpm"), s.get("intensity")
-    if not (idx and price and lpm) or len(idx) < 10:
+    idx, price, adl, cmf = s.get("index"), s.get("price"), s.get("adl"), s.get("cmf")
+    if not (idx and price and adl) or len(idx) < 10:
         return None
     fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.3, 0.2],
                         vertical_spacing=0.045,
-                        subplot_titles=("Price", "LPM — liquidity pressure", "Intensity"))
+                        subplot_titles=("Price", "A/D Line — accumulation (z-norm)", "Chaikin Money Flow"))
     fig.add_trace(go.Scatter(x=idx, y=price, mode="lines", line={"color": "#e6edf3", "width": 1.5},
                              name="Price"), row=1, col=1)
     if bm.get("avgcost"):
         fig.add_hline(y=bm["avgcost"], line={"color": "#f0b429", "width": 1, "dash": "dot"}, row=1, col=1,
                       annotation_text=f"AvgCost {cur}{bm['avgcost']:,.0f}",
                       annotation_font={"size": 8, "color": "#f0b429"})
-    up = (bm.get("lpm_slope_20", 0) or 0) > 0
-    fig.add_trace(go.Scatter(x=idx, y=lpm, mode="lines",
+    up = (bm.get("adl_slope_20", 0) or 0) > 0
+    fig.add_trace(go.Scatter(x=idx, y=adl, mode="lines",
                              line={"color": "#3FB950" if up else "#F85149", "width": 1.5},
                              fill="tozeroy",
                              fillcolor="rgba(63,185,80,0.12)" if up else "rgba(248,81,73,0.12)",
-                             name="LPM"), row=2, col=1)
-    if inten:
-        fig.add_trace(go.Bar(x=idx, y=inten, marker_color="#A371F7", name="Intensity"), row=3, col=1)
-    fig.update_layout(height=430, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                             name="A/D Line"), row=2, col=1)
+    if cmf:
+        cmf_colors = ["#3FB950" if (x or 0) >= 0 else "#F85149" for x in cmf]
+        fig.add_trace(go.Bar(x=idx, y=cmf, marker_color=cmf_colors, name="CMF"), row=3, col=1)
+        fig.add_hline(y=0, line={"color": "#30363d", "width": 1}, row=3, col=1)
+    div = bm.get("divergence", "FLAT").replace("_", " ").title()
+    fig.update_layout(height=440, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
                       margin={"t": 42, "b": 18, "l": 50, "r": 12}, bargap=0.1,
-                      title={"text": f"{ticker} — Bandarmetrics (LPM · Intensity)",
+                      title={"text": f"{ticker} — Bandarmetrics v2 (A/D · CMF · {div})",
                              "font": {"size": 13, "color": "#c9d1d9"}})
     fig.update_xaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
     fig.update_yaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
     for ann in fig.layout.annotations:
         ann.font.size = 10; ann.font.color = "#c9d1d9"
     return fig
+
+
+def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
+    """Shared visual stack used by BOTH market-tab cards (render_rich_ticker) AND Alpha Center —
+    so they never drift apart again. Renders inline: GEX+RiskRange+Entry/Target/SL chart, companion
+    mini-charts (expected move / P/C OI / COT), and the IHSG bandarmetrics chart. px auto-derived."""
+    import streamlit as st
+    rr = rr or {}
+    if px is None:
+        for _k in ("prices", "price_history", "closes"):
+            try:
+                ph = (snap.get(_k) or {}).get(ticker)
+                if ph is not None and len(ph):
+                    px = float(ph.iloc[-1]); break
+            except Exception:
+                pass
+    if px is None:
+        _tr = rr.get("trade", {}) or {}
+        try:
+            px = ((float(_tr.get("lrr") or 0) + float(_tr.get("trr") or 0)) / 2) or None
+        except (TypeError, ValueError):
+            px = None
+    _opts_c = (snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {})
+    _opts_c = _opts_c.get(ticker, {}) if isinstance(_opts_c, dict) else {}
+
+    # unified DARK chart: GEX + Risk Range + Entry/Target/SL
+    try:
+        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker))
+        if _fig is not None:
+            st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
+            st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
+                       "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
+                       "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
+                       "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
+    except Exception:
+        pass
+
+    # companion mini-charts (data-gated): expected move · P/C OI · COT
+    try:
+        _em = _opts_c.get("expected_move_pct") or _opts_c.get("expected_move")
+        _tr = rr.get("trade", {}) or {}
+        _cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
+        _cot_t = _cot_map.get(ticker, {}) if isinstance(_cot_map, dict) else {}
+        _figs = []
+        for _f in (_expected_move_chart(px, _em, _tr.get("trr"), _tr.get("lrr")),
+                   _pc_oi_chart(_opts_c, _cur_for(market_key, ticker)), _cot_bar(_cot_t)):
+            if _f is not None:
+                _figs.append(_f)
+        if _figs:
+            _cols = st.columns(len(_figs))
+            for _col, _f in zip(_cols, _figs):
+                with _col:
+                    st.plotly_chart(_f, width='stretch', config={"displayModeBar": False})
+    except Exception:
+        pass
+
+    # IHSG bandarmetrics chart (LPM · Intensity)
+    try:
+        if market_key == "ihsg":
+            _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
+            if _bm.get("ok"):
+                _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
+                if _bfig is not None:
+                    st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
+                    st.caption(
+                        f"📊 **Bandarmetrics v2 (A/D-based):** **{_bm.get('divergence', 'FLAT').replace('_', ' ')}** · "
+                        f"CMF {_bm.get('cmf', 0):+.2f} ({_bm.get('cmf_state')}) · A/D {'naik' if _bm.get('adl_rising') else 'turun'} · "
+                        f"DTE {_bm.get('dte')} · rotation {_bm.get('rotation')} · phase {_bm.get('phase')} · score {_bm.get('score')}/100. "
+                        f"💡 **BULLISH_DIV** = harga turun tapi A/D naik = akumulasi senyap (sinyal beli). "
+                        f"⚠️ Approx OHLCV — foreign-flow/broker butuh data IDX (gak ada); phase/score belom tervalidasi "
+                        f"(jalanin `validate_bandarmetrics.py` buat ukur akurasi vs forward-return real).")
+    except Exception:
+        pass
 
 
 def _render_oi_heatmap(snap, ticker, market_key):
@@ -1164,62 +1240,7 @@ def render_rich_ticker(
         #    COT detail, bandar). Report above already has the actionable summary. ──
         with st.expander("🔍 Detail tambahan (raw greeks · OI heatmap · COT · bandar)", expanded=False):
 
-            _opts_c = (snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {})
-            _opts_c = _opts_c.get(ticker, {}) if isinstance(_opts_c, dict) else {}
-
-            # ── unified DARK chart: GEX + Risk Range + Entry/Target/SL (one picture) ──
-            try:
-                _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker))
-                if _fig is not None:
-                    st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
-                    st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
-                               "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
-                               "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
-                               "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
-            except Exception:
-                pass
-
-            # ── companion mini-charts (data-gated): expected move · P/C OI · COT ──
-            try:
-                _em = _opts_c.get("expected_move_pct") or _opts_c.get("expected_move")
-                _tr = rr.get("trade", {}) or {}
-                _cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
-                _cot_t = _cot_map.get(ticker, {}) if isinstance(_cot_map, dict) else {}
-                _figs = []
-                _f1 = _expected_move_chart(px, _em, _tr.get("trr"), _tr.get("lrr"))
-                if _f1 is not None:
-                    _figs.append(_f1)
-                _f2 = _pc_oi_chart(_opts_c, _cur_for(market_key, ticker))
-                if _f2 is not None:
-                    _figs.append(_f2)
-                _f3 = _cot_bar(_cot_t)
-                if _f3 is not None:
-                    _figs.append(_f3)
-                if _figs:
-                    _cols = st.columns(len(_figs))
-                    for _col, _f in zip(_cols, _figs):
-                        with _col:
-                            st.plotly_chart(_f, width='stretch', config={"displayModeBar": False})
-            except Exception:
-                pass
-
-            # ── IHSG bandarmetrics chart (LPM · Intensity) — needs OHLCV (loaded for .JK) ──
-            try:
-                if market_key == "ihsg":
-                    _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
-                    if _bm.get("ok"):
-                        _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
-                        if _bfig is not None:
-                            st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
-                            st.caption(
-                                f"📊 **Bandarmetrics (OHLCV approx):** LPM {'naik' if _bm.get('lpm_rising') else 'turun'} "
-                                f"(slope {_bm.get('lpm_slope_20', 0):+,.0f}) · DTE {_bm.get('dte')} (real {_bm.get('real_dte')}) · "
-                                f"rotation {_bm.get('rotation')} · phase {_bm.get('phase')} · score {_bm.get('score')}/100. "
-                                f"⚠️ Heuristik dari OHLCV — foreign-flow + broker clustering butuh data IDX (lu gak punya). "
-                                f"Baca **polanya** (LPM naik pas harga flat = akumulasi senyap; Intensity spike = sebelum gerak), "
-                                f"jangan telan phase/score mentah (belom tervalidasi).")
-            except Exception:
-                pass
+            render_detail_charts(ticker, rr, snap, market_key, px)
             st.markdown("---")
 
             # TRR/LRR — the chart above already shows these as bands; one compact line + phase

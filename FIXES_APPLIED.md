@@ -293,3 +293,45 @@ additive Python tvdatafeed for missing symbols instead of replacing yfinance.
   the Quad Decoder + Quad Map panel (from→implied quad, ripeness stage, triggers). Verified the
   removed locals (qc/target_q/...) weren't used downstream.
 - IHSG bandarmetrics chart (session 12) is already wired in this build — deploy + Rebuild to see it.
+
+---
+
+# SESSION 14 — ROOT CAUSE of "still old code": Alpha Center had a DUPLICATE renderer
+
+The user kept screenshotting Alpha Center, which does NOT use render_rich_ticker — it has its own
+card layout (pages_lib/alpha_center.py) + calls render_options_recommendation. So every declutter +
+the GEX/companion/bandarmetrics charts (all added to render_rich_ticker) NEVER appeared in Alpha
+Center. The market tabs were correct; Alpha Center was stale. Fix:
+- components/rich_ticker_card.py: extracted the chart stack into a shared public helper
+  render_detail_charts(ticker, rr, snap, market_key, px) — GEX+RiskRange+Entry/Target/SL chart +
+  companion mini-charts + IHSG bandarmetrics. render_rich_ticker now calls it (no behavior change);
+  Alpha Center now calls it too → identical visual treatment, no future drift.
+- pages_lib/alpha_center.py: calls render_detail_charts after the options report; condensed its own
+  "TRR/LRR v20.3b" 3-line block to one compact line (chart shows the bands).
+- app.py: sidebar now shows a BUILD STAMP ("v40 · build 2026-06-02-s14 …") so the user can confirm
+  at a glance whether the deployed app is actually running the latest code.
+
+---
+
+# SESSION 15 — Bandarmetrics v2 (A/D-based) + wired into IHSG filter + validation script
+
+- engines/bandarmetrics_engine.py — rebuilt the core on battle-tested accumulation/distribution
+  indicators (the fragile custom VWAP-delta LPM is kept only as a secondary line):
+  · A/D Line (cumulative Money-Flow-Volume), OBV, Chaikin Money Flow (bounded −1..+1).
+  · Divergence detector: price-slope vs ADL-slope → BULLISH_DIV (price↓ + A/D↑ = silent
+    accumulation), BEARISH_DIV, ALIGNED_UP/DOWN, FLAT.
+  · phase + score now driven by divergence + CMF + A/D slope (robust). Synthetic test now cleanly
+    separates accumulation (BULLISH_DIV, score 95) from distribution (CMF −0.6, score 28) — v1 gave
+    NEUTRAL for everything.
+  · signal_adjustment(bm) → −1..+1 nudge for the pick ranking.
+- pages_lib/market_page_base.py — IHSG confluence score now folds in bandarmetrics signal_adjustment
+  (±12 pts), so accumulation/divergence raises a ticker's rank and distribution lowers it (wired into
+  the actual filter/sort, not just display).
+- components/rich_ticker_card.py — bandarmetrics chart upgraded to v2 panels: Price / A/D Line
+  (accumulation, filled) / Chaikin Money Flow (signed bars); caption shows divergence + CMF.
+- validate_bandarmetrics.py (NEW, repo root) — walk-forward (NO lookahead): computes the signal using
+  only data up to T, measures forward N-day return, aggregates avg/median/hit-rate by divergence
+  regime + score tier + phase, plus Spearman/Pearson and a verdict (does BULLISH_DIV / high-score
+  actually beat BEARISH_DIV / low-score?). Run in YOUR env (needs network); writes
+  data/bandarmetrics_validation.json. THIS is the accuracy gate — phase/score stay "unvalidated"
+  until this shows a real edge.

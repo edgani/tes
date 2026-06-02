@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 — TRR/LRR v20.3b + Auto-Tune + Multi-Market")
+    st.caption("v40 · build 2026-06-02-s15 — bandarmetrics v2 (A/D) + wired to IHSG filter + validation")
     st.divider()
     
     page = st.radio("Navigation", [

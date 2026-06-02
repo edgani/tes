@@ -361,6 +361,13 @@ def render(snap: dict):
             except Exception:
                 pass
 
+            # ── VISUAL: GEX + Risk Range + Entry/Target/SL + companions (shared with market tabs) ──
+            try:
+                from components.rich_ticker_card import render_detail_charts
+                render_detail_charts(ticker, rr, snap, cand.get("market", "us_equity"))
+            except Exception:
+                pass
+
             # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
 
@@ -385,13 +392,13 @@ def render(snap: dict):
                             st.caption(f"  • {cat}")
                 with dc2:
                     if rr:
-                        st.markdown("**📊 TRR/LRR v20.3b**")
                         t = rr.get("trade", {})
                         tr = rr.get("trend", {})
                         tl = rr.get("tail", {})
-                        st.caption(f"TRADE: \\${(t.get('lrr') or 0):.2f} → \\${(t.get('trr') or 0):.2f}")
-                        st.caption(f"TREND: \\${(tr.get('lrr') or 0):.2f} → \\${(tr.get('trr') or 0):.2f}")
-                        st.caption(f"TAIL:  \\${(tl.get('lrr') or 0):.2f} → \\${(tl.get('trr') or 0):.2f}")
+                        st.caption(f"📊 **TRR/LRR** (bands on chart above) — "
+                                   f"TRADE \\${(t.get('lrr') or 0):.2f}–\\${(t.get('trr') or 0):.2f} · "
+                                   f"TREND \\${(tr.get('lrr') or 0):.2f}–\\${(tr.get('trr') or 0):.2f} · "
+                                   f"TAIL \\${(tl.get('lrr') or 0):.2f}–\\${(tl.get('trr') or 0):.2f}")
                         sig = rr.get("signals", {})
                         if sig.get("reason"):
                             st.caption(f"💡 {sig['reason']}")

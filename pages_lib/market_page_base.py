@@ -123,6 +123,18 @@ def _render_picks_tab(market_rrs, snap, market_key, show_options, show_cot, show
                 it["confluence_verdict"] = sc["verdict"]
             except Exception:
                 it["confluence"] = None
+            # IHSG: fold bandarmetrics accumulation/distribution into the rank (±12 pts)
+            if market_key == "ihsg":
+                try:
+                    from engines.bandarmetrics_engine import signal_adjustment
+                    _bm = (snap.get("bandarmetrics", {}) or {}).get(it["ticker"], {})
+                    if _bm.get("ok"):
+                        _adj = signal_adjustment(_bm) * 12.0
+                        it["confluence"] = (it.get("confluence") if it.get("confluence") is not None else 50.0) + _adj
+                        it["bandarmetrics_adj"] = round(_adj, 1)
+                        it["bandarmetrics_div"] = _bm.get("divergence")
+                except Exception:
+                    pass
     except Exception:
         pass
 
