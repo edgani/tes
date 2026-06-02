@@ -381,3 +381,21 @@ no OHLCV metric can read acquisition/insider INTENT (only the footprint).
 - pages_lib/dashboard.py: dashboard wrapped in 3 TABS (📊 Snapshot / 🧭 Quad Decoder / 🪞 Bias Guard)
   so only one section renders at a time → fits one frame. Quad explainer gets in_tab flag (skips
   divider/heading + avoids double-rendering the bias guard).
+
+---
+
+# SESSION 18 — Blueprint pass 1: Quad Map 3-horizon + Themes playbook-per-quad
+
+Per the user's full layout blueprint. Doing it in tested passes (can't verify render blind).
+- pages_lib/dashboard.py: Quad Map now plots THREE horizons — Structural (○ white), Monthly (✕ cyan),
+  Global/50-country (◇ gold) — with deterministic offsets so co-located markers stay visible, plus the
+  transition arrow toward implied-next quad. Quad Decoder tab gained a Global KPI column + next-quad in
+  the transition badge; caption rewritten to explain all three horizons. Verified via serialization
+  (3 markers + arrow; all-same-quad offset case).
+- pages_lib/themes.py: added "Playbook per Quad" — all 4 GIP quads (strong/weak) in a 4-col grid with
+  the current structural/monthly quad highlighted. (Macro narrative, active scenarios, permanent themes,
+  next-quad playbook were already present.)
+REMAINING blueprint (next tested passes): dashboard block merges (Tier1+AssetPulse, BoomBust+Crash),
+single-block reorg of ticker cards per market, per-market Front-Run tabs. Data-limited pieces (OI
+heatmap for forex/IHSG = no listed options in yfinance; COT = latest only; on-chain = sparse; dealer
+positioning = proxy) will populate where data exists.

@@ -57,6 +57,7 @@ def _quad_map_figure(qe: dict):
     import plotly.graph_objects as go
     sq = qe.get("structural_quad", "Q3")
     mq = qe.get("monthly_quad", sq)
+    gq = qe.get("global_quad", sq)
     nq = (qe.get("where_it_goes", {}) or {}).get("implied_next", sq)
 
     fig = go.Figure()
@@ -72,27 +73,29 @@ def _quad_map_figure(qe: dict):
     fig.add_shape(type="line", x0=0, x1=0, y0=-1, y1=1, line={"color": "#30363d", "width": 1})
     fig.add_shape(type="line", x0=-1, x1=1, y0=0, y1=0, line={"color": "#30363d", "width": 1})
 
-    sx, sy = _QM_CENTER.get(sq, (0.5, -0.5))
-    mx, my = _QM_CENTER.get(mq, (sx, sy))
-    if (sx, sy) == (mx, my):  # same quad → small offset so both dots are visible
-        mx, my = mx + 0.12, my + 0.12
-        sx, sy = sx - 0.12, sy - 0.12
+    # three horizons, small deterministic offsets so co-located markers stay visible
+    base = {"S": _QM_CENTER.get(sq, (0.5, -0.5)), "M": _QM_CENTER.get(mq, (0.5, -0.5)),
+            "G": _QM_CENTER.get(gq, (0.5, -0.5))}
+    offs = {"S": (-0.16, -0.13), "M": (0.16, 0.13), "G": (0.16, -0.13)}
+    pos = {k: (base[k][0] + offs[k][0], base[k][1] + offs[k][1]) for k in base}
     # projected path toward implied-next quad (dashed) if it differs from structural
     if nq != sq:
-        nx, ny = _QM_CENTER.get(nq, (mx, my))
+        nx, ny = _QM_CENTER.get(nq, pos["M"])
+        sx, sy = pos["S"]
         fig.add_annotation(x=nx, y=ny, ax=sx, ay=sy, xref="x", yref="y", axref="x", ayref="y",
                            showarrow=True, arrowhead=2, arrowsize=1.2, arrowwidth=2,
-                           arrowcolor="#f0b429", opacity=0.8)
-    fig.add_trace(go.Scatter(x=[sx], y=[sy], mode="markers+text", text=["Structural"],
-                             textposition="bottom center", textfont={"color": "#e6edf3", "size": 11},
-                             marker={"symbol": "circle-open", "size": 22, "color": "#e6edf3",
-                                     "line": {"color": "#e6edf3", "width": 3}},
-                             hovertemplate=f"Structural (O): {sq}<extra></extra>", showlegend=False))
-    fig.add_trace(go.Scatter(x=[mx], y=[my], mode="markers+text", text=["Monthly (leading)"],
-                             textposition="top center", textfont={"color": "#39d0d8", "size": 11},
-                             marker={"symbol": "x", "size": 18, "color": "#39d0d8",
-                                     "line": {"color": "#39d0d8", "width": 2}},
-                             hovertemplate=f"Monthly (X): {mq}<extra></extra>", showlegend=False))
+                           arrowcolor="#f0b429", opacity=0.85)
+    for k, sym, col, lbl, tp, q in [
+        ("S", "circle-open", "#e6edf3", "Structural", "bottom center", sq),
+        ("M", "x", "#39d0d8", "Monthly", "top center", mq),
+        ("G", "diamond-open", "#f0b429", "Global", "middle right", gq),
+    ]:
+        px_, py_ = pos[k]
+        fig.add_trace(go.Scatter(x=[px_], y=[py_], mode="markers+text", text=[f"{lbl}"],
+                                 textposition=tp, textfont={"color": col, "size": 10},
+                                 marker={"symbol": sym, "size": 20, "color": col,
+                                         "line": {"color": col, "width": 3}},
+                                 hovertemplate=f"{lbl}: {q}<extra></extra>", showlegend=False))
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
@@ -122,20 +125,21 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     wig = qe.get("where_it_goes", {})
     stage = wig.get("stage", "—")
     color = {"RIPE": "#cf222e", "BUILDING": "#bf8700", "DORMANT": "#1a7f37"}.get(stage, "#57606a")
-    c1, c2, c3 = st.columns([1.1, 1, 1])
+    c1, c2, c3, c4 = st.columns([1.2, 1, 1, 1])
     c1.markdown(f"<div style='background:{color};color:white;padding:8px;border-radius:6px;"
                 f"text-align:center;font-weight:700'>Transition: {stage}<br>"
-                f"<span style='font-size:0.9rem'>{wig.get('label','')}</span></div>",
+                f"<span style='font-size:0.9rem'>→ {wig.get('implied_next','?')} {('('+wig.get('implied_next_name','')+')') if wig.get('implied_next_name') else ''}</span></div>",
                 unsafe_allow_html=True)
     c2.metric("Structural", qe.get("structural_quad", "?"), qe.get("structural_name", ""))
     c3.metric("Monthly (leading)", qe.get("monthly_quad", "?"), qe.get("monthly_name", ""))
+    c4.metric("Global (50-country)", qe.get("global_quad", "?"), qe.get("global_name", ""))
 
     try:
         st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
-        st.caption("🗺️ **Cara baca:** sumbu X = inflasi (rate-of-change), sumbu Y = growth. "
-                   "Titik putih = posisi **structural** (lambat), cyan = **monthly/leading** (cepat). "
-                   "Panah kuning = arah transisi yang lagi kebentuk. Kalau dua titik beda kuadran → "
-                   "horizon cepat udah turn duluan = sinyal awal.")
+        st.caption("🗺️ **Cara baca:** sumbu X = inflasi (rate-of-change), sumbu Y = growth (4 kuadran GIP Hedgeye). "
+                   "**○ putih = Structural** (lambat, anchor) · **✕ cyan = Monthly/leading** (cepat, sinyal awal) · "
+                   "**◇ emas = Global** (50-negara). **Panah kuning = arah transisi** (ke quad berikutnya). "
+                   "Kalau horizon cepat (Monthly) udah pindah kuadran duluan dari Structural = **early warning** transisi.")
     except Exception:
         pass
 

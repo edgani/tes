@@ -3,7 +3,37 @@ import streamlit as st
 
 def render(snap):
     st.title("📖 Themes & Scenarios")
-    st.caption("Macro narratives (Ricky2212/MentorBaik), active scenarios, dan theme exposure.")
+    st.caption("Playbook per quad, macro narratives (Ricky2212/MentorBaik), active scenarios, permanent themes.")
+
+    # ── PLAYBOOK PER QUAD (all 4 GIP quads; current one highlighted) ──
+    try:
+        from engines.quad_explainer import _PLAYBOOK, _NAME
+        gip = snap.get("gip", {}) or {}
+        cur_sq = (gip.get("structural_quad") if isinstance(gip, dict) else None) or snap.get("current_quad", "Q3")
+        cur_mq = (gip.get("monthly_quad") if isinstance(gip, dict) else None) or cur_sq
+        st.markdown("### 🎯 Playbook per Quad (GIP Hedgeye)")
+        qcol = st.columns(4)
+        qcolors = {"Q1": "#3FB950", "Q2": "#D29922", "Q3": "#F85149", "Q4": "#A371F7"}
+        for i, q in enumerate(["Q1", "Q2", "Q3", "Q4"]):
+            pb = _PLAYBOOK.get(q, {})
+            tag = ""
+            if q == cur_sq:
+                tag += " · 🔵 Structural"
+            if q == cur_mq:
+                tag += " · ✕ Monthly"
+            border = "3px solid #fff" if (q in (cur_sq, cur_mq)) else "1px solid #30363d"
+            with qcol[i]:
+                st.markdown(
+                    f"<div style='border:{border};border-radius:8px;padding:8px;background:{qcolors[q]}22;min-height:150px'>"
+                    f"<div style='font-weight:800;color:{qcolors[q]}'>{q} · {_NAME.get(q,'')}{tag}</div>"
+                    f"<div style='font-size:0.72rem;margin-top:6px;color:#3FB950'><b>Strong:</b> {pb.get('strong','')}</div>"
+                    f"<div style='font-size:0.72rem;margin-top:4px;color:#F85149'><b>Weak:</b> {pb.get('weak','')}</div>"
+                    f"</div>", unsafe_allow_html=True)
+        st.caption("Quad sekarang ditandai border putih. Strong = sektor/aset yang biasanya outperform di quad itu; "
+                   "Weak = yang underperform. Ini peta rotasi: posisikan ke 'Strong' quad sekarang + ancang-ancang ke next quad (bawah).")
+        st.divider()
+    except Exception as e:
+        st.caption(f"Playbook per quad unavailable: {e}")
 
     # ── NEXT-QUAD PLAYBOOK — position AHEAD of the transition (Keith storm-prep) ──
     try:
