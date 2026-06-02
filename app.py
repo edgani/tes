@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-02-s18 — Quad Map 3-horizon (struct+monthly+global) + Themes playbook-per-quad")
+    st.caption("v40 · build 2026-06-02-s19 — bandarmetrics candlestick (IHSG-only) + dashboard declutter")
     st.divider()
     
     page = st.radio("Navigation", [

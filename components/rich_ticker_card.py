@@ -252,40 +252,47 @@ def _cot_bar(cot):
 
 
 def _bandarmetrics_chart(bm, ticker, cur="Rp"):
-    """DARK 3-panel chart: Price (+AvgCost) / A-D Line (accumulation, filled) / Chaikin Money Flow."""
+    """DARK chart in the real bandarmetrics.com style (attachment 4): candlesticks + LPM line
+    overlay (secondary axis) / Intensity panel / Vol Rotation panel."""
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
     s = (bm or {}).get("series") or {}
-    idx, price, adl, cmf = s.get("index"), s.get("price"), s.get("adl"), s.get("cmf")
-    if not (idx and price and adl) or len(idx) < 10:
+    idx = s.get("index"); o, h, l, c = s.get("open"), s.get("high"), s.get("low"), s.get("price")
+    lpm, inten, rot = s.get("lpm"), s.get("intensity"), s.get("rotation")
+    if not (idx and o and h and l and c) or len(idx) < 10:
         return None
-    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.5, 0.3, 0.2],
-                        vertical_spacing=0.045,
-                        subplot_titles=("Price", "A/D Line — accumulation (z-norm)", "Chaikin Money Flow"))
-    fig.add_trace(go.Scatter(x=idx, y=price, mode="lines", line={"color": "#e6edf3", "width": 1.5},
-                             name="Price"), row=1, col=1)
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, row_heights=[0.62, 0.19, 0.19],
+                        vertical_spacing=0.035, specs=[[{"secondary_y": True}], [{}], [{}]],
+                        subplot_titles=("Price + LPM (Liquidity Pressure Model)", "Intensity", "Vol Rotation"))
+    # candlesticks
+    fig.add_trace(go.Candlestick(x=idx, open=o, high=h, low=l, close=c, name="Price",
+                                 increasing_line_color="#26a69a", decreasing_line_color="#ef5350",
+                                 increasing_fillcolor="#26a69a", decreasing_fillcolor="#ef5350",
+                                 line={"width": 1}), row=1, col=1, secondary_y=False)
+    # LPM line overlay on secondary axis (teal, like the real BM)
+    if lpm:
+        fig.add_trace(go.Scatter(x=idx, y=lpm, mode="lines", name="LPM",
+                                 line={"color": "#2dd4bf", "width": 1.6}), row=1, col=1, secondary_y=True)
     if bm.get("avgcost"):
-        fig.add_hline(y=bm["avgcost"], line={"color": "#f0b429", "width": 1, "dash": "dot"}, row=1, col=1,
+        fig.add_hline(y=bm["avgcost"], line={"color": "#f0b429", "width": 1, "dash": "dot"},
+                      row=1, col=1, secondary_y=False,
                       annotation_text=f"AvgCost {cur}{bm['avgcost']:,.0f}",
                       annotation_font={"size": 8, "color": "#f0b429"})
-    up = (bm.get("adl_slope_20", 0) or 0) > 0
-    fig.add_trace(go.Scatter(x=idx, y=adl, mode="lines",
-                             line={"color": "#3FB950" if up else "#F85149", "width": 1.5},
-                             fill="tozeroy",
-                             fillcolor="rgba(63,185,80,0.12)" if up else "rgba(248,81,73,0.12)",
-                             name="A/D Line"), row=2, col=1)
-    if cmf:
-        cmf_colors = ["#3FB950" if (x or 0) >= 0 else "#F85149" for x in cmf]
-        fig.add_trace(go.Bar(x=idx, y=cmf, marker_color=cmf_colors, name="CMF"), row=3, col=1)
-        fig.add_hline(y=0, line={"color": "#30363d", "width": 1}, row=3, col=1)
-    div = bm.get("divergence", "FLAT").replace("_", " ").title()
-    fig.update_layout(height=440, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
-                      margin={"t": 42, "b": 18, "l": 50, "r": 12}, bargap=0.1,
-                      title={"text": f"{ticker} — Bandarmetrics v2 (A/D · CMF · {div})",
-                             "font": {"size": 13, "color": "#c9d1d9"}})
-    fig.update_xaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
+    # Intensity (purple bars)
+    if inten:
+        fig.add_trace(go.Bar(x=idx, y=inten, marker_color="#a371f7", name="Intensity"), row=2, col=1)
+    # Vol Rotation (green=efficient / yellow=noise / red=distribution)
+    if rot:
+        rc = ["#26a69a" if (x or 0) > 0.15 else "#ef5350" if (x or 0) < -0.15 else "#d4a017" for x in rot]
+        fig.add_trace(go.Bar(x=idx, y=[abs(x or 0) for x in rot], marker_color=rc, name="Vol Rotation"), row=3, col=1)
+    fig.update_layout(height=480, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(13,17,23,0.6)", font={"color": "#c9d1d9", "size": 10},
+                      margin={"t": 42, "b": 18, "l": 50, "r": 50}, bargap=0.15,
+                      xaxis_rangeslider_visible=False,
+                      title={"text": f"{ticker} — Bandarmetrics", "font": {"size": 13, "color": "#c9d1d9"}})
+    fig.update_xaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8}, rangeslider_visible=False)
     fig.update_yaxes(gridcolor="#21262d", tickfont={"color": "#8b949e", "size": 8})
+    fig.update_yaxes(showgrid=False, secondary_y=True, row=1, col=1, tickfont={"color": "#2dd4bf", "size": 8})
     for ann in fig.layout.annotations:
         ann.font.size = 10; ann.font.color = "#c9d1d9"
     return fig
@@ -345,32 +352,20 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
     except Exception:
         pass
 
-    # Bandarmetrics chart (A/D · CMF) + stealth/ignition — now available for all markets
+    # Bandarmetrics chart (candlestick + LPM + Intensity + Vol Rotation) — IHSG ONLY
     try:
-        _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
-        if _bm.get("ok"):
-            _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
-            if _bfig is not None:
-                st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
-                _ig = _bm.get("ignition") or {}
-                _ff = _bm.get("foreign_flow") or {}
-                _stl = _bm.get("stealth_accumulation") or {}
-                _stl_txt = ""
-                if _stl.get("is_stealth"):
-                    _stl_txt = (f"  \n🤫 **HIDDEN ACCUMULATION (score {_stl.get('score')})** — {_stl.get('reason')}. "
-                                f"Uang masuk diam-diam sementara harga ditahan = jejak akumulasi sebelum markup.")
-                _ig_txt = ""
-                if _ig.get("ignition"):
-                    _ig_txt = (f"  \n🚨 **IGNITION (score {_ig.get('ignition_score')})** — {' · '.join(_ig.get('signals', []))}. "
-                               f"Ada aktivitas gak wajar → **selidiki katalisnya** (news/akuisisi/insider). Metrik liat jejak, bukan alasan.")
-                _ff_txt = ("" if _ff.get("available")
-                           else "  \n🌐 Foreign Flow (sinyal yang nangkep EURO/MSIN) = **butuh data Type-F IDX** (gak ada di yfinance).")
-                st.caption(
-                    f"📊 **Bandarmetrics v2 (A/D-based):** **{_bm.get('divergence', 'FLAT').replace('_', ' ')}** · "
-                    f"CMF {_bm.get('cmf', 0):+.2f} ({_bm.get('cmf_state')}) · A/D {'naik' if _bm.get('adl_rising') else 'turun'} · "
-                    f"phase {_bm.get('phase')} · score {_bm.get('score')}/100."
-                    f"{_stl_txt}{_ig_txt}{_ff_txt}  \n"
-                    f"⚠️ Approx OHLCV — phase/score belom tervalidasi (jalanin `validate_bandarmetrics.py`).")
+        if market_key == "ihsg":
+            _bm = (snap.get("bandarmetrics", {}) or {}).get(ticker, {})
+            if _bm.get("ok"):
+                _bfig = _bandarmetrics_chart(_bm, ticker, _cur_for(market_key, ticker))
+                if _bfig is not None:
+                    st.plotly_chart(_bfig, width='stretch', config={"displayModeBar": False})
+                    _stl = _bm.get("stealth_accumulation") or {}
+                    _stl_txt = (f" · 🤫 **HIDDEN ACCUMULATION ({_stl.get('score')})**" if _stl.get("is_stealth") else "")
+                    st.caption(
+                        f"**LPM** (teal) = tekanan likuiditas bandar · **Intensity** = lonjakan aktivitas sebelum harga gerak · "
+                        f"**Vol Rotation** (ijo=efisien/kuning=noise/merah=distribusi). Phase **{_bm.get('phase')}** · score {_bm.get('score')}/100{_stl_txt}. "
+                        f"⚠️ Approx OHLCV; Foreign Flow butuh data Type-F IDX (gak ada di yfinance). Validasi: `validate_bandarmetrics.py`.")
     except Exception:
         pass
 

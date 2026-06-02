@@ -399,3 +399,22 @@ REMAINING blueprint (next tested passes): dashboard block merges (Tier1+AssetPul
 single-block reorg of ticker cards per market, per-market Front-Run tabs. Data-limited pieces (OI
 heatmap for forex/IHSG = no listed options in yfinance; COT = latest only; on-chain = sparse; dealer
 positioning = proxy) will populate where data exists.
+
+---
+
+# SESSION 19 — Bandarmetrics → real BM look (candlesticks, IHSG-only) + dashboard declutter
+
+- engines/bandarmetrics_engine.py: series now exposes OHLC + volume + rotation so the chart can be
+  candlestick-based.
+- components/rich_ticker_card.py: _bandarmetrics_chart rebuilt in the real bandarmetrics.com style
+  (attachment 4) — candlesticks + LPM line overlay (secondary axis, teal) + Intensity panel (purple) +
+  Vol Rotation panel (green/yellow/red). Caption trimmed. Chart is IHSG-ONLY again (per user); other
+  markets no longer fetch/show bandarmetrics.
+- orchestrator.py: bandarmetrics fetch reverted to .JK tickers only.
+- pages_lib/dashboard.py: removed the tabs; dashboard renders as one flow with the Quad Decoder block
+  (3-horizon) in it. Bias Guard panel removed from the dashboard (not in spec; engine still runs).
+- pages_lib/_dashboard_legacy.py: removed Deep Technical + v39 ALPHA build-info panels (not in spec;
+  engines still compute in background).
+REMAINING (next passes, big blind UI): merge dashboard blocks into single panels (Tier1+AssetPulse;
+Quad+Catalyst; BoomBust+Crash) for true 1-frame; aggressive ticker-card cleanup (remove everything not
+in each tab's spec) per market.

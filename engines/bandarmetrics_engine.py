@@ -148,7 +148,9 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
         "ignition": ignition, "foreign_flow": ff, "stealth_accumulation": stealth,
         "series": {
             "index": [str(x)[:10] for x in idx],
-            "price": _ser(c), "adl": _ser(adl_n), "cmf": _ser(cmf),
+            "price": _ser(c), "open": _ser(o), "high": _ser(h), "low": _ser(l),
+            "volume": _ser(v), "rotation": _ser(rot_score),
+            "adl": _ser(adl_n), "cmf": _ser(cmf),
             "obv": _ser(((obv - obv.rolling(120).mean()) / obv.rolling(120).std().replace(0, np.nan))),
             "intensity": _ser(intensity), "lpm": _ser(lpm),
         },

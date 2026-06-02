@@ -21,27 +21,20 @@ def render(snap: dict):
         except Exception:
             vix_now = 20.0
 
-    # Tabs keep the dashboard to ONE frame — only one section renders at a time.
-    _t_overview, _t_quad, _t_bias = st.tabs(["📊 Snapshot", "🧭 Quad Decoder", "🪞 Bias Guard"])
-    with _t_overview:
-        try:
-            _legacy_render(snap, prices, vix_now)
-        except Exception as e:
-            import traceback
-            st.error(f"Legacy dashboard error: {e}")
-            with st.expander("Traceback"):
-                st.code(traceback.format_exc())
-            _fallback_dashboard(snap)
-    with _t_quad:
-        try:
-            _render_quad_explainer(snap, in_tab=True)
-        except Exception:
-            pass
-    with _t_bias:
-        try:
-            _render_bias_guard(snap)
-        except Exception:
-            pass
+    try:
+        _legacy_render(snap, prices, vix_now)
+    except Exception as e:
+        import traceback
+        st.error(f"Legacy dashboard error: {e}")
+        with st.expander("Traceback"):
+            st.code(traceback.format_exc())
+        _fallback_dashboard(snap)
+
+    # Quad Decoder block (Structural/Monthly/Global + next quad + explanation) — in the dashboard flow
+    try:
+        _render_quad_explainer(snap)
+    except Exception:
+        pass
     return
 
 
@@ -179,9 +172,7 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
             for s in scen:
                 tick = " · ".join(s.get("tickers", [])) if s.get("tickers") else ""
                 st.caption(f"**{s['title']}** — _{s.get('signal','')}_ {('· ' + tick) if tick else ''}")
-
-    if not in_tab:
-        _render_bias_guard(snap)
+    # (Bias Guard panel removed from dashboard per spec — engine still runs in background.)
 
 
 def _render_bias_guard(snap: dict):

@@ -1189,15 +1189,4 @@ def render(snap, prices=None, vix_now=20.0):
         st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:6px 0 4px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
         fig_ap = _plotly_asset_pulse(snap, prices)
         st.plotly_chart(fig_ap, width='stretch', config={"displayModeBar": False}, key="ap_v54")
-
-    # Deep Technical di bawah (collapsed, tidak makan space)
-    with st.expander("🔬 Deep Technical", expanded=False):
-        fig_dt = _plotly_deep_technical(snap)
-        if fig_dt:
-            st.plotly_chart(fig_dt, width='stretch', config={"displayModeBar": False}, key="deep_tech_v54")
-        else:
-            st.caption("Deep Technical: CRI = options velocity, Squeeze = short squeeze prob, VRP = sell premium when high")
-
-    # v39.6: Build info moved to bottom per user request
-    with st.expander("📊 MacroRegime Pro v39 ALPHA · Built info · Assets · Indicators · AFS · Flipped", expanded=False):
-        pass
+    # (Deep Technical + v39 build-info panels removed per spec — engines still run in background.)
