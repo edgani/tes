@@ -68,9 +68,10 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     # ── Chaikin Money Flow (bounded -1..1) ──
     cmf = (mfv.rolling(cmf_win).sum() / v.rolling(cmf_win).sum().replace(0, np.nan))
 
-    # ── LPM (secondary, kept for continuity): cumulative VWAP-delta, EMA ──
+    # ── LPM (Liquidity Pressure Model): cumulative CLV-signed money flow (×price), EMA-smoothed.
+    #    RE doc formula #1 — signed money flow = CLV × Vol × Close. Window/scale pending calibration.
     vwap = (typ * v).rolling(vwap_win).sum() / v.rolling(vwap_win).sum().replace(0, np.nan)
-    lpm = _ema(((c - vwap) * v).fillna(0).cumsum(), lpm_smooth)
+    lpm = _ema((clv * v * c).fillna(0).cumsum(), lpm_smooth)
 
     # ── DTE / Real DTE: |ADL| over average daily $-volume ──
     adv = (v * typ).rolling(adv_win).mean()
@@ -79,15 +80,18 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     dte = (inv / adv.replace(0, np.nan))
     real_dte = (inv / (adv.replace(0, np.nan) * 0.35))
 
-    # ── Volume Rotation: efficiency of transfer ──
+    # ── Volume Rotation: efficiency of price transfer (RE doc #4) ──
+    #    efficiency = |C-O| / (H-L) ∈ 0..1 (clean move vs churn) · signed by C-O · scaled by volume z.
+    efficiency = ((c - o).abs() / rng).clip(0, 1).fillna(0)
     direction = np.sign(c - o)
     vol_z = ((v - v.rolling(20).mean()) / v.rolling(20).std().replace(0, np.nan))
-    rot_score = direction * clv.abs() * vol_z.abs().clip(upper=3) / 3.0 * np.sign(clv)
+    rot_score = direction * efficiency * vol_z.clip(-3, 3) / 3.0
 
-    # ── Intensity: ADL ROC z-score spikes ──
-    adl_roc = adl - adl.shift(10)
-    z = (adl_roc - adl_roc.rolling(20).mean()) / adl_roc.rolling(20).std().replace(0, np.nan)
-    intensity = z.abs().where(z.abs() > 1.5, 0.0)
+    # ── Intensity: effort = Volume × |return|, z-scored, gated (RE doc #3) ──
+    ret = (c - c.shift(1)).abs() / c.shift(1).replace(0, np.nan)
+    effort = (v * ret).fillna(0)
+    z = (effort - effort.rolling(20).mean()) / effort.rolling(20).std().replace(0, np.nan)
+    intensity = z.where(z > 1.5, 0.0).fillna(0.0)
 
     def _last(s, d=0.0):
         try:

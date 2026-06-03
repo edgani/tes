@@ -127,39 +127,33 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     c3.metric("Monthly (leading)", qe.get("monthly_quad", "?"), qe.get("monthly_name", ""))
     c4.metric("Global (50-country)", qe.get("global_quad", "?"), qe.get("global_name", ""))
 
-    try:
-        st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
-        st.caption("🗺️ **Cara baca:** sumbu X = inflasi (rate-of-change), sumbu Y = growth (4 kuadran GIP Hedgeye). "
-                   "**○ putih = Structural** (lambat, anchor) · **✕ cyan = Monthly/leading** (cepat, sinyal awal) · "
-                   "**◇ emas = Global** (50-negara). **Panah kuning = arah transisi** (ke quad berikutnya). "
-                   "Kalau horizon cepat (Monthly) udah pindah kuadran duluan dari Structural = **early warning** transisi.")
-    except Exception:
-        pass
-
-    st.markdown(f"**Kenapa {qe.get('structural_quad','')}:** {qe.get('why','')}")
-
-    wc = qe.get("what_changes", [])
-    if wc:
-        _trg = " · ".join(f"**{w['to']}** kalau {w['trigger']}" for w in wc)
-        st.markdown(f"**Pindah quad:** {_trg}")
-
-    if wig.get("summary"):
-        st.markdown(f"**Ke mana:** {wig['summary']}")
-    if wig.get("action_hint"):
-        st.info(f"🎯 {wig['action_hint']}")
-
-    # ── Catalyst monitor folded INTO the Quad block (these drive the transition) ──
-    try:
-        from pages_lib._dashboard_legacy import _catalyst_monitor_v2
-        _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
-                                        mq=qe.get("monthly_quad", "Q2"),
-                                        next_q=wig.get("implied_next", "Q2"))
-        if _cats:
-            st.markdown("**⚡ Catalyst (pemicu pindah quad):**")
-            for _n, _v, _e, _d, _im in _cats[:5]:
-                st.caption(f"{_e} **{_n}** — {_d} · _{_im}_")
-    except Exception:
-        pass
+    # ── Compact 2-column: Quad Map (left) | why/what/where + catalyst (right) — fits one frame ──
+    mcol, ecol = st.columns([1.15, 1])
+    with mcol:
+        try:
+            st.plotly_chart(_quad_map_figure(qe), width='stretch', config={"displayModeBar": False})
+            st.caption("🗺️ X=inflasi · Y=growth (GIP). ○ Structural · ✕ Monthly · ◇ Global · panah kuning = arah transisi.")
+        except Exception:
+            pass
+    with ecol:
+        st.markdown(f"**Kenapa {qe.get('structural_quad','')}:** {qe.get('why','')}")
+        wc = qe.get("what_changes", [])
+        if wc:
+            _trg = " · ".join(f"**{w['to']}** kalau {w['trigger']}" for w in wc)
+            st.markdown(f"**Pindah quad:** {_trg}")
+        if wig.get("action_hint"):
+            st.info(f"🎯 {wig['action_hint']}")
+        # Catalyst folded in (compact one-liner; these drive the transition)
+        try:
+            from pages_lib._dashboard_legacy import _catalyst_monitor_v2
+            _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
+                                            mq=qe.get("monthly_quad", "Q2"),
+                                            next_q=wig.get("implied_next", "Q2"))
+            if _cats:
+                _crow = " · ".join(f"{_e} {_n} ({_d})" for _n, _v, _e, _d, _im in _cats[:5])
+                st.caption(f"**⚡ Catalyst (pemicu pindah quad):** {_crow}")
+        except Exception:
+            pass
 
     with st.expander("📖 Detail — playbook per-quad + skenario Ricky", expanded=False):
         pb = qe.get("playbook", {})

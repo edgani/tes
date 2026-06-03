@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s23 — per-card build marker (card·s23) to catch stale card-file deploys")
+    st.caption("v40 · build 2026-06-03-s24 — Quad Decoder 2-col compact (map｜why+catalyst) for 1-frame + bandarmetrics formulas reverse-engineered")
     st.divider()
     
     page = st.radio("Navigation", [

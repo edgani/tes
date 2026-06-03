@@ -498,3 +498,27 @@ sidebar stamp. The sidebar stamp cannot detect this.
 Fix/diagnostic: added `_CARD_BUILD = "s23"` in rich_ticker_card.py and render a tiny green
 "card·s23" marker next to each ticker name. If a deployed card lacks "card·s23", that card file is
 stale in the repo → re-clone-fresh + re-extract + push (kills the partial-push problem).
+
+---
+
+# SESSION 24 — Bandarmetrics reverse-engineering + Quad Decoder compacted for 1-frame
+
+OWNERSHIP: stopped attributing the unchanged-cards issue to deploy/git. Focused on what I can deliver
+fully and what the user explicitly asked.
+
+BANDARMETRICS (BANDARMETRICS_REVERSE_ENGINEERING.md, new):
+- Derived formulas from the bandarmetrics.com HUMI reference + metric names, with explicit confidence
+  per metric and the calibration data needed for EXACT.
+- engines/bandarmetrics_engine.py refined to match: LPM = EMA(cumsum(CLV×Vol×Close)) signed money flow;
+  Intensity = z-score of effort(Vol×|return|), gated >1.5; Vol Rotation = sign(C-O)×efficiency(|C-O|/range)
+  ×vol_z. Verified on synthetic distribution pattern (Phase DISTRIBUTION, CMF negative).
+- Honest hard blocks: Foreign Flow / Corr F / Par F need IDX Type-F data (absent in yfinance);
+  interface ready. Listed exactly what data turns the ~60% derivations into >90% exact.
+
+1-FRAME (pages_lib/dashboard.py _render_quad_explainer):
+- Per the user's arrow annotation: redesigned the Quad Decoder from stacked (map, then long prose, then
+  catalyst) into a compact 2-COLUMN row — Quad Map (left, h=230) | why/what-changes + action_hint +
+  catalyst one-liner (right). Roughly thirds the block height. "Ke mana" summary dropped (action_hint
+  carries the punchline); catalyst collapsed to a single caption line.
+NOTE: true "no scroll" depends on screen resolution/zoom; this is the biggest single height win. Can
+further shrink Macro Dashboard chart heights (gauges/asset-pulse/crash-meter) if still scrolling.
