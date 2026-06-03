@@ -464,3 +464,19 @@ candlestick-bandarmetrics were ALL already shipped in s19; the screenshots preda
 REMAINING (deeper dashboard redesign, to do WITH visual confirmation once user can deploy):
 merge Tier1Alpha+AssetPulse into one panel; fold Catalyst into the Quad block; merge BoomBust+Crash.
 Also: Alpha Center's own card renderer (alpha_center.py) still needs the same single-block cleanup.
+
+---
+
+# SESSION 22 — Dashboard redesigned into the 4 merged blocks (per spec)
+
+pages_lib/_dashboard_legacy.py render() reorganized:
+- LEFT column = Block A: Market Structure (Tier1Alpha) + Asset Pulse merged together.
+- RIGHT column = Block C: risk gauges (VIX/Health/Kelly/Alerts) + Economic Calendar.
+- New full-width Block D row: Crash Meter + Boom-Bust/Survival merged side by side, with one caption.
+- Catalyst block REMOVED from the left column (folded into the Quad block).
+pages_lib/dashboard.py _render_quad_explainer(): Catalyst monitor now rendered INSIDE the Quad Decoder
+block (the catalysts are the transition drivers) — "⚡ Catalyst (pemicu pindah quad)" under the
+why/what/where. So Block B = Quad Decoder + explanation + Catalyst, and it leads the dashboard.
+Verified: _catalyst_monitor_v2 returns 5-tuples (unpacking matches), full tree compiles, no lint errors.
+Combined with s21 (plain-Indonesian quad explanation). Still TODO if user wants: tighten Block A into a
+single bordered panel visually; verify on deploy.

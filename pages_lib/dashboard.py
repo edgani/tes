@@ -148,6 +148,19 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     if wig.get("action_hint"):
         st.info(f"🎯 {wig['action_hint']}")
 
+    # ── Catalyst monitor folded INTO the Quad block (these drive the transition) ──
+    try:
+        from pages_lib._dashboard_legacy import _catalyst_monitor_v2
+        _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),
+                                        mq=qe.get("monthly_quad", "Q2"),
+                                        next_q=wig.get("implied_next", "Q2"))
+        if _cats:
+            st.markdown("**⚡ Catalyst (pemicu pindah quad):**")
+            for _n, _v, _e, _d, _im in _cats[:5]:
+                st.caption(f"{_e} **{_n}** — {_d} · _{_im}_")
+    except Exception:
+        pass
+
     with st.expander("📖 Detail — playbook per-quad + skenario Ricky", expanded=False):
         pb = qe.get("playbook", {})
         cur, nxt = pb.get("current", {}), pb.get("next", {})

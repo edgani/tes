@@ -1087,24 +1087,10 @@ def render(snap, prices=None, vix_now=20.0):
         # Proyeksi Transisi block removed — superseded by the Quad Decoder + Quad Map panel
         # (lower on the dashboard), which shows from→implied quad, ripeness stage, and triggers.
 
-        # Catalyst
-        cat_html = '<div style="background:#161b22;border:1px solid #30363d;border-radius:5px;padding:4px 6px;margin-top:3px;">'
-        cat_html += '<div style="font-size:0.55rem;color:#F85149;font-weight:600;letter-spacing:0.5px;margin-bottom:1px;">⚡ CATALYST</div>'
-        for name, val, emoji, desc, impact in catalysts[:5]:
-            cat_html += (
-                f'<div style="font-size:0.52rem;padding:1px 0;border-bottom:1px solid #21262d;">'
-                f'<div style="display:flex;justify-content:space-between;">'
-                f'<span style="color:#c9d1d9;">{name}</span>'
-                f'<span>{emoji} <span style="color:#8b949e;">{desc}</span></span></div>'
-                f'<div style="font-size:0.48rem;color:#484f58;padding-left:3px;">{impact}</div></div>'
-            )
-        cat_html += '</div>'
-        st.markdown(cat_html, unsafe_allow_html=True)
-
-        # Economic Calendar
-        st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
-
-        # LARGE spacer to push left column toward bottom (fill vertical space)
+        # Block A: Asset Pulse merged directly under Market Structure (Tier1Alpha).
+        # (Catalyst moved up into the Quad Decoder block; Economic Calendar moved to the right column.)
+        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:8px 0 4px;'>⚡ ASSET PULSE (21D) — gerak aset 21 hari</div>", unsafe_allow_html=True)
+        st.plotly_chart(_plotly_asset_pulse(snap, prices), width='stretch', config={"displayModeBar": False}, key="ap_v54")
 
 
     # ═══════════════════════════════════════════════════════════
@@ -1159,17 +1145,17 @@ def render(snap, prices=None, vix_now=20.0):
             st.plotly_chart(fig_a, width='stretch', config={"displayModeBar": False}, key="g_a_v54")
             st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:2px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
-        # Crash Meter — with BIG spacing above so caption is readable, not sticking to gauges
-        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:8px 0 4px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
-        fig_cm = _plotly_crash_meter(snap)
-        st.plotly_chart(fig_cm, width='stretch', config={"displayModeBar": False}, key="cm_v54")
+        # Block C: Economic Calendar under the risk gauges (right column).
+        st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
 
-        # BUBBLE / SURVIVAL SCORE — moved to RIGHT column
-        st.markdown("<div style='font-size:0.65rem;color:#A371F7;font-weight:700;margin:6px 0 6px;'>🌀 BUBBLE / SURVIVAL SCORE</div>", unsafe_allow_html=True)
+    # ── Block D — CRASH & BUBBLE RISK (Crash Meter + Boom-Bust merged into one row) ──
+    st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin:12px 0 4px;letter-spacing:0.5px;'>💥 CRASH &amp; BUBBLE RISK — risiko crash + tahap bubble</div>", unsafe_allow_html=True)
+    _d1, _d2 = st.columns([1, 1])
+    with _d1:
+        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:2px 0 4px;'>🚨 Crash Meter</div>", unsafe_allow_html=True)
+        st.plotly_chart(_plotly_crash_meter(snap), width='stretch', config={"displayModeBar": False}, key="cm_v54")
+    with _d2:
+        st.markdown("<div style='font-size:0.6rem;color:#A371F7;font-weight:700;margin:2px 0 4px;'>🌀 Boom-Bust / Survival</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-
-        # Asset Pulse
-        st.markdown("<div style='font-size:0.65rem;color:#3FB950;font-weight:700;margin:6px 0 4px;'>⚡ ASSET PULSE (21D)</div>", unsafe_allow_html=True)
-        fig_ap = _plotly_asset_pulse(snap, prices)
-        st.plotly_chart(fig_ap, width='stretch', config={"displayModeBar": False}, key="ap_v54")
-    # (Deep Technical + v39 build-info panels removed per spec — engines still run in background.)
+    st.caption("Crash Meter = 5 gauge tekanan pasar (makin tinggi makin bahaya). Boom-Bust = posisi siklus "
+               "(Inception→Acceleration→Euphoria→Crisis→Auction) + Super Bubble Score. Dua-duanya soal **risiko sistemik**.")
