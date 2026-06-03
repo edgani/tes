@@ -21,6 +21,12 @@ def render(snap: dict):
         except Exception:
             vix_now = 20.0
 
+    # ── HEADLINE FIRST: Quad Decoder is the most important macro read, so it leads. ──
+    try:
+        _render_quad_explainer(snap)
+    except Exception:
+        pass
+
     try:
         _legacy_render(snap, prices, vix_now)
     except Exception as e:
@@ -29,12 +35,6 @@ def render(snap: dict):
         with st.expander("Traceback"):
             st.code(traceback.format_exc())
         _fallback_dashboard(snap)
-
-    # Quad Decoder block (Structural/Monthly/Global + next quad + explanation) — in the dashboard flow
-    try:
-        _render_quad_explainer(snap)
-    except Exception:
-        pass
     return
 
 
@@ -136,13 +136,12 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
     except Exception:
         pass
 
-    st.markdown(f"**Kenapa:** {qe.get('why','')}")
+    st.markdown(f"**Kenapa {qe.get('structural_quad','')}:** {qe.get('why','')}")
 
     wc = qe.get("what_changes", [])
     if wc:
-        st.markdown("**Apa yang ngubah quad:**")
-        for w in wc:
-            st.markdown(f"- Kalau **{w['trigger']}** → **{w['to']}** ({w['to_name']})")
+        _trg = " · ".join(f"**{w['to']}** kalau {w['trigger']}" for w in wc)
+        st.markdown(f"**Pindah quad:** {_trg}")
 
     if wig.get("summary"):
         st.markdown(f"**Ke mana:** {wig['summary']}")

@@ -418,3 +418,32 @@ positioning = proxy) will populate where data exists.
 REMAINING (next passes, big blind UI): merge dashboard blocks into single panels (Tier1+AssetPulse;
 Quad+Catalyst; BoomBust+Crash) for true 1-frame; aggressive ticker-card cleanup (remove everything not
 in each tab's spec) per market.
+
+---
+
+# SESSION 20 — Ticker cards consolidated to ONE block + dashboard quad-first (per annotated screenshots)
+
+TICKER CARDS (market tabs — components/rich_ticker_card.py::render_rich_ticker):
+- REMOVED: signal boxes (Signal Strength/Phase/Quality/Hurst/Gamma), the Quality/Phase/Formation caption,
+  Accumulation Readiness line, the whole "Detail tambahan" expander (TRR/LRR text, phase/Trending text,
+  verbose options/greeks, MM positioning, duplicate COT, OI-heatmap proxy walls, correlation drivers).
+- KEPT + MERGED into one block: header (ticker·price·action) → setup box (render_options_recommendation,
+  which already carries Posisi/Entry/Target/Stop/Cara-masuk spot+leverage/Dealer/Vanna-charm/Dark-pool/COT)
+  → GEX+RiskRange+Entry/Target/SL chart (render_detail_charts; bandarmetrics candlestick for IHSG).
+- NEW _render_block1_extras: compact date-based Vanna/Charm OPEX window (equity+crypto) + On-Chain (crypto),
+  folded into the same block. OI heatmap omitted for FX/IHSG (no listed options; proxy walls were misleading).
+
+ALPHA CENTER (pages_lib/alpha_center.py):
+- REMOVED from card: star rating, monopoly caption, "→ TAIL TRR" metric box, potential caption,
+  "Alpha Score N · factors" line, Sources line, Entry/Conviction prose, Readiness line, and the
+  TRR/LRR text + trim-zone reason in the detail columns.
+- Block 1 = header + setup box + chart. Block 2 = Thesis + why-bottleneck + Correlations + Catalysts +
+  Risk + 5-Layer Filter (unchanged).
+
+DASHBOARD (pages_lib/dashboard.py + _dashboard_legacy.py):
+- Quad Decoder now renders FIRST (top) — it's the headline macro read, no longer buried at the bottom.
+- Removed the redundant STRUCTURAL/MONTHLY/MARKOV/GLOBAL quad row from the Tier1Alpha box (it now lives
+  in the Quad Decoder up top).
+- Simplified the quad explanation (condensed the "what changes" triggers into one inline line).
+
+REMAINING: dashboard block-MERGES into single panels (Tier1+AssetPulse; BoomBust+Crash) for true 1-frame.

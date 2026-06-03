@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-02-s19 — bandarmetrics candlestick (IHSG-only) + dashboard declutter")
+    st.caption("v40 · build 2026-06-02-s20 — ticker cards consolidated to single block + dashboard quad-first")
     st.divider()
     
     page = st.radio("Navigation", [

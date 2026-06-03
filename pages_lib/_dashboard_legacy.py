@@ -385,24 +385,7 @@ def _regime_left_cards(snap, s_vals):
         f'<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:12px 14px;">'
         # ── Tier1Alpha block (merged at top) ──
         f'{t1a_html}'
-        # Row 1: 4 quad cards (STRUCTURAL / MONTHLY / MARKOV / GLOBAL)
-        f'<div style="display:flex;gap:0;margin-bottom:9px;">'
-        f'<div style="flex:1;text-align:center;padding:0 2px;">'
-        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">STRUCTURAL</div>'
-        f'<div style="font-size:1.15rem;font-weight:800;color:{sq_c};line-height:1.1;">{sq}</div></div>'
-        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
-        f'<div style="flex:1;text-align:center;padding:0 2px;">'
-        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">MONTHLY</div>'
-        f'<div style="font-size:1.15rem;font-weight:800;color:{mq_c};line-height:1.1;">{mq}</div></div>'
-        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
-        f'<div style="flex:1;text-align:center;padding:0 2px;">'
-        f'<div style="font-size:0.66rem;color:#8b949e;font-weight:600;letter-spacing:0.3px;">MARKOV</div>'
-        f'<div style="font-size:1.05rem;font-weight:800;color:{mk_c};line-height:1.1;">{mk_next or "—"}</div></div>'
-        f'<div style="width:1px;background:#30363d;margin:0 1px;"></div>'
-        f'<div style="flex:1;text-align:center;padding:0 2px;">'
-        f'<div style="font-size:0.66rem;color:#58A6FF;font-weight:600;letter-spacing:0.3px;">🌍 GLOBAL</div>'
-        f'<div style="font-size:1.15rem;font-weight:800;color:{gq_c};line-height:1.1;">{gq}</div></div>'
-        f'</div>'
+        # (Quad row removed — Structural/Monthly/Global now live in the Quad Decoder block up top.)
         # Row 2: Conf + Kelly
         f'<div style="font-size:0.72rem;color:#8b949e;text-align:center;margin-bottom:8px;">'
         f'Conf {conf_pct}% · Kelly {int(mk_kelly*100)}%'

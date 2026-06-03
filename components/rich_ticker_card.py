@@ -1145,6 +1145,34 @@ ACTION_COLORS = {
 }
 
 
+def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
+    """Compact extras folded INTO the single ticker block (no expander).
+    Setup box already carries Dealer/Vanna-charm/Dark-pool/COT, so here we only add what it
+    doesn't: a date-based Vanna/Charm OPEX window (equity+crypto) and On-Chain (crypto).
+    OI heatmap intentionally omitted (no listed options for FX/IHSG; proxy walls misleading)."""
+    import streamlit as st
+    if market_key in ("us_equity", "crypto") and show_options:
+        try:
+            opts_map = snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {}
+            opts = opts_map.get(ticker, {}) if isinstance(opts_map, dict) else {}
+            fund = (snap.get("fundamentals", {}) or {}).get(ticker, {})
+            from engines.options_greeks_engine import build_options_intelligence
+            intel = build_options_intelligence(ticker, opts, px or rr.get("px"), fund)
+            cal = intel["opex_calendar"]; vc = cal["vanna_charm_window"]
+            st.caption(f"\U0001f5d3\ufe0f **Vanna/Charm:** OPEX {cal['current_opex']} ({cal['days_to_opex']}d) \u00b7 {vc['note']}")
+        except Exception:
+            pass
+    if market_key == "crypto" and show_onchain:
+        try:
+            oc_map = snap.get("crypto_tokens", {}) or snap.get("onchain_data", {}) or {}
+            oc = oc_map.get(ticker, {}) if isinstance(oc_map, dict) else {}
+            oc_text = _onchain_narrative(oc, ticker)
+            if oc_text:
+                st.caption("\u26d3\ufe0f **On-Chain:** " + oc_text.replace("\n", " "))
+        except Exception:
+            pass
+
+
 def render_rich_ticker(
     ticker: str, rr: dict, snap: dict, market_key: str = "us_equity",
     show_options: bool = False, show_cot: bool = False,
@@ -1190,7 +1218,6 @@ def render_rich_ticker(
             if is_frontrun:
                 head += "  🔮"
             st.markdown(head)
-            st.caption(f"**Quality {quality}** · Phase **{phase}** · Formation {sig.get('formation','NEUTRAL')}")
         with hc2:
             _cur = _cur_for(market_key, ticker)
             if market_key == "forex":
@@ -1224,154 +1251,23 @@ def render_rich_ticker(
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
-        # ── TIER1ALPHA-STYLE SIGNAL BOXES (color-coded quality/phase/gamma) ──
-        _render_signal_boxes(rr, snap, market_key, show_options, ticker)
-
-        # ── POSITION REPORT — the main actionable view (header+entry+target+stop+
-        #    dealer+vanna+expected move+breakout+dark pool+COT). Always visible. ──
+        # ── BLOCK 1 — single consolidated card per spec (setup + chart + folded extras) ──
+        # Setup box carries: Posisi · Entry · Target · Stop · Cara-masuk (spot/leverage) ·
+        # Dealer · Vanna/charm · Dark pool · COT. Signal boxes / readiness / TRR text /
+        # Trending text / verbose greeks / OI-proxy walls all REMOVED per spec.
         try:
             render_options_recommendation(rr, snap, ticker, market_key)
         except Exception:
             pass
 
-        # ── ACCUMULATION READINESS — quiet-accumulation signal (always visible) ──
+        # GEX + Risk Range + Entry/Target/SL chart (+ bandarmetrics candlestick for IHSG)
+        render_detail_charts(ticker, rr, snap, market_key, px)
+
+        # Compact extras folded into the SAME block (no expander)
         try:
-            _ar = compute_accumulation_readiness(rr, snap, ticker)
-            if _ar:
-                st.caption(f"{_ar['emoji']} **Readiness — {_ar['label']}** ({_ar['score']:+d}) · " + " · ".join(_ar["signals"][:3]))
+            _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px)
         except Exception:
             pass
-
-        # ── UNIMPORTANT DETAIL — collapsed toggle (raw greeks chain, OI heatmap,
-        #    COT detail, bandar). Report above already has the actionable summary. ──
-        with st.expander("🔍 Detail tambahan (raw greeks · OI heatmap · COT · bandar)", expanded=False):
-
-            render_detail_charts(ticker, rr, snap, market_key, px)
-            st.markdown("---")
-
-            # TRR/LRR — the chart above already shows these as bands; one compact line + phase
-            trade = rr.get("trade", {}); trend = rr.get("trend", {}); tail = rr.get("tail", {})
-            _c = _cur_for(market_key, ticker)
-            def _rrm(v):
-                return f"\\${(v or 0):.2f}" if _c == "$" else f"{_c}{(v or 0):.2f}"
-            st.caption(f"📊 **TRR/LRR** (bands on chart above) — TRADE {_rrm(trade.get('lrr'))}–{_rrm(trade.get('trr'))} · "
-                       f"TREND {_rrm(trend.get('lrr'))}–{_rrm(trend.get('trr'))} · TAIL {_rrm(tail.get('lrr'))}–{_rrm(tail.get('trr'))}")
-            st.caption(f"🧭 {_phase_narrative(rr)}")
-            st.markdown("---")
-
-            if show_options:
-                opts_map = snap.get("yfinance_options", {}) or snap.get("options_data", {}) or {}
-                opts = opts_map.get(ticker, {}) if isinstance(opts_map, dict) else {}
-                fund_map = snap.get("fundamentals", {}) or {}
-                fund = fund_map.get(ticker, {}) if isinstance(fund_map, dict) else {}
-
-                st.markdown("**📈 Options + Greeks + Vanna/Charm — detail**")
-
-                # Vanna/Charm calendar — ALWAYS available (calendar-based)
-                try:
-                    from engines.options_greeks_engine import build_options_intelligence
-                    intel = build_options_intelligence(ticker, opts, px, fund)
-                    vc = intel["opex_calendar"]["vanna_charm_window"]
-                    cal = intel["opex_calendar"]
-
-                    # Vanna/Charm window status
-                    st.markdown(f"**🗓️ Vanna/Charm Window** (OPEX {cal['current_opex']}, {cal['days_to_opex']}d away)")
-                    st.caption(f"{vc['note']}")
-                    st.caption(f"Window: {vc['start']} (open) → {vc['peak']} (peak) → {vc['end']} (charm max)")
-
-                    # Gamma positioning
-                    g = intel["gamma"]
-                    if g.get("available") and g.get("regime"):
-                        st.markdown(f"**🎯 Gamma Regime:** {g.get('regime_note', '')}")
-                        # walls / gamma-flip / max-pain are drawn on the GEX chart above — text removed (redundant)
-
-                    # Short squeeze
-                    sq = intel["squeeze"]
-                    if sq.get("available"):
-                        st.markdown(f"**🩳 Short Squeeze:** {sq.get('note', '')}")
-                        if sq.get("days_to_cover"):
-                            st.caption(f"Days to cover: {sq['days_to_cover']}")
-
-                    # Expected move
-                    if intel.get("expected_move_pct"):
-                        st.caption(f"📏 Expected move (1wk): ±{intel['expected_move_pct']:.2f}%")
-                except Exception as e:
-                    st.caption(f"Vanna/charm calendar: {e}")
-
-                # Raw options narrative (walls/IV/PC)
-                opt_text = _options_narrative(opts, px, ticker)
-                if opt_text:
-                    st.markdown("**Detail:**")
-                    st.markdown(opt_text)
-                elif not opts:
-                    st.caption("⚠️ Live options chain belum ke-fetch. Vanna/charm calendar di atas tetap valid (date-based). "
-                              "Gamma walls + squeeze butuh options data dari yfinance/Deribit.")
-                mm_text = _mm_positioning(opts, px)
-                if mm_text:
-                    st.markdown("**🏪 MM Positioning + Volatility Outlook**")
-                    st.markdown(mm_text)
-
-            if show_cot:
-                cot_map = (snap.get("cot_oi", {}) or {}).get("cot", {}) or snap.get("cot_data", {}) or {}
-                cot = cot_map.get(ticker, {}) if isinstance(cot_map, dict) else {}
-                st.markdown("**📋 COT (Commitments of Traders)**")
-                cot_text = _cot_narrative(cot, ticker)
-                if cot_text:
-                    st.markdown(cot_text)
-                else:
-                    from engines.live_data_engine import COT_TICKER_MAP
-                    if ticker in COT_TICKER_MAP or ticker.upper() in COT_TICKER_MAP:
-                        st.caption(f"COT untuk {ticker} ({COT_TICKER_MAP.get(ticker, COT_TICKER_MAP.get(ticker.upper()))}) belum ter-fetch — CFTC publish mingguan (Jumat). Coba Rebuild after Fri 3:30pm ET.")
-                    else:
-                        st.caption(f"{ticker} bukan produk CFTC reportable — no COT data (cuma futures utama: EUR/GBP/JPY/GOLD/CRUDE/dst).")
-
-            if show_oi:
-                _render_oi_heatmap(snap, ticker, market_key)
-
-            if show_onchain:
-                oc_map = snap.get("crypto_tokens", {}) or snap.get("onchain_data", {}) or {}
-                oc = oc_map.get(ticker, {}) if isinstance(oc_map, dict) else {}
-                st.markdown("**⛓️ On-Chain Activity (Accumulation/Distribution)**")
-                oc_text = _onchain_narrative(oc, ticker)
-                if oc_text:
-                    st.markdown(oc_text)
-                else:
-                    _CHAIN_OK = {"BTC-USD", "ETH-USD", "SOL-USD", "AVAX-USD", "MATIC-USD", "ARB-USD", "OP-USD", "BNB-USD"}
-                    if ticker in _CHAIN_OK:
-                        st.caption(f"On-chain {ticker} belum ter-fetch dari DeFiLlama — coba Rebuild (butuh internet di server).")
-                    else:
-                        st.caption(f"{ticker} ga punya chain TVL di DeFiLlama — on-chain cuma buat L1/L2 utama (BTC/ETH/SOL/AVAX/dst).")
-
-            if show_bandar:
-                bandar_map = snap.get("ihsg_broker_proxy", {}) or snap.get("ihsg_broker_data", {}) or {}
-                b = bandar_map.get(ticker, {}) if isinstance(bandar_map, dict) else {}
-                st.markdown("**🏦 IHSG Bandar Analysis (Cornering / Accumulation / Distribution)**")
-                b_text = _bandar_narrative(b, ticker)
-                if b_text:
-                    st.markdown(b_text)
-                else:
-                    # AUTO-COMPUTE bandar phase from price action (no manual!)
-                    bp = _auto_bandar_proxy(rr, snap, ticker)
-                    st.markdown(f"**Auto-proxy:** {bp}")
-                    st.caption(
-                        "ℹ️ Proxy dihitung dari TRR/LRR position + phase + Hurst. "
-                        "Untuk data bandar real (broker summary, foreign flow, cross-trade), "
-                        "butuh API berbayar (Invezgo/GOAPI) — bisa di-wire kalau lu kasih API key."
-                    )
-
-            # Correlation drivers (universal)
-            try:
-                from engines.chain_reaction_v2 import get_chain_engine
-                cre = get_chain_engine()
-                parents = cre.find_parents_of(ticker)
-                if parents:
-                    st.markdown("**🔗 Correlation Drivers (chain reaction)**")
-                    for p in parents[:5]:
-                        beta = p.get("beta", 0)
-                        direction = "↗" if p.get("direction") == "SAME" else "↙"
-                        st.caption(f"• **{p['parent']}** {direction} β={beta:.2f}, lag {p.get('lag_days', 0)}d — {p.get('thesis', '')}")
-            except Exception:
-                pass
 
 
 def compute_accumulation_readiness(rr: dict, snap: dict, ticker: str) -> dict:
