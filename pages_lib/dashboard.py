@@ -4,13 +4,17 @@ import streamlit as st
 
 def render(snap: dict):
     """Entry point — Tier1Alpha is now MERGED into the regime card (no separate panel)."""
-    # Tight vertical spacing so the whole dashboard fits closer to one frame (no scroll).
+    # Tight layout so the whole dashboard fits ~one frame. The biggest win is killing Streamlit's
+    # default ~6rem block-container top padding; then we tighten every gap/margin.
     st.markdown("""<style>
-    section.main [data-testid="stVerticalBlock"]{gap:0.35rem !important;}
-    section.main .element-container{margin-bottom:0 !important;}
-    section.main [data-testid="stMarkdownContainer"] p{margin-bottom:0.15rem !important;}
-    section.main hr{margin:0.3rem 0 !important;}
-    section.main [data-testid="stMetric"]{padding:2px 0 !important;}
+    .block-container{padding-top:1.2rem !important;padding-bottom:0.5rem !important;}
+    [data-testid="stVerticalBlock"]{gap:0.4rem !important;}
+    [data-testid="stHorizontalBlock"]{gap:0.55rem !important;}
+    [data-testid="stMetric"]{padding:2px 0 !important;}
+    .element-container{margin-bottom:0 !important;}
+    [data-testid="stMarkdownContainer"] p{margin-bottom:0.15rem !important;}
+    hr{margin:0.3rem 0 !important;}
+    h1,h2,h3{margin-top:0.2rem !important;margin-bottom:0.3rem !important;padding-top:0 !important;}
     </style>""", unsafe_allow_html=True)
     try:
         from pages_lib._dashboard_legacy import render as _legacy_render

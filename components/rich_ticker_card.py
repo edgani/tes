@@ -64,10 +64,11 @@ def _cur_for(market_key=None, ticker=None):
     return "$"
 
 
-def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
+def _gex_levels_chart(ticker, px, rr, opts, cur="$", show_walls=True):
     """Unified DARK chart on a price x-axis: GEX-by-strike bars + aggregate gamma curve +
     put/call walls + gamma flip + max pain + TRADE/TREND/TAIL bands + Entry/Target/SL X-marks.
-    Returns a plotly Figure, or None if there isn't enough to draw."""
+    show_walls=False (forex/commodity/IHSG = no listed options) → suppress all options-derived
+    overlays (walls/max-pain/flip/GEX bars), leaving a pure Risk-Range chart. Returns a Figure or None."""
     import plotly.graph_objects as go
     import itertools
     try:
@@ -88,6 +89,9 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
     gexvals = opts.get("gex_by_strike") or []
     cw, pw = _f(opts.get("call_wall")), _f(opts.get("put_wall"))
     flip, mp = _f(opts.get("flip_level")), _f(opts.get("max_pain"))
+    if not show_walls:
+        # No listed options for this market → the walls/max-pain/flip/GEX bars are proxy/fake. Drop them.
+        strikes, gexvals, cw, pw, flip, mp = [], [], None, None, None, None
     # entry/target/stop derived from the risk-range bands (always available)
     entry = _f(trade.get("lrr")); target = _f(trade.get("trr")); stop = _f(tail.get("lrr"))
 
@@ -159,7 +163,7 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
         font={"color": "#c9d1d9", "family": "Inter, sans-serif", "size": 11},
         margin={"t": 34, "b": 38, "l": 52, "r": 52}, height=330,
         legend={"orientation": "h", "y": 1.14, "x": 0, "font": {"size": 9}, "bgcolor": "rgba(0,0,0,0)"},
-        title={"text": f"{ticker} — GEX + Risk Range + Entry/Target/SL", "font": {"size": 13, "color": "#c9d1d9"}},
+        title={"text": f"{ticker} — {'GEX + ' if show_walls else ''}Risk Range + Entry/Target/SL", "font": {"size": 13, "color": "#c9d1d9"}},
         xaxis={"title": {"text": f"Price ({cur})", "font": {"size": 10, "color": "#8b949e"}},
                "range": [x0, x1], "gridcolor": "#21262d", "tickfont": {"color": "#8b949e"}, "zeroline": False},
         yaxis={"title": {"text": "GEX by strike", "font": {"size": 10, "color": "#8b949e"}},
@@ -336,15 +340,21 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part
     _opts_c = _opts_c.get(ticker, {}) if isinstance(_opts_c, dict) else {}
 
     # unified DARK chart: GEX + Risk Range + Entry/Target/SL
+    _walls = market_key not in ("forex", "commodity", "ihsg")
     if part in ("all", "main"):
       try:
-        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker))
+        _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker), show_walls=_walls)
         if _fig is not None:
             st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
-            st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
-                       "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
-                       "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
-                       "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
+            if _walls:
+                st.caption("🗺️ **Cara baca:** sumbu-X = harga. Bar = GEX per strike (ijo = +gamma, "
+                           "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
+                           "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
+                           "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
+            else:
+                st.caption("🗺️ **Cara baca:** sumbu-X = harga · band = TRADE/TREND/TAIL Risk Range · "
+                           "**X** = Entry (ijo) / Target (biru) / SL (merah). "
+                           "Market ini gak punya listed options — positioning pakai COT / bandarmetrics di bawah.")
       except Exception:
         pass
 
@@ -1136,7 +1146,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s29"
+_CARD_BUILD = "s30"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):

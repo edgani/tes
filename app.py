@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s29 — expected-move chart units fixed (was ±2000%) + setup box merged into block 1 + 1-frame CSS")
+    st.caption("v40 · build 2026-06-03-s30 — REMOVED fake call/put walls on forex+commodities (Risk-Range only) + aggressive 1-frame CSS (cut Streamlit top padding) + dropped Macro Dashboard header")
     st.divider()
     
     page = st.radio("Navigation", [

@@ -632,3 +632,21 @@ Card marker → card·s28.
   Yamco abnormal-flow needs real flow data. RECOMMENDATION: not a ground-up rebuild — unify the two
   scorers into ONE 6-layer gating stack mirroring the doc, wire the gaps, surface the layer pass in the
   Alpha Center "5-layer filter".
+
+---
+
+# SESSION 30 — REMOVED fake forex/commodity walls (user's "buang aja") + real 1-frame CSS
+
+I was WRONG to blame stale deploy last turn — user confirmed they're on s29 (sidebar + card·s29). The
+real issues were live in s29:
+- FOREX + COMMODITIES charts still drew Put Wall / Call Wall / Max Pain (proxy/fake — those markets
+  have no listed options). User had explicitly said "emang ada call/put wall di forex/commodities?
+  BUANG AJA." FIX: _gex_levels_chart gained show_walls param; render_detail_charts passes
+  show_walls=False for forex/commodity/ihsg → all options-derived overlays (walls/max-pain/flip/GEX
+  bars) suppressed, title drops "GEX" → pure Risk-Range chart. Cara-baca caption also swapped to a
+  risk-range-only wording for those markets. Verified: forex → no wall labels, title "Risk Range +
+  Entry/Target/SL"; equity → walls intact. (Crypto/US/Alpha keep real GEX walls.)
+- 1-FRAME: previous CSS used `section.main …` which may not match; replaced with robust selectors and
+  — the big win — cut Streamlit's default ~6rem `.block-container` top padding to 1.2rem; tightened
+  all gaps/margins/headers. Removed the redundant "## 🏠 Macro Dashboard" header.
+Card marker → card·s30.

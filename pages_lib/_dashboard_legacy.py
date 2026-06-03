@@ -1062,7 +1062,7 @@ def _plotly_deep_technical(snap):
 
 def render(snap, prices=None, vix_now=20.0):
     """Macro Dashboard v40 — Full-height two-column layout. No empty gaps."""
-    st.markdown("## 🏠 Macro Dashboard")
+    st.markdown("<div style='height:2px'></div>", unsafe_allow_html=True)
 
     # Extract mq safely
     gip_raw = snap.get("gip")
