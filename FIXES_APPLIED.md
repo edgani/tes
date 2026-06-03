@@ -447,3 +447,20 @@ DASHBOARD (pages_lib/dashboard.py + _dashboard_legacy.py):
 - Simplified the quad explanation (condensed the "what changes" triggers into one inline line).
 
 REMAINING: dashboard block-MERGES into single panels (Tier1+AssetPulse; BoomBust+Crash) for true 1-frame.
+
+---
+
+# SESSION 20-21 — Quad explanation simplified (plain Indonesian)
+
+NOTE: user was viewing an OLD deployed build (GitHub push was failing with a broken origin/HEAD
+ref — gave git fix). The single-block ticker cards, quad-decoder-on-top, removed-clutter, and
+candlestick-bandarmetrics were ALL already shipped in s19; the screenshots predate them.
+- engines/quad_explainer.py: rewrote `why` + `_what_changes` from English jargon ("growth is reading
+  soft/decelerating (g=+0.73)", "2nd-derivative turns up") to plain Indonesian ("growth lemah/melambat,
+  inflasi naik … kemungkinan lagi mau belok"; "Q2 kalau growth naik lagi"). Verified output.
+- Confirmed in current tree: Quad Decoder renders FIRST (dashboard.py render() calls
+  _render_quad_explainer before _legacy_render); the Structural/Monthly/Markov/Global row is already
+  removed from the Tier1Alpha box; render_rich_ticker is the consolidated single block.
+REMAINING (deeper dashboard redesign, to do WITH visual confirmation once user can deploy):
+merge Tier1Alpha+AssetPulse into one panel; fold Catalyst into the Quad block; merge BoomBust+Crash.
+Also: Alpha Center's own card renderer (alpha_center.py) still needs the same single-block cleanup.

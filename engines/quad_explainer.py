@@ -58,10 +58,8 @@ def _adjacent(quad):
 def _what_changes(quad):
     g, i = _QUAD.get(quad, ("down", "up"))
     gq, iq = _adjacent(quad)
-    g_cond = ("growth re-accelerates (2nd-derivative turns up)" if g == "down"
-              else "growth decelerates (2nd-derivative rolls over)")
-    i_cond = ("inflation decelerates / disinflation takes hold" if i == "up"
-              else "inflation re-accelerates")
+    g_cond = ("growth naik lagi" if g == "down" else "growth mulai turun")
+    i_cond = ("inflasi mulai turun" if i == "up" else "inflasi naik lagi")
     return [
         {"trigger": g_cond, "to": gq, "to_name": _NAME.get(gq, ""), "leg": "growth"},
         {"trigger": i_cond, "to": iq, "to_name": _NAME.get(iq, ""), "leg": "inflation"},
@@ -115,13 +113,15 @@ def explain_quad(gip, transition: Optional[Dict] = None, narrative_module=None) 
     drivers = transition.get("drivers", [])
     drv_txt = ", ".join(d.get("indicator", "") for d in drivers[:3]) if drivers else "broad data"
 
-    why = (f"Structural {struct_q} ({_NAME.get(struct_q,'')}): growth is reading "
-           f"{'expansionary' if g_dir=='up' else 'soft/decelerating'} (g={sg:+.2f}) and inflation "
-           f"{'accelerating' if i_dir=='up' else 'cooling'} (i={si:+.2f}). "
-           f"Monthly (fast) horizon reads {month_q} ({_NAME.get(month_q,'')}). "
-           + (f"Leading horizon diverges from structural → a turn may be forming. "
-              if month_q != struct_q else "Both horizons agree → regime is settled for now. ")
-           + f"Main movers: {drv_txt}.")
+    g_word = "naik (ekspansi)" if g_dir == "up" else "lemah/melambat"
+    i_word = "naik" if i_dir == "up" else "turun/mereda"
+    if month_q != struct_q:
+        turn_txt = (f"Tapi horizon cepat (Monthly) udah baca **{month_q}** ({_NAME.get(month_q,'')}) — "
+                    f"beda dari structural, jadi kemungkinan lagi mau belok.")
+    else:
+        turn_txt = f"Horizon cepat (Monthly) juga **{month_q}** — sejalan, regime stabil dulu."
+    why = (f"Sekarang **{struct_q} ({_NAME.get(struct_q,'')})**: growth {g_word}, inflasi {i_word}. "
+           f"{turn_txt} Pemicu utama: {drv_txt}.")
 
     return {
         "ok": True,
