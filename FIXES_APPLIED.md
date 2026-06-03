@@ -546,3 +546,25 @@ CARDS (rich_ticker_card.py):
 BANDARMETRICS confidence: documented that 90-100% needs calibration data (paired date→value) or Type-F
 data; the one irreducible flaw is Foreign Flow (no OHLCV formula can produce it). See response for the
 "how to exceed bandarmetrics" plan (divergence/stealth/ignition/walk-forward layer on top).
+
+---
+
+# SESSION 26 — LPM calibrated to A/D Line + GEX labels destaggered + Alpha Center extras + 1-frame heights
+
+CALIBRATION DATA: user supplied 4 bandarmetrics reference tickers (HUMI/BBCA/EURO/MSIN) with live
+LPM/Foreign-Flow/CorrF/ParF values.
+- KEY INSIGHT: BBCA shows price↓ while LPM↑ = accumulation divergence = textbook Chaikin A/D Line.
+  → LPM redefined as EMA(cumsum(CLV×Vol)) (volume-based A/D Line), dropped the ×price. Signs match all
+  4 references (HUMI−, BBCA+, EURO−, MSIN−). Confidence ~80%.
+- validate_lpm_calibration.py (new): fetches the 4 tickers (user's env has network), computes my LPM at
+  3 EMA spans, prints ratio vs the known bandarmetrics values → user pastes back, I lock exact window/scale.
+- Reconfirmed Foreign Flow/Corr F/Par F need Type-F data (not in yfinance).
+GEX CHART (att 6 overlap): _gex_levels_chart wall/last/maxpain labels were colliding when lines sit at
+near-equal price (Last vs Call Wall → garbled). Fixed by staggering annotation_yshift (0/-13/-26/-39/-52)
+so labels stack vertically and stay readable. Verified via serialization.
+ALPHA CENTER (att 7): card was NOT calling _render_block1_extras, so Vanna/Charm were missing from
+block 1 (user's Alpha Center spec wants Target Bottleneck + Vanna + Charm + Dealer Positioning). Added
+_render_block1_extras to alpha_center.py after the chart (Vanna/Charm OPEX window + on-chain). Target
+Bottleneck = the "Why bottleneck" line; Dealer shows in the setup box when real options exist.
+1-FRAME: quad map height 230→170; asset pulse 100→88. (Plus prior in-curve explanation + merged panels.)
+Card marker → card·s26.

@@ -127,15 +127,17 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
         fig.add_trace(go.Scatter(x=strikes, y=cum, mode="lines", name="Aggregate GEX",
                                  line={"color": "#58A6FF", "width": 2}, yaxis="y2",
                                  hovertemplate="Strike %{x}<br>Cumulative %{y:,.0f}<extra></extra>"))
-    # vertical reference lines
-    for x, color, lbl, dash in [(px, "#3FB950", f"Last {cur}{px:,.2f}", "solid"),
-                                (flip, "#F85149", "Gamma Flip", "dot"),
-                                (cw, "#A371F7", "Call Wall", "solid"),
-                                (pw, "#A371F7", "Put Wall", "solid"),
-                                (mp, "#8B949E", "Max Pain", "dot")]:
+    # vertical reference lines — labels staggered vertically (yshift) so they stay readable
+    # even when two lines sit at nearly the same price (e.g. Last vs Call Wall).
+    for x, color, lbl, dash, ysh in [(px, "#3FB950", f"Last {cur}{px:,.2f}", "solid", 0),
+                                      (flip, "#F85149", "Gamma Flip", "dot", -13),
+                                      (cw, "#A371F7", "Call Wall", "solid", -26),
+                                      (pw, "#A371F7", "Put Wall", "solid", -39),
+                                      (mp, "#8B949E", "Max Pain", "dot", -52)]:
         if x:
             fig.add_vline(x=x, line={"color": color, "width": 1.4, "dash": dash},
                           annotation_text=lbl, annotation_position="top",
+                          annotation_yshift=ysh,
                           annotation_font={"size": 9, "color": color})
     # entry / target / stop as X markers on the baseline
     for x, color, lbl in [(entry, "#3FB950", "Entry"), (target, "#58A6FF", "Target"), (stop, "#F85149", "SL")]:
@@ -1118,7 +1120,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s25"
+_CARD_BUILD = "s26"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):

@@ -92,7 +92,7 @@ def _quad_map_figure(qe: dict):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-        margin={"t": 10, "b": 34, "l": 44, "r": 10}, height=230, showlegend=False,
+        margin={"t": 10, "b": 30, "l": 44, "r": 10}, height=170, showlegend=False,
         xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},

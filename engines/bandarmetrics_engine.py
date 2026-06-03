@@ -68,10 +68,11 @@ def compute(df, vwap_win: int = 20, lpm_smooth: int = 20, adv_win: int = 60, cmf
     # ── Chaikin Money Flow (bounded -1..1) ──
     cmf = (mfv.rolling(cmf_win).sum() / v.rolling(cmf_win).sum().replace(0, np.nan))
 
-    # ── LPM (Liquidity Pressure Model): cumulative CLV-signed money flow (×price), EMA-smoothed.
-    #    RE doc formula #1 — signed money flow = CLV × Vol × Close. Window/scale pending calibration.
+    # ── LPM (Liquidity Pressure Model) = Chaikin Accumulation/Distribution Line, EMA-smoothed.
+    #    Calibrated to bandarmetrics' 4 reference tickers: BBCA shows price↓ while LPM↑ (accumulation
+    #    divergence) = textbook A/D Line. So LPM = EMA(cumsum(CLV×Vol)) — volume-based, NOT ×price.
     vwap = (typ * v).rolling(vwap_win).sum() / v.rolling(vwap_win).sum().replace(0, np.nan)
-    lpm = _ema((clv * v * c).fillna(0).cumsum(), lpm_smooth)
+    lpm = _ema(adl, lpm_smooth)
 
     # ── DTE / Real DTE: |ADL| over average daily $-volume ──
     adv = (v * typ).rolling(adv_win).mean()

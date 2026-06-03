@@ -321,6 +321,15 @@ def render(snap: dict):
             except Exception:
                 pass
 
+            # ── Vanna/Charm OPEX window + on-chain extras (block-1 per spec) ──
+            try:
+                from components.rich_ticker_card import _render_block1_extras
+                _mkt = cand.get("market", "us_equity")
+                _render_block1_extras(rr, snap, ticker, _mkt, show_options=True,
+                                      show_onchain=(_mkt == "crypto"), px=rr.get("px"))
+            except Exception:
+                pass
+
             # ── Thesis ───────────────────────────────────────────────────
             st.markdown(f"**💡 Thesis:** {cand.get('thesis', '')}")
 

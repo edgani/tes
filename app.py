@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s25 — dashboard 1-frame refit (explanation in-curve, calendar beside, gauges+crash+boombust merged) + OI heatmap wired (no fake walls) + cards card·s25")
+    st.caption("v40 · build 2026-06-03-s26 — LPM=A/D Line (calibrated) + GEX labels destaggered + Alpha Center vanna/charm + dashboard heights cut for 1-frame")
     st.divider()
     
     page = st.radio("Navigation", [
