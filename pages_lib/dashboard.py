@@ -4,6 +4,14 @@ import streamlit as st
 
 def render(snap: dict):
     """Entry point — Tier1Alpha is now MERGED into the regime card (no separate panel)."""
+    # Tight vertical spacing so the whole dashboard fits closer to one frame (no scroll).
+    st.markdown("""<style>
+    section.main [data-testid="stVerticalBlock"]{gap:0.35rem !important;}
+    section.main .element-container{margin-bottom:0 !important;}
+    section.main [data-testid="stMarkdownContainer"] p{margin-bottom:0.15rem !important;}
+    section.main hr{margin:0.3rem 0 !important;}
+    section.main [data-testid="stMetric"]{padding:2px 0 !important;}
+    </style>""", unsafe_allow_html=True)
     try:
         from pages_lib._dashboard_legacy import render as _legacy_render
     except Exception as e:
@@ -92,7 +100,7 @@ def _quad_map_figure(qe: dict):
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font={"color": "#c9d1d9", "family": "Inter, sans-serif"},
-        margin={"t": 10, "b": 30, "l": 44, "r": 10}, height=170, showlegend=False,
+        margin={"t": 8, "b": 28, "l": 44, "r": 10}, height=150, showlegend=False,
         xaxis={"title": {"text": "← Disinflasi      Inflasi (RoC)      Inflasi ↑ →",
                          "font": {"size": 10, "color": "#8b949e"}}, "range": [-1, 1],
                "zeroline": False, "showgrid": False, "tickvals": []},

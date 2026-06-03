@@ -304,26 +304,31 @@ def render(snap: dict):
             with hc3:
                 st.caption(f"{action_emoji} **{action}**")
 
-            # ── BLOCK 1 per spec: CHART FIRST (GEX wall + RR + Entry/Target/SL), THEN setup below ──
-            # (Target Bottleneck + Vanna/Charm + Dark Pool + Spot/Leverage + Dealer all under the chart.)
-            # ── VISUAL: GEX + Risk Range + Entry/Target/SL + companions (shared with market tabs) ──
+            # ── BLOCK 1 per spec: ONE block — main chart → setup → companions → extras ──
+            _mkt = cand.get("market", "us_equity")
             try:
                 from components.rich_ticker_card import render_detail_charts
-                render_detail_charts(ticker, rr, snap, cand.get("market", "us_equity"))
+                render_detail_charts(ticker, rr, snap, _mkt, part="main")  # main GEX/RR chart only
             except Exception:
                 pass
 
-            # ── setup details folded UNDER the chart (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) ──
+            # setup details folded immediately UNDER the chart (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool)
             try:
                 from components.rich_ticker_card import render_options_recommendation
-                render_options_recommendation(rr, snap, ticker, cand.get("market", "us_equity"))
+                render_options_recommendation(rr, snap, ticker, _mkt)
+            except Exception:
+                pass
+
+            # companions (expected move / P/C OI / COT) below the setup
+            try:
+                from components.rich_ticker_card import render_detail_charts
+                render_detail_charts(ticker, rr, snap, _mkt, part="companions")
             except Exception:
                 pass
 
             # ── Vanna/Charm OPEX window + on-chain extras (block-1 per spec) ──
             try:
                 from components.rich_ticker_card import _render_block1_extras
-                _mkt = cand.get("market", "us_equity")
                 _render_block1_extras(rr, snap, ticker, _mkt, show_options=True,
                                       show_onchain=(_mkt == "crypto"), px=rr.get("px"))
             except Exception:

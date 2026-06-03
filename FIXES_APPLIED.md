@@ -586,3 +586,49 @@ tight instead of [480,900].
 1-FRAME: action_hint changed from a big st.info box to a one-line markdown. (Plus prior map 170 / asset
 pulse 88.) True no-scroll still depends on user zoom.
 Card marker → card·s27.
+
+---
+
+# SESSION 28 — Setup box merged INTO block 1 (the circled "?" fix) + dashboard 1-frame CSS
+
+THE answer to the user's repeated "yang gw lingkerin (setup box) harusnya masuk ke DALAM mana?": per his
+attachment-3/attachment-8 feedback in the prior session, the setup box (Posisi/Entry/Target/Stop/
+Cara-masuk/Dealer/Vanna/Dark-pool) must live INSIDE block 1 — merged as ONE block with the GEX chart,
+not a separate bordered box. Done:
+- render_options_recommendation: REMOVED the box border/background/border-radius (was
+  background:#0d1117;border:1px solid #30363d;border-radius:7px). Now borderless with only a thin
+  left-accent → flows as part of block 1.
+- render_detail_charts: added part='main'|'companions'|'all' flag so the caller can render the main
+  GEX/RR chart, then the setup box, then the companion mini-charts — i.e. the setup sits IMMEDIATELY
+  under the main chart inside the one st.container(border=True), instead of below the companions.
+- render_rich_ticker AND pages_lib/alpha_center.py: rewired to main chart → setup → companions →
+  extras. Applies to every market (US/Forex/Commodities/Crypto/IHSG) + Alpha Center.
+DASHBOARD 1-frame: injected tight-spacing CSS at top of dashboard.render() (stVerticalBlock gap
+0.35rem, element margins 0, markdown p margins 0.15rem, hr 0.3rem); quad map height 170→150; asset
+pulse 100→88 (prior). If still scrolling at 100% zoom, next lever = move Economic Calendar + playbook
+into the collapsed Detail expander (trades calendar visibility for guaranteed 1-frame).
+Card marker → card·s28.
+
+---
+
+# SESSION 29 — expected-move chart units fix + master-doc methodology audit
+
+- components/rich_ticker_card.py _expected_move_chart: was multiplying em_pct (already a PERCENT, e.g.
+  10.0) by 100 → ±1000%/±2000% absurd bands. Now normalizes (fraction<1 → ×100, else as-is), clamps
+  y-axis to ±2.6×, and shows the actual ±1σ/±2σ % in the title. Verified: em=10.0 and em=0.10 both →
+  readable ±26% y-range.
+- (s28 carried in: setup box merged INTO block 1 borderless, chart-first via part flag, dashboard
+  tight-spacing CSS + map 150.)
+- AUDIT vs the user's Deep-Dive Master Document v3.0: ~95% of the doc's methodologies have engines
+  (120+ engine files). ~25 core engines wired (gip, tier1alpha, risk_range, vix_bucket, spotgamma_gex,
+  cem_karsan, vanna_charm, volsignals, odte, smart_money, skew, yves, narrative, leopold, bottleneck,
+  chain_reaction, markov, reflexivity, seasonality, aaii, treasury_liquidity, crypto_onchain,
+  confluence_scorer, validation, hedgeye_position_sizing). FINDINGS: (1) confluence_scorer uses 5-layer
+  GATING (regime→structure→flow→…→execution) = matches the doc's gate-don't-outvote philosophy, but
+  it's 5 layers vs the doc's 6 (no explicit Systematic-Flows/VCF gate, no Thematic gate, no Disruption
+  gate); (2) a SECOND scorer (alpha_gatekeeper) uses weighted-sum (WF/RR/Opt/Macro/Sim/Behav/Liq) —
+  inconsistent with the gating philosophy; (3) orphaned/thin: druckenmiller_liquidity_engine (superseded
+  by treasury_liquidity), COT wiring unclear, VolSignals/jared variance-swap/UpVar/VIX-term thin,
+  Yamco abnormal-flow needs real flow data. RECOMMENDATION: not a ground-up rebuild — unify the two
+  scorers into ONE 6-layer gating stack mirroring the doc, wire the gaps, surface the layer pass in the
+  Alpha Center "5-layer filter".

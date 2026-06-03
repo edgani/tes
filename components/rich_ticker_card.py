@@ -181,8 +181,10 @@ def _expected_move_chart(px, em_pct, target, entry):
     if em <= 0 or px <= 0:
         return None
     fig = go.Figure()
-    fig.add_hrect(y0=-em * 100, y1=em * 100, fillcolor="rgba(210,153,34,0.16)", line_width=0, layer="below")
-    fig.add_hrect(y0=-em * 200, y1=em * 200, fillcolor="rgba(248,81,73,0.07)", line_width=0, layer="below")
+    # Normalize expected move to PERCENT — accept either a fraction (0.10) or a percent (10.0).
+    emp = em * 100.0 if em < 1.0 else em
+    fig.add_hrect(y0=-emp, y1=emp, fillcolor="rgba(210,153,34,0.16)", line_width=0, layer="below")      # ±1σ
+    fig.add_hrect(y0=-2 * emp, y1=2 * emp, fillcolor="rgba(248,81,73,0.07)", line_width=0, layer="below")  # ±2σ
     try:
         if target and entry and float(entry) > 0:
             dist = (float(target) - float(entry)) / float(entry) * 100
@@ -195,9 +197,10 @@ def _expected_move_chart(px, em_pct, target, entry):
     fig.update_layout(height=160, showlegend=False, paper_bgcolor="rgba(0,0,0,0)",
                       plot_bgcolor="rgba(13,17,23,0.5)", font={"color": "#c9d1d9", "size": 10},
                       margin={"t": 28, "b": 10, "l": 40, "r": 72},
-                      title={"text": "Expected move (±1σ / ±2σ)", "font": {"size": 11, "color": "#c9d1d9"}},
+                      title={"text": f"Expected move ±{emp:.1f}% (1σ) / ±{2*emp:.1f}% (2σ)", "font": {"size": 11, "color": "#c9d1d9"}},
                       xaxis={"showgrid": False, "showticklabels": False, "zeroline": False},
                       yaxis={"title": {"text": "% move", "font": {"size": 9, "color": "#8b949e"}},
+                             "range": [-2.6 * emp, 2.6 * emp],
                              "gridcolor": "#21262d", "tickfont": {"size": 9, "color": "#8b949e"}})
     return fig
 
@@ -307,10 +310,12 @@ def _bandarmetrics_chart(bm, ticker, cur="Rp"):
     return fig
 
 
-def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
+def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None, part="all"):
     """Shared visual stack used by BOTH market-tab cards (render_rich_ticker) AND Alpha Center —
     so they never drift apart again. Renders inline: GEX+RiskRange+Entry/Target/SL chart, companion
-    mini-charts (expected move / P/C OI / COT), and the IHSG bandarmetrics chart. px auto-derived."""
+    mini-charts (expected move / P/C OI / COT), and the IHSG bandarmetrics chart. px auto-derived.
+    part='main' = only the main GEX chart; part='companions' = only companions+bandarmetrics;
+    'all' = everything (lets the caller slot the setup box between the chart and the companions)."""
     import streamlit as st
     rr = rr or {}
     if px is None:
@@ -331,7 +336,8 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
     _opts_c = _opts_c.get(ticker, {}) if isinstance(_opts_c, dict) else {}
 
     # unified DARK chart: GEX + Risk Range + Entry/Target/SL
-    try:
+    if part in ("all", "main"):
+      try:
         _fig = _gex_levels_chart(ticker, px, rr, _opts_c, _cur_for(market_key, ticker))
         if _fig is not None:
             st.plotly_chart(_fig, width='stretch', config={"displayModeBar": False})
@@ -339,8 +345,11 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
                        "oranye = −gamma) · garis biru = aggregate gamma · area ijo/merah = zona "
                        "+/− gamma (split di Gamma Flip) · band = TRADE/TREND/TAIL · **X** = "
                        "Entry (ijo) / Target (biru) / SL (merah). Bar cuma muncul kalau ada data options real.")
-    except Exception:
+      except Exception:
         pass
+
+    if part not in ("all", "companions"):
+        return
 
     # companion mini-charts (data-gated): expected move · P/C OI · COT
     try:
@@ -1127,7 +1136,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s27"
+_CARD_BUILD = "s29"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1243,17 +1252,19 @@ def render_rich_ticker(
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
-        # ── BLOCK 1 — single consolidated card per spec: CHART FIRST, then setup details below ──
-        # Spec order: GEX wall level + Risk Range + Entry/Target/SL (the chart) → THEN
-        # entry/target/stop · cara-masuk (spot/leverage) · dealer · vanna/charm · dark pool · COT below.
-        # GEX + Risk Range + Entry/Target/SL chart (+ bandarmetrics candlestick for IHSG)
-        render_detail_charts(ticker, rr, snap, market_key, px)
+        # ── BLOCK 1 — ONE block: main GEX chart → setup details → companions → extras ──
+        # Spec: setup box (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) lives INSIDE
+        # block 1, merged right under the chart — not a separate bordered box.
+        render_detail_charts(ticker, rr, snap, market_key, px, part="main")  # main GEX/RR chart only
 
-        # Setup details, folded UNDER the chart (one block, no separate floating box on top)
+        # Setup details, folded immediately UNDER the main chart (borderless → one block)
         try:
             render_options_recommendation(rr, snap, ticker, market_key)
         except Exception:
             pass
+
+        # companion mini-charts (expected move / P/C OI / COT) + bandarmetrics, below the setup
+        render_detail_charts(ticker, rr, snap, market_key, px, part="companions")
 
         # Compact extras folded into the SAME block (no expander)
         try:
@@ -1701,8 +1712,8 @@ def render_options_recommendation(rr: dict, snap: dict, ticker: str, market_key:
     if extras: rows.append(f"<span style='opacity:0.6;font-size:0.85em'>{' · '.join(extras)}</span>")
 
     st.markdown(
-        f"<div style='background:#0d1117;border:1px solid #30363d;border-left:3px solid {bar};"
-        f"border-radius:7px;padding:11px 14px;margin:7px 0;font-size:0.86rem;line-height:1.7;'>"
+        f"<div style='border-left:3px solid {bar};padding:2px 0 2px 12px;margin:2px 0 6px;"
+        f"font-size:0.86rem;line-height:1.7;'>"
         + "<br>".join(rows) + "</div>",
         unsafe_allow_html=True,
     )
