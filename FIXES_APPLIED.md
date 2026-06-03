@@ -480,3 +480,21 @@ why/what/where. So Block B = Quad Decoder + explanation + Catalyst, and it leads
 Verified: _catalyst_monitor_v2 returns 5-tuples (unpacking matches), full tree compiles, no lint errors.
 Combined with s21 (plain-Indonesian quad explanation). Still TODO if user wants: tighten Block A into a
 single bordered panel visually; verify on deploy.
+
+---
+
+# SESSION 23 — Diagnostic: per-card build marker (stale-deploy detection)
+
+User deployed s22 (dashboard 4-block redesign confirmed live via screenshot) but reports ticker cards
+(Alpha Center, US, all markets) still show the OLD verbose layout. Re-audited the working tree:
+render_rich_ticker IS the clean single block (header → setup box → chart → compact extras);
+_render_signal_boxes is defined but NEVER called; the "Detail tambahan" expander string no longer
+exists anywhere. Market tabs + Alpha Center both route through render_rich_ticker / the cleaned
+alpha_center.py. So the code is correct.
+Root-cause hypothesis: the sidebar build stamp lives in app.py, so a PARTIAL git push (user has had
+recurring broken-ref / failed-push issues) can update app.py + dashboard files (sidebar shows s22,
+dashboard changes appear) while components/rich_ticker_card.py stays stale → old cards with a "current"
+sidebar stamp. The sidebar stamp cannot detect this.
+Fix/diagnostic: added `_CARD_BUILD = "s23"` in rich_ticker_card.py and render a tiny green
+"card·s23" marker next to each ticker name. If a deployed card lacks "card·s23", that card file is
+stale in the repo → re-clone-fresh + re-extract + push (kills the partial-push problem).

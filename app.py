@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s22 — dashboard merged into 4 blocks (Tier1+AssetPulse / Quad+Catalyst / gauges+Calendar / Crash+BoomBust)")
+    st.caption("v40 · build 2026-06-03-s23 — per-card build marker (card·s23) to catch stale card-file deploys")
     st.divider()
     
     page = st.radio("Navigation", [

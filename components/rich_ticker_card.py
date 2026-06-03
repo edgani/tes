@@ -1144,6 +1144,10 @@ ACTION_COLORS = {
     "WATCH": "#8B949E", "NO_DATA": "#484F58",
 }
 
+# Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
+# (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
+_CARD_BUILD = "s23"
+
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
     """Compact extras folded INTO the single ticker block (no expander).
@@ -1217,7 +1221,8 @@ def render_rich_ticker(
             head = f"### {ticker}"
             if is_frontrun:
                 head += "  🔮"
-            st.markdown(head)
+            st.markdown(f"{head} <span style='font-size:0.5rem;color:#3FB950;vertical-align:super;'>card·{_CARD_BUILD}</span>",
+                        unsafe_allow_html=True)
         with hc2:
             _cur = _cur_for(market_key, ticker)
             if market_key == "forex":
