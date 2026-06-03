@@ -1145,17 +1145,12 @@ def render(snap, prices=None, vix_now=20.0):
             st.plotly_chart(fig_a, width='stretch', config={"displayModeBar": False}, key="g_a_v54")
             st.markdown(f"<div style='text-align:center;font-size:0.55rem;margin-top:2px;'><b style='color:{ac};'>{a_cond}</b> <span style='color:#484f58;'>|</span> <span style='color:#8b949e;'>Behavioral Alerts</span></div>", unsafe_allow_html=True)
 
-        # Block C: Economic Calendar under the risk gauges (right column).
-        st.markdown(_economic_calendar_mini(sq=sq_current, mq=mq), unsafe_allow_html=True)
-
-    # ── Block D — CRASH & BUBBLE RISK (Crash Meter + Boom-Bust merged into one row) ──
-    st.markdown("<div style='font-size:0.72rem;color:#F85149;font-weight:700;margin:12px 0 4px;letter-spacing:0.5px;'>💥 CRASH &amp; BUBBLE RISK — risiko crash + tahap bubble</div>", unsafe_allow_html=True)
-    _d1, _d2 = st.columns([1, 1])
-    with _d1:
-        st.markdown("<div style='font-size:0.6rem;color:#F85149;font-weight:700;margin:2px 0 4px;'>🚨 Crash Meter</div>", unsafe_allow_html=True)
+        # Crash Meter + Boom-Bust merged into the SAME risk panel as the gauges (per spec:
+        # "crash meter, boom bust, VIX dll yang kaya speedometer → merge jadi 1").
+        # Economic Calendar moved up beside the Quad curve.
+        st.markdown("<div style='font-size:0.62rem;color:#F85149;font-weight:700;margin:8px 0 3px;'>🚨 CRASH METER</div>", unsafe_allow_html=True)
         st.plotly_chart(_plotly_crash_meter(snap), width='stretch', config={"displayModeBar": False}, key="cm_v54")
-    with _d2:
-        st.markdown("<div style='font-size:0.6rem;color:#A371F7;font-weight:700;margin:2px 0 4px;'>🌀 Boom-Bust / Survival</div>", unsafe_allow_html=True)
+        st.markdown("<div style='font-size:0.62rem;color:#A371F7;font-weight:700;margin:6px 0 3px;'>🌀 BOOM-BUST / SURVIVAL</div>", unsafe_allow_html=True)
         st.markdown(_boombust_timeline_html(snap), unsafe_allow_html=True)
-    st.caption("Crash Meter = 5 gauge tekanan pasar (makin tinggi makin bahaya). Boom-Bust = posisi siklus "
-               "(Inception→Acceleration→Euphoria→Crisis→Auction) + Super Bubble Score. Dua-duanya soal **risiko sistemik**.")
+        st.caption("Gauge atas = VIX/Health/Kelly/Alerts · Crash Meter = 5 gauge tekanan pasar · "
+                   "Boom-Bust = posisi siklus + Super Bubble Score. Semua = **risiko sistemik**.")

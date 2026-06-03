@@ -371,64 +371,36 @@ def render_detail_charts(ticker, rr, snap, market_key="us_equity", px=None):
 
 
 def _render_oi_heatmap(snap, ticker, market_key):
-    """OI heatmap (open interest by strike). Uses yfinance options OI when available.
-    Futures (CL=F etc) → ETF proxy (USO etc). FX → currency ETF proxy."""
+    """OI heatmap (open interest by strike). Per spec: NO call/put walls for FX/commodities
+    (those were proxy/fake). FX → no listed options at all (honest N/A → COT). Commodity futures →
+    real ETF-proxy OI concentration (GLD/USO/etc), framed as OI levels, not 'walls'."""
     import streamlit as st
     st.markdown("**📊 OI Heatmap (Open Interest by Strike)**")
-
-    # Futures → ETF proxy mapping (futures have no yfinance options)
+    if market_key == "forex":
+        st.caption(f"Forex ({ticker}) gak punya listed options → OI heatmap **N/A**. "
+                   f"Buat positioning, pakai **COT (Commitments of Traders)** di atas.")
+        return
     FUT_PROXY = {
         "CL=F": "USO", "GC=F": "GLD", "SI=F": "SLV", "NG=F": "UNG", "HG=F": "CPER",
         "RB=F": "UGA", "HO=F": "USO", "ZC=F": "CORN", "ZW=F": "WEAT", "ZS=F": "SOYB",
     }
-    FX_PROXY = {
-        "EURUSD=X": "FXE", "EUR=X": "FXE", "JPY=X": "FXY", "USDJPY=X": "FXY",
-        "GBPUSD=X": "FXB", "GBP=X": "FXB", "AUDUSD=X": "FXA", "DX-Y.NYB": "UUP",
-        "USDCAD=X": "FXC",
-    }
-
-    # First try direct OI from snapshot options_data
     opts = (snap.get("options_data", {}) or {}).get(ticker, {})
     proxy = None
     if not opts:
-        proxy = FUT_PROXY.get(ticker) or FX_PROXY.get(ticker)
+        proxy = FUT_PROXY.get(ticker)
         if proxy:
             opts = (snap.get("options_data", {}) or {}).get(proxy, {})
-
-    if opts and (opts.get("total_call_oi") or opts.get("call_wall")):
-        cw = opts.get("call_wall")
-        pw = opts.get("put_wall")
-        mp = opts.get("max_pain")
+    if opts and opts.get("total_call_oi"):
         tot_c = opts.get("total_call_oi", 0)
         tot_p = opts.get("total_put_oi", 0)
-        spot = opts.get("spot", 0)
-        if proxy and spot and cw and pw:
-            # Proxy strikes live in the PROXY's price domain (e.g. GLD ≈ 1/10 of GC=F),
-            # so absolute $ levels are misleading next to the underlying. Express as %
-            # from proxy spot — percentage levels transfer cleanly to the underlying.
-            def _pct(x):
-                return f"{(x/spot - 1) * 100:+.1f}%" if (x and spot) else "n/a"
-            st.markdown(
-                f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}** (via {proxy} proxy)  \n"
-                f"🧱 Call Wall **{_pct(cw)}** · Put Wall **{_pct(pw)}** · Max Pain **{_pct(mp)}** "
-                f"— shown as % vs proxy spot (proxy strikes ≠ {ticker} price scale; % transfers to {ticker})."
-            )
-        else:
-            st.markdown(
-                f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}**  \n"
-                f"🧱 Call Wall (resistance): **\\${cw}** · Put Wall (support): **\\${pw}** · Max Pain: **\\${mp}**"
-            )
-            if spot and cw and pw:
-                st.caption(f"Price \\${spot} sits between Put Wall \\${pw} ↓ and Call Wall \\${cw} ↑ — "
-                           f"dealers pin toward Max Pain \\${mp} into OPEX.")
+        pcr = (tot_p / tot_c) if tot_c else 0
+        st.markdown(f"Call OI total: **{tot_c:,}** · Put OI total: **{tot_p:,}** · "
+                    f"Put/Call OI ratio: **{pcr:.2f}**" + (f" (via {proxy} ETF proxy)" if proxy else ""))
+        st.caption("Konsentrasi OI via ETF proxy (level absolut beda skala dari futures — pakai buat "
+                   "lihat di mana OI numpuk + skew put/call, bukan 'wall' pasti). PCR >1 = put-heavy (hedging/bearish).")
     else:
-        if market_key == "commodity":
-            st.caption(f"OI heatmap untuk {ticker} butuh CME QuikStrike (sering ke-block server-side) "
-                       f"atau ETF proxy options. Futures OI ga ada di yfinance — pakai proxy: "
-                       f"{FUT_PROXY.get(ticker, 'N/A')}.")
-        else:
-            st.caption(f"OI data untuk {ticker} belum tersedia — pakai FX ETF proxy "
-                       f"({FX_PROXY.get(ticker, 'N/A')}) atau CME QuikStrike.")
+        st.caption(f"OI {ticker} belum ke-fetch — futures OI gak ada di yfinance, pakai ETF proxy "
+                   f"({FUT_PROXY.get(ticker, 'N/A')}) atau CME QuikStrike.")
 
 
 def _render_signal_boxes(rr, snap, market_key, show_options, ticker):
@@ -1146,14 +1118,14 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s23"
+_CARD_BUILD = "s25"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
     """Compact extras folded INTO the single ticker block (no expander).
-    Setup box already carries Dealer/Vanna-charm/Dark-pool/COT, so here we only add what it
-    doesn't: a date-based Vanna/Charm OPEX window (equity+crypto) and On-Chain (crypto).
-    OI heatmap intentionally omitted (no listed options for FX/IHSG; proxy walls misleading)."""
+    Setup box already carries Dealer/Vanna-charm/Dark-pool/COT, so here we add: a date-based
+    Vanna/Charm OPEX window (equity+crypto), On-Chain (crypto), and the OI heatmap (forex/commodity —
+    FX is honest N/A→COT, commodity uses real ETF-proxy OI, no fake call/put walls)."""
     import streamlit as st
     if market_key in ("us_equity", "crypto") and show_options:
         try:
@@ -1173,6 +1145,12 @@ def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_oncha
             oc_text = _onchain_narrative(oc, ticker)
             if oc_text:
                 st.caption("\u26d3\ufe0f **On-Chain:** " + oc_text.replace("\n", " "))
+        except Exception:
+            pass
+    # OI heatmap for forex/commodities (per spec) — FX honest N/A→COT, commodity real ETF-proxy OI, no fake walls
+    if market_key in ("forex", "commodity"):
+        try:
+            _render_oi_heatmap(snap, ticker, market_key)
         except Exception:
             pass
 

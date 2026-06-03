@@ -116,12 +116,10 @@ def explain_quad(gip, transition: Optional[Dict] = None, narrative_module=None) 
     g_word = "naik (ekspansi)" if g_dir == "up" else "lemah/melambat"
     i_word = "naik" if i_dir == "up" else "turun/mereda"
     if month_q != struct_q:
-        turn_txt = (f"Tapi horizon cepat (Monthly) udah baca **{month_q}** ({_NAME.get(month_q,'')}) — "
-                    f"beda dari structural, jadi kemungkinan lagi mau belok.")
+        turn_txt = (f"Monthly udah di **{month_q}** ({_NAME.get(month_q,'')}) → mungkin mau belok.")
     else:
-        turn_txt = f"Horizon cepat (Monthly) juga **{month_q}** — sejalan, regime stabil dulu."
-    why = (f"Sekarang **{struct_q} ({_NAME.get(struct_q,'')})**: growth {g_word}, inflasi {i_word}. "
-           f"{turn_txt} Pemicu utama: {drv_txt}.")
+        turn_txt = f"Monthly juga **{month_q}** → regime stabil dulu."
+    why = (f"Growth {g_word}, inflasi {i_word}. {turn_txt}")
 
     return {
         "ok": True,

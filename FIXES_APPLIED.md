@@ -522,3 +522,27 @@ BANDARMETRICS (BANDARMETRICS_REVERSE_ENGINEERING.md, new):
   carries the punchline); catalyst collapsed to a single caption line.
 NOTE: true "no scroll" depends on screen resolution/zoom; this is the biggest single height win. Can
 further shrink Macro Dashboard chart heights (gauges/asset-pulse/crash-meter) if still scrolling.
+
+---
+
+# SESSION 25 — 1-frame dashboard refit + OI heatmap wired + confidence path
+
+Per the user's annotated s24 screenshot (do everything, no half-work):
+DASHBOARD (dashboard.py / _dashboard_legacy.py):
+- Quad Decoder: explanation + catalyst moved UNDER the curve (left col, "in the curve"), language
+  shortened further (engine `why` dropped raw indicator-name tail); the crossed-out map legend caption
+  REMOVED; Economic Calendar moved to the RIGHT of the curve (Quad row right col).
+- Macro Dashboard: gauges (VIX/Health/Kelly/Alerts) + Crash Meter + Boom-Bust all merged into the ONE
+  right-hand risk panel (per "merge the speedometers"); Economic Calendar removed from here; the
+  separate Block-D row deleted. Left col = Tier1Alpha + Asset Pulse grouped.
+CARDS (rich_ticker_card.py):
+- _render_oi_heatmap cleaned: NO call/put walls for FX/commodities (were proxy/fake). FX = honest N/A
+  → points to COT. Commodity = real ETF-proxy OI totals + Put/Call ratio (concentration, not "walls").
+  Wired into _render_block1_extras for forex/commodity (the user asked "where's the OI heatmap").
+- Confirmed setup box (render_options_recommendation) carries Posisi/Entry/Target/Stop/Cara-masuk
+  (spot+leverage)/Dealer/Vanna-charm/COT; extras add Vanna/Charm OPEX (eq+crypto), On-Chain (crypto),
+  OI heatmap (fx+commodity); bandarmetrics candlestick (ihsg). Cards now match the per-market spec.
+- Card marker bumped to card·s25.
+BANDARMETRICS confidence: documented that 90-100% needs calibration data (paired date→value) or Type-F
+data; the one irreducible flaw is Foreign Flow (no OHLCV formula can produce it). See response for the
+"how to exceed bandarmetrics" plan (divergence/stealth/ignition/walk-forward layer on top).
