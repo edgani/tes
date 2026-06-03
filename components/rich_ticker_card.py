@@ -91,16 +91,23 @@ def _gex_levels_chart(ticker, px, rr, opts, cur="$"):
     # entry/target/stop derived from the risk-range bands (always available)
     entry = _f(trade.get("lrr")); target = _f(trade.get("trr")); stop = _f(tail.get("lrr"))
 
-    levels = [v for v in [px, _f(trade.get("lrr")), _f(trade.get("trr")), _f(trend.get("lrr")),
-                          _f(trend.get("trr")), _f(tail.get("lrr")), _f(tail.get("trr")),
-                          cw, pw, flip, mp, entry, target, stop] if v]
-    if strikes:
-        levels += [min(strikes), max(strikes)]
-    levels = [v for v in levels if v and v > 0]
-    if len(levels) < 2:
+    # Core extent = risk-range bands + price + entry/target/stop — always meaningful and tight.
+    core = [v for v in [px, entry, target, stop,
+                        _f(trade.get("lrr")), _f(trade.get("trr")),
+                        _f(trend.get("lrr")), _f(trend.get("trr")),
+                        _f(tail.get("lrr")), _f(tail.get("trr"))] if v and v > 0]
+    if len(core) < 2:
         return None
-    lo, hi = min(levels), max(levels)
-    pad = (hi - lo) * 0.05 or (px * 0.05) or 1.0
+    c_lo, c_hi = min(core), max(core)
+    c_span = (c_hi - c_lo) or (px * 0.1) or 1.0
+    # Walls / max-pain / flip / strikes: extend the axis ONLY if within 0.6×span of the core,
+    # so a far-off Max Pain or deep-OTM strike can't squish the bands into a sliver (QQQ bug).
+    extras = [cw, pw, mp, flip] + (list(strikes) if strikes else [])
+    for v in extras:
+        if v and v > 0 and (c_lo - 0.6 * c_span) <= v <= (c_hi + 0.6 * c_span):
+            c_lo, c_hi = min(c_lo, v), max(c_hi, v)
+    lo, hi = c_lo, c_hi
+    pad = (hi - lo) * 0.06 or (px * 0.05) or 1.0
     x0, x1 = lo - pad, hi + pad
 
     fig = go.Figure()
@@ -1120,7 +1127,7 @@ ACTION_COLORS = {
 
 # Per-card build marker — lets the user detect a STALE rich_ticker_card.py deploy
 # (the sidebar stamp lives in app.py and can't catch a partially-pushed card file).
-_CARD_BUILD = "s26"
+_CARD_BUILD = "s27"
 
 
 def _render_block1_extras(rr, snap, ticker, market_key, show_options, show_onchain, px=None):
@@ -1236,17 +1243,17 @@ def render_rich_ticker(
                 f"Chain: {chain}. {thesis}{readiness_line}"
             )
 
-        # ── BLOCK 1 — single consolidated card per spec (setup + chart + folded extras) ──
-        # Setup box carries: Posisi · Entry · Target · Stop · Cara-masuk (spot/leverage) ·
-        # Dealer · Vanna/charm · Dark pool · COT. Signal boxes / readiness / TRR text /
-        # Trending text / verbose greeks / OI-proxy walls all REMOVED per spec.
+        # ── BLOCK 1 — single consolidated card per spec: CHART FIRST, then setup details below ──
+        # Spec order: GEX wall level + Risk Range + Entry/Target/SL (the chart) → THEN
+        # entry/target/stop · cara-masuk (spot/leverage) · dealer · vanna/charm · dark pool · COT below.
+        # GEX + Risk Range + Entry/Target/SL chart (+ bandarmetrics candlestick for IHSG)
+        render_detail_charts(ticker, rr, snap, market_key, px)
+
+        # Setup details, folded UNDER the chart (one block, no separate floating box on top)
         try:
             render_options_recommendation(rr, snap, ticker, market_key)
         except Exception:
             pass
-
-        # GEX + Risk Range + Entry/Target/SL chart (+ bandarmetrics candlestick for IHSG)
-        render_detail_charts(ticker, rr, snap, market_key, px)
 
         # Compact extras folded into the SAME block (no expander)
         try:

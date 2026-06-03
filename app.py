@@ -83,7 +83,7 @@ def _quad_color(q):
 
 with st.sidebar:
     st.markdown("## 📊 MacroRegime Pro")
-    st.caption("v40 · build 2026-06-03-s26 — LPM=A/D Line (calibrated) + GEX labels destaggered + Alpha Center vanna/charm + dashboard heights cut for 1-frame")
+    st.caption("v40 · build 2026-06-03-s27 — CHART-FIRST card order (setup box moved BELOW chart, all markets) + GEX x-range fixed (no more squish) + 1-frame compaction")
     st.divider()
     
     page = st.radio("Navigation", [

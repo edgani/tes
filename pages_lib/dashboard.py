@@ -140,7 +140,7 @@ def _render_quad_explainer(snap: dict, in_tab: bool = False):
             _trg = " · ".join(f"**{w['to']}** kalau {w['trigger']}" for w in wc)
             st.markdown(f"**Pindah:** {_trg}")
         if wig.get("action_hint"):
-            st.info(f"🎯 {wig['action_hint']}")
+            st.markdown(f"🎯 **{wig['action_hint']}**")
         try:
             from pages_lib._dashboard_legacy import _catalyst_monitor_v2
             _cats, _ = _catalyst_monitor_v2(snap, sq=qe.get("structural_quad", "Q3"),

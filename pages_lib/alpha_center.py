@@ -304,20 +304,19 @@ def render(snap: dict):
             with hc3:
                 st.caption(f"{action_emoji} **{action}**")
 
-            # ── BLOCK 1 — setup (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) + chart ──
-            # Star rating / Alpha Score prose / Sources / Conviction prose / Readiness / TAIL-TRR box
-            # all REMOVED per spec. Target lives in the setup box; bottleneck/thesis in block 2 below.
-            # ── OPTIONS / GREEKS / DARK-POOL position report (if data present) ──
-            try:
-                from components.rich_ticker_card import render_options_recommendation
-                render_options_recommendation(rr, snap, ticker, cand.get("market", "us_equity"))
-            except Exception:
-                pass
-
+            # ── BLOCK 1 per spec: CHART FIRST (GEX wall + RR + Entry/Target/SL), THEN setup below ──
+            # (Target Bottleneck + Vanna/Charm + Dark Pool + Spot/Leverage + Dealer all under the chart.)
             # ── VISUAL: GEX + Risk Range + Entry/Target/SL + companions (shared with market tabs) ──
             try:
                 from components.rich_ticker_card import render_detail_charts
                 render_detail_charts(ticker, rr, snap, cand.get("market", "us_equity"))
+            except Exception:
+                pass
+
+            # ── setup details folded UNDER the chart (Posisi/Entry/Target/Stop/Cara-masuk/Dealer/Vanna/Dark-pool) ──
+            try:
+                from components.rich_ticker_card import render_options_recommendation
+                render_options_recommendation(rr, snap, ticker, cand.get("market", "us_equity"))
             except Exception:
                 pass
 

@@ -568,3 +568,21 @@ _render_block1_extras to alpha_center.py after the chart (Vanna/Charm OPEX windo
 Bottleneck = the "Why bottleneck" line; Dealer shows in the setup box when real options exist.
 1-FRAME: quad map height 230→170; asset pulse 100→88. (Plus prior in-curve explanation + merged panels.)
 Card marker → card·s26.
+
+---
+
+# SESSION 27 — CHART-FIRST card reorder (the "move the box" fix) + GEX x-range + 1-frame
+
+THE fix the user was furious about: per his spec the order is GEX wall level (chart) FIRST, then
+Entry/Target/SL + Vanna/Charm + Dark Pool + Spot/Leverage + Dealer BELOW it. We were rendering the
+setup box ABOVE the chart. Reordered BOTH renderers (components/rich_ticker_card.py render_rich_ticker
+AND pages_lib/alpha_center.py): render_detail_charts (chart) now renders FIRST, then
+render_options_recommendation (setup details) UNDER it, then _render_block1_extras. Applies to every
+market (US/Forex/Commodities/Crypto/IHSG) + Alpha Center.
+GEX CHART x-range bug (QQQ squished — Max Pain at 480 vs price 746 stretched the axis): range now
+anchored on the risk-range bands + price + entry/target/stop; walls/max-pain/strikes only extend the
+axis if within 0.6×span (else excluded so they can't squish the bands). Verified: QQQ → [690,780]
+tight instead of [480,900].
+1-FRAME: action_hint changed from a big st.info box to a one-line markdown. (Plus prior map 170 / asset
+pulse 88.) True no-scroll still depends on user zoom.
+Card marker → card·s27.
